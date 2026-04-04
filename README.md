@@ -105,19 +105,17 @@ make clean      # remove binary
 | Command          | Description                                |
 |------------------|--------------------------------------------|
 | `/help`          | Show available commands                   |
-| `/model`         | Switch model mid-conversation             |
-| `/session`       | List and switch sessions                  |
+| `/model`         | Show current model and roles              |
+| `/session`       | Show current session info                 |
 | `/branch`        | Create a conversation branch              |
 | `/commit`        | Generate and apply a git commit           |
 | `/compact`       | Compact session history                   |
 | `/agents`        | Show running subagents                    |
 | `/history`       | Show command history                      |
-| `/plan`          | Start PDD planning session                |
-| `/run`           | Execute a spec with task agent            |
+| `/skills`        | List skill commands and available skills  |
 | `/skill-create`  | Create a new skill                        |
 | `/skill-list`    | List available skills                     |
 | `/skill-load`    | Reload skills from disk                   |
-| `/audit`         | Scan skills for hidden Unicode threats    |
 | `/restart`       | Restart pi-go                             |
 | `/clear`         | Clear conversation                        |
 | `/exit`          | Exit the agent                            |

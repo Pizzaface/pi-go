@@ -507,9 +507,10 @@ var slashCommands = []string{
 	"/history",
 	"/login",
 	"/commit",
-	"/plan",
-	"/run",
 	"/skills",
+	"/skill-create",
+	"/skill-load",
+	"/skill-list",
 	"/theme",
 	"/ping",
 	"/rtk",
@@ -545,14 +546,16 @@ func slashCommandDesc(cmd string) string {
 		return "Configure API keys (codex, openai, anthropic, gemini)"
 	case "/commit":
 		return "Create commit from staged changes"
-	case "/plan":
-		return "Start PDD planning session"
-	case "/run":
-		return "Execute a spec with task agent"
 	case "/theme":
 		return "Switch theme or list themes"
 	case "/skills":
 		return "List skills (create, load)"
+	case "/skill-create":
+		return "Create a new skill"
+	case "/skill-load":
+		return "Reload skills from disk"
+	case "/skill-list":
+		return "List available skills"
 	case "/ping":
 		return "Test LLM connectivity"
 	case "/restart":

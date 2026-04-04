@@ -16,7 +16,6 @@ const (
 	CompletionTypeNone CompletionType = iota
 	CompletionTypeCommand
 	CompletionTypeSkill
-	CompletionTypeSpec
 	CompletionTypeFile
 )
 
@@ -58,8 +57,6 @@ func Complete(input string, skills []extension.Skill, workDir string) *CompleteR
 		candidates = append(candidates, matchingSkills(input, skills)...)
 	case CompletionTypeSkill:
 		candidates = matchingSkills(input, skills)
-	case CompletionTypeSpec:
-		candidates = matchingSpecs(input, workDir)
 	}
 
 	// Filter out exact matches for single candidates (no ghost for exact match)
@@ -91,11 +88,6 @@ func detectCompletionType(input string) CompletionType {
 	// Check for command completion (just /)
 	if input == "/" {
 		return CompletionTypeCommand
-	}
-
-	// Check for spec completion (/plan <arg> or /run <arg>)
-	if strings.HasPrefix(input, "/plan ") || strings.HasPrefix(input, "/run ") {
-		return CompletionTypeSpec
 	}
 
 	// Check for partial command or skill (starts with /, no space)
@@ -145,73 +137,6 @@ func matchingSkills(prefix string, skills []extension.Skill) []CompletionCandida
 	}
 
 	return candidates
-}
-
-// matchingSpecs returns all spec candidates matching the prefix from the specs directory.
-// It scans for subdirectories in specs/ that contain PROMPT.md.
-func matchingSpecs(input string, workDir string) []CompletionCandidate {
-	// Extract the argument after /plan or /run
-	var argPrefix string
-	if strings.HasPrefix(input, "/plan ") {
-		argPrefix = strings.TrimPrefix(input, "/plan ")
-	} else if strings.HasPrefix(input, "/run ") {
-		argPrefix = strings.TrimPrefix(input, "/run ")
-	}
-
-	specs, err := listSpecs(workDir)
-	if err != nil {
-		return nil
-	}
-
-	var candidates []CompletionCandidate
-	for _, spec := range specs {
-		if strings.HasPrefix(strings.ToLower(spec), strings.ToLower(argPrefix)) {
-			// Determine which command to complete based on input prefix
-			cmdPrefix := "/plan "
-			if strings.HasPrefix(input, "/run ") {
-				cmdPrefix = "/run "
-			}
-			candidates = append(candidates, CompletionCandidate{
-				Text:        cmdPrefix + spec,
-				Description: "spec: " + spec,
-				Type:        CompletionTypeSpec,
-			})
-		}
-	}
-
-	return candidates
-}
-
-// listSpecs scans the specs/ directory for subdirectories containing PROMPT.md.
-// Returns a sorted list of spec names.
-func listSpecs(workDir string) ([]string, error) {
-	if workDir == "" {
-		return nil, nil
-	}
-
-	specsDir := filepath.Join(workDir, "specs")
-
-	entries, err := os.ReadDir(specsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var specs []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		promptPath := filepath.Join(specsDir, entry.Name(), "PROMPT.md")
-		if _, err := os.Stat(promptPath); err == nil {
-			specs = append(specs, entry.Name())
-		}
-	}
-
-	sort.Strings(specs)
-	return specs, nil
 }
 
 // CompleteMention returns file completion candidates for the given prefix.

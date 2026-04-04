@@ -39,7 +39,7 @@ type model struct {
 
 	// Agent state.
 	running bool
-	mode    string        // "chat" or "plan" — shown in status bar
+	mode    string        // current UI mode label shown in the status bar
 	agentCh chan agentMsg // channel for receiving agent events
 
 	// Agent face renderer with mood expressions.
@@ -60,14 +60,8 @@ type model struct {
 	// Login flow state.
 	login *loginState
 
-	// Plan flow state (/plan override confirmation).
-	plan *planState
-
 	// Skill-create pending overwrite confirmation.
 	pendingSkillCreate *pendingSkillCreate
-
-	// Run flow state (/run command).
-	run *runState
 
 	// Branch popup state (shown on status bar click).
 	branchPopup *branchPopupState
@@ -294,18 +288,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentDoneMsg:
 		return m.handleAgentDone(msg)
 
-	case runAgentEventMsg:
-		return m.handleRunAgentEvent(msg)
-
-	case runAgentDoneMsg:
-		return m.handleRunAgentDone()
-
-	case runGateResultMsg:
-		return m.handleRunGateResult(msg)
-
-	case runMergeResultMsg:
-		return m.handleRunMergeResult(msg)
-
 	case loginSSOResultMsg:
 		return m.handleLoginSSOResult(msg)
 
@@ -387,20 +369,6 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.handleSkillCreateCancel()
 		case key.Code == 'c' && key.Mod == tea.ModCtrl:
 			return m.handleSkillCreateCancel()
-		default:
-			return m, nil
-		}
-	}
-
-	// Handle plan override confirmation.
-	if !m.running && m.plan != nil && m.plan.phase == "confirming_override" {
-		switch {
-		case key.Code == tea.KeyEnter:
-			return m.handlePlanOverride()
-		case key.Code == tea.KeyEsc:
-			return m.handlePlanCancel()
-		case key.Code == 'c' && key.Mod == tea.ModCtrl:
-			return m.handlePlanCancel()
 		default:
 			return m, nil
 		}
@@ -709,14 +677,6 @@ func countUntrackedLines(cwd string) int {
 
 // statusRenderInput builds the StatusRenderInput from the current model state.
 func (m *model) statusRenderInput() StatusRenderInput {
-	var rc *runCycleInfo
-	if m.run != nil && m.run.phase != "done" && m.run.phase != "failed" {
-		rc = &runCycleInfo{
-			SpecName:   m.run.specName,
-			Cycle:      m.run.retries + 1,
-			MaxRetries: m.run.maxRetries,
-		}
-	}
 	mode := m.mode
 	if mode == "" {
 		mode = "chat"
@@ -732,7 +692,6 @@ func (m *model) statusRenderInput() StatusRenderInput {
 		Orchestrator: m.cfg.Orchestrator,
 		DiffAdded:    m.diffAdded,
 		DiffRemoved:  m.diffRemoved,
-		RunCycle:     rc,
 		LoadingItems: m.loadingItems,
 	}
 }
