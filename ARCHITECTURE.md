@@ -321,21 +321,25 @@ graph LR
 ```mermaid
 graph TD
     subgraph Runtime["Extension Runtime"]
-        discovery["Manifest discovery<br/>~/.pi-go/extensions<br/>.pi-go/extensions"]
+        discovery["Resource discovery<br/>packages + loose dirs"]
         prompts["Prompt fragments<br/>prompt / prompt_file"]
+        prompt_templates["Prompt templates<br/>prompts/*.md"]
         hooks["Tool hooks<br/>before_tool / after_tool"]
         lifecycle["Lifecycle hooks<br/>startup / session_start"]
-        skills["Skills<br/>skills_dir"]
+        skills["Skills<br/>skills_dir + resource dirs"]
         mcp["Tool registration<br/>mcp_servers"]
         tui["Narrow TUI points<br/>slash commands only"]
+        themes["Theme resources<br/>themes/*.json"]
     end
 
     discovery --> prompts
+    discovery --> prompt_templates
     discovery --> hooks
     discovery --> lifecycle
     discovery --> skills
     discovery --> mcp
     discovery --> tui
+    discovery --> themes
 
     prompts --> agent["Agent instruction"]
     hooks --> agent
@@ -349,19 +353,23 @@ graph TD
 
 The extension runtime is now the **primary customization surface** for go-pi.
 
-**Discovery**: The runtime loads `extension.json` manifests from global and project extension directories. Project extensions override global extensions by name.
+**Discovery**: `DiscoverResourceDirs(...)` builds an ordered list of global and project resource directories, including installed packages under `packages/*/`. Later directories override earlier ones by resource name.
 
 **Prompt contributions**: Extensions can append system-instruction fragments with `prompt` or `prompt_file`.
+
+**Prompt templates**: Markdown files in discoverable `prompts/` directories are loaded as first-class `PromptTemplate` resources and exposed to the TUI through the existing slash-command seam.
 
 **Tool hooks**: `before_tool` and `after_tool` shell hooks are merged into the agent callback chain.
 
 **Lifecycle hooks**: `startup` and `session_start` hooks let extensions participate in bootstrap without expanding the core.
 
-**Skills**: Extensions can point at a `skills_dir` containing `SKILL.md` folders.
+**Skills**: Extensions can point at a `skills_dir` containing `SKILL.md` folders, and skills can also arrive through discovered resource directories and installed packages.
+
+**Themes**: The TUI overlays discoverable `themes/*.json` resources on top of embedded themes, with project resources overriding global ones.
 
 **Tool registration**: Extension-owned tools should come in through `mcp_servers`, which are bridged into ADK toolsets by the runtime.
 
-**TUI extension points**: The TUI deliberately stays narrow. Extensions may contribute slash commands that map to prompt templates, but they do not register custom widgets or replace the Bubble Tea model.
+**TUI extension points**: The TUI deliberately stays narrow. Extensions and prompt templates may contribute slash commands, but they do not register custom widgets or replace the Bubble Tea model.
 
 See [docs/extensions.md](docs/extensions.md) for the authoring guide.
 
@@ -375,6 +383,8 @@ See [docs/extensions.md](docs/extensions.md) for the authoring guide.
 .pi-go/skills/*.SKILL.md       # Project skills (override global)
 ~/.pi-go/extensions/*/extension.json  # Global extension manifests
 .pi-go/extensions/*/extension.json    # Project extension manifests
+~/.pi-go/packages/*/                  # Global resource packages
+.pi-go/packages/*/                    # Project resource packages
 ~/.pi-go/sessions/             # Session storage
 ~/.pi-go/log/                  # Session logs
 ~/.pi-go/.env                  # API keys (written by /login)
@@ -423,7 +433,7 @@ sequenceDiagram
 **Key patterns:**
 - TUI starts immediately with spinner showing initialization progress
 - Heavy I/O operations run in parallel for the minimal path (git + extension discovery)
-- Agent is created last after the extension runtime has assembled tools, hooks, skills, prompt fragments, and TUI commands
+- Agent is created last after the extension runtime has assembled tools, hooks, skills, prompt fragments, prompt templates, and TUI commands
 - LSP remains opt-in; extension-owned MCP toolsets are assembled by the extension runtime when manifests declare them
 - Progress sent via `InitEvent` channel
 

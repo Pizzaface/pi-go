@@ -166,6 +166,53 @@ func TestNewRootCmd(t *testing.T) {
 	if cmd.Flags().Lookup("memory-off") != nil {
 		t.Error("memory-off flag should not be exposed by the default core CLI")
 	}
+	if got, _, err := cmd.Find([]string{"package", "list"}); err != nil || got == nil {
+		t.Fatalf("expected package subcommand to exist, err=%v", err)
+	}
+}
+
+func TestPackageCommandLifecycle(t *testing.T) {
+	home := t.TempDir()
+	workDir := t.TempDir()
+	t.Setenv("HOME", home)
+
+	sourceDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(sourceDir, "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "prompts", "triage.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	cmd := newRootCmd()
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"package", "install", "--project", sourceDir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Installed project package") {
+		t.Fatalf("unexpected install output %q", buf.String())
+	}
+
+	buf.Reset()
+	cmd = newRootCmd()
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"package", "list"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "prompts") {
+		t.Fatalf("expected prompts resource in list output, got %q", buf.String())
+	}
 }
 
 func TestRootCmdNoPromptExitsCleanly(t *testing.T) {

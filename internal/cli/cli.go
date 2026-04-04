@@ -69,6 +69,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification for LLM API calls")
 
 	cmd.AddCommand(newPingCmd())
+	cmd.AddCommand(newPackageCmd())
 
 	return cmd
 }

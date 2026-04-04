@@ -6,10 +6,41 @@ If you want to add new behavior, prefer an extension over expanding the core. Th
 
 ## Discovery
 
-The runtime discovers extension manifests from these directories, in this order:
+The runtime now discovers **shareable resources** across loose directories and installed packages.
 
-1. `~/.pi-go/extensions/*/extension.json`
-2. `.pi-go/extensions/*/extension.json`
+### Resource directories
+
+These resource types are discoverable:
+
+- `extensions/` — manifest-driven runtime contributions
+- `skills/` — reusable `SKILL.md` folders
+- `prompts/` — markdown prompt templates exposed as slash commands
+- `themes/` — JSON theme files layered on top of built-in themes
+
+### Loading order
+
+Resources load in this order, with **later entries overriding earlier ones** by resource name:
+
+1. `~/.pi-go/packages/*/<resource>/`
+2. `~/.pi-go/<resource>/`
+3. `.pi-go/packages/*/<resource>/`
+4. `.pi-go/<resource>/`
+
+Skills also keep the existing project-local compatibility directories after `.pi-go/skills/`:
+
+- `.claude/skills/`
+- `.cursor/skills/`
+
+That means project resources override global ones, and loose project resources override packaged project resources.
+
+### Extension manifest discovery
+
+For extensions specifically, manifests are read from:
+
+1. `~/.pi-go/packages/*/extensions/*/extension.json`
+2. `~/.pi-go/extensions/*/extension.json`
+3. `.pi-go/packages/*/extensions/*/extension.json`
+4. `.pi-go/extensions/*/extension.json`
 
 Project extensions override global extensions by `name`.
 
@@ -58,6 +89,67 @@ Minimal example:
   }
 }
 ```
+
+## Packages
+
+Packages are just installable directories that can contain any combination of:
+
+```text
+my-package/
+├── extensions/
+├── prompts/
+├── skills/
+└── themes/
+```
+
+A package does not need its own runtime daemon or plugin API. It participates by dropping resources into the existing discovery model.
+
+### Package lifecycle
+
+Use the CLI to manage installed packages:
+
+```bash
+pi package install <path-or-git-url>
+pi package install --project <path-or-git-url>
+pi package list
+pi package update <name>
+pi package remove <name>
+```
+
+- default install scope is **global**: `~/.pi-go/packages/<name>/`
+- `--project` installs into `.pi-go/packages/<name>/`
+- local directory sources are copied in
+- git sources are cloned
+- `update` refreshes from the recorded source
+
+This keeps customization lightweight and shareable without expanding core startup.
+
+## Prompt templates
+
+Prompt templates live in `prompts/*.md` and are first-class runtime resources.
+
+Example:
+
+```markdown
+---
+name: triage
+description: Summarize the current repo state and propose next steps
+---
+Triage the current workspace. Extra context: {{args}}
+```
+
+At runtime, prompt templates are loaded through the same discovery model and surfaced through the narrow TUI seam as slash commands. The body supports the same minimal `{{args}}` placeholder as extension-defined `tui.commands`.
+
+Project prompt templates override global ones by `name`.
+
+## Themes
+
+Custom themes can be dropped into any discovered `themes/` directory as JSON files containing either:
+
+- a single theme object, or
+- a map of theme-name → theme object
+
+Discovered themes overlay the built-in theme set. Project themes override global themes by theme name.
 
 ## Supported contributions
 
@@ -150,8 +242,12 @@ Phase 2 work should build on these seams instead of rewriting startup again:
 - manifest discovery: `LoadManifests(...)`
 - runtime assembly: `BuildRuntime(...)`
 - lifecycle dispatch: `(*Runtime).RunLifecycleHooks(...)`
+- shared discovery model: `DiscoverResourceDirs(...)`
+- prompt-template discovery: `LoadPromptTemplates(...)`
+- package lifecycle: `InstallPackage(...)`, `UpdatePackage(...)`, `RemovePackage(...)`, `ListInstalledPackages(...)`
 - tool registration path: `mcp_servers`
 - prompt contribution path: `prompt` / `prompt_file`
-- narrow TUI command path: `tui.commands`
+- extension resource dir path: `skills_dir`
+- narrow TUI command path: `tui.commands` and `PromptTemplate.SlashCommand()`
 
 Those are the intended extension-runtime interfaces for the next round of capability work.

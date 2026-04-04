@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -201,6 +203,29 @@ func TestAllThemesHaveRequiredColors(t *testing.T) {
 				t.Errorf("theme %q: color %s is empty", theme.Name, field)
 			}
 		}
+	}
+}
+
+func TestThemeManagerLoadThemeDirs(t *testing.T) {
+	tm := NewThemeManager()
+	globalDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(globalDir, "custom.json"), []byte(`{"name":"custom","displayName":"Global Custom","themeType":"dark","colors":{"text":"#fff","base":"#000","primary":"#111","tool":"#222","success":"#333","error":"#444","secondary":"#555","info":"#666","warning":"#777","diffAdded":"#888","diffRemoved":"#999","diffAddedText":"#aaa","diffRemovedText":"#bbb"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "custom.json"), []byte(`{"name":"custom","displayName":"Project Custom","themeType":"light","colors":{"text":"#111","base":"#fff","primary":"#222","tool":"#333","success":"#444","error":"#555","secondary":"#666","info":"#777","warning":"#888","diffAdded":"#999","diffRemoved":"#aaa","diffAddedText":"#bbb","diffRemovedText":"#ccc"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tm.LoadThemeDirs(globalDir, projectDir); err != nil {
+		t.Fatal(err)
+	}
+	if !tm.HasTheme("custom") {
+		t.Fatal("expected loaded custom theme")
+	}
+	if got := tm.themes["custom"].DisplayName; got != "Project Custom" {
+		t.Fatalf("expected project theme override, got %q", got)
 	}
 }
 

@@ -115,11 +115,60 @@ func NewThemeManagerFromJSON(data []byte) (*ThemeManager, error) {
 
 func (tm *ThemeManager) loadFromJSON(data []byte) error {
 	var raw map[string]Theme
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(data, &raw); err == nil && len(raw) > 0 {
+		for name, theme := range raw {
+			if theme.Name == "" {
+				theme.Name = name
+			}
+			tm.themes[theme.Name] = theme
+		}
+		return nil
+	}
+
+	var single Theme
+	if err := json.Unmarshal(data, &single); err != nil {
 		return fmt.Errorf("parse themes: %w", err)
 	}
-	for name, theme := range raw {
-		tm.themes[name] = theme
+	if single.Name == "" {
+		return fmt.Errorf("parse themes: missing theme name")
+	}
+	tm.themes[single.Name] = single
+	return nil
+}
+
+// LoadThemeDirs overlays theme JSON files from the provided directories.
+// Later directories override earlier ones by theme name.
+func (tm *ThemeManager) LoadThemeDirs(dirs ...string) error {
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("reading theme dir %s: %w", dir, err)
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				return fmt.Errorf("reading theme file %s: %w", filepath.Join(dir, entry.Name()), err)
+			}
+			if err := tm.loadFromJSON(data); err != nil {
+				return fmt.Errorf("loading theme file %s: %w", filepath.Join(dir, entry.Name()), err)
+			}
+		}
+	}
+	if tm.current == "" || !tm.HasTheme(tm.current) {
+		tm.current = DefaultThemeName
+		if _, ok := tm.themes[tm.current]; !ok {
+			for name := range tm.themes {
+				tm.current = name
+				break
+			}
+		}
 	}
 	return nil
 }

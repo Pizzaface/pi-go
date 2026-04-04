@@ -45,6 +45,8 @@ func TestLoadManifests_ProjectOverridesGlobal(t *testing.T) {
 
 func TestBuildRuntime_LoadsManifestContributions(t *testing.T) {
 	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	extDir := filepath.Join(root, ".pi-go", "extensions", "demo")
 	writeManifest(t, extDir, `{
 		"name": "demo",
@@ -70,6 +72,13 @@ description: Demo skill
 ---
 Demo skill body.
 `)
+	writePromptTemplate(t, filepath.Join(root, ".pi-go", "prompts", "review.md"), `---
+name: review
+description: Review the current branch
+---
+Review the current branch. Extra context: {{args}}
+`)
+	mustMkdirAllRuntime(t, filepath.Join(root, ".pi-go", "themes"))
 
 	sandbox, err := tools.NewSandbox(root)
 	if err != nil {
@@ -102,8 +111,14 @@ Demo skill body.
 	if len(rt.Skills) != 1 || rt.Skills[0].Name != "demo-skill" {
 		t.Fatalf("expected demo skill to load, got %+v", rt.Skills)
 	}
-	if len(rt.SlashCommands) != 1 || rt.SlashCommands[0].Name != "demo" {
-		t.Fatalf("expected demo slash command, got %+v", rt.SlashCommands)
+	if len(rt.PromptTemplates) != 1 || rt.PromptTemplates[0].Name != "review" {
+		t.Fatalf("expected review prompt template, got %+v", rt.PromptTemplates)
+	}
+	if len(rt.SlashCommands) != 2 {
+		t.Fatalf("expected demo + prompt-template slash commands, got %+v", rt.SlashCommands)
+	}
+	if rt.ThemeDirs == nil || len(rt.ThemeDirs) == 0 {
+		t.Fatalf("expected discovered theme dirs, got %+v", rt.ThemeDirs)
 	}
 	if !strings.Contains(rt.Instruction, "Use the demo extension.") {
 		t.Fatalf("expected instruction to include manifest prompt, got %q", rt.Instruction)
@@ -168,6 +183,23 @@ func writeSkill(t *testing.T, dir, content string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writePromptTemplate(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustMkdirAllRuntime(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
