@@ -22,13 +22,20 @@ const (
 	DiagnosticsDelay = 2 * time.Second
 )
 
-// BuildLSPAfterToolCallback creates an AfterToolCallback that:
+// BuildLSPAfterToolCallback creates an optional AfterToolCallback that:
 // - Formats files after write tool calls via the LSP server
 // - Collects diagnostics after write/edit tool calls and appends them to the result
 //
-// If no LSP server is available for a file type, the callback is a no-op.
+// When LSP is not wired into startup, callers can omit this callback entirely.
+// If mgr is nil or no LSP server is available for a file type, the callback is a no-op.
 // All errors are logged but never fail the tool call.
 func BuildLSPAfterToolCallback(mgr *Manager) llmagent.AfterToolCallback {
+	if mgr == nil {
+		return func(_ tool.Context, _ tool.Tool, _ map[string]any, result map[string]any, _ error) (map[string]any, error) {
+			return result, nil
+		}
+	}
+
 	return func(ctx tool.Context, t tool.Tool, args, result map[string]any, err error) (map[string]any, error) {
 		name := t.Name()
 		if name != "write" && name != "edit" {
@@ -71,7 +78,7 @@ func BuildLSPAfterToolCallback(mgr *Manager) llmagent.AfterToolCallback {
 
 		// For write tool: attempt formatting.
 		if name == "write" {
-			result = formatFile(ctx, mgr, srv, filePath, result)
+			result = formatFile(ctx, srv, filePath, result)
 		}
 
 		// For both write and edit: collect diagnostics.
@@ -88,7 +95,7 @@ type formatter interface {
 }
 
 // formatFile requests formatting from the LSP server and applies edits to disk.
-func formatFile(_ context.Context, _ *Manager, srv *Server, filePath string, result map[string]any) map[string]any {
+func formatFile(_ context.Context, srv *Server, filePath string, result map[string]any) map[string]any {
 	return formatFileWithFormatter(srv, filePath, result)
 }
 

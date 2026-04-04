@@ -2,7 +2,7 @@
 
 ## Overview
 
-pi-go is a coding agent built on [Google ADK Go](https://google.golang.org/adk) with multi-provider LLM support, sandboxed tool execution, session persistence, an interactive terminal UI, LSP integration, and a subagent orchestration system.
+pi-go is a coding agent built on [Google ADK Go](https://google.golang.org/adk) with multi-provider LLM support, sandboxed tool execution, session persistence, an interactive terminal UI, optional LSP integration, and a subagent orchestration system.
 
 ## Package Structure
 
@@ -17,13 +17,13 @@ pi-go/
     ├── config/                      # Config loading (global + project), model roles
     ├── extension/                    # Hooks, skills, MCP integration
     ├── guardrail/                    # Daily token usage tracking and limits
-    ├── lsp/                         # LSP integration (protocol, client, manager, languages, hooks)
+    ├── lsp/                         # Optional LSP integration (protocol, client, manager, languages, hooks)
     ├── logger/                      # Session logging to ~/.pi-go/log/
     ├── memory/                      # Optional persistent memory subsystem (not wired into default startup)
     ├── provider/                    # LLM providers (Anthropic, OpenAI, Gemini)
     ├── rpc/                         # Unix socket JSON-RPC server
     ├── session/                     # JSONL persistence, branching, compaction
-    ├── tools/                       # Sandboxed tools (read, write, edit, bash, grep, find, ls, tree, git, lsp)
+    ├── tools/                       # Sandboxed tools (read, write, edit, bash, grep, find, ls, tree, git) plus optional LSP helpers
     └── tui/                         # Bubble Tea v2 interactive UI
 ```
 
@@ -40,7 +40,7 @@ graph TD
     cli --> session["session"]
     cli --> tui["tui"]
     cli --> rpc["rpc"]
-    cli --> lsp["lsp"]
+    cli -. optional .-> lsp["lsp"]
     cli --> guardrail["guardrail"]
     cli --> auth["auth"]
     cli --> audit["audit"]
@@ -103,6 +103,7 @@ sequenceDiagram
     participant LLM as LLM Provider
     participant T as Tool (sandboxed)
     participant S as Session Store
+    participant LSP as Optional LSP Integration
 
     U->>CLI: prompt text
     CLI->>A: Run(ctx, sessionID, message)
@@ -115,6 +116,11 @@ sequenceDiagram
         T-->>R: Tool result
         R->>LLM: GenerateContent(with tool result)
         LLM-->>R: Final text response
+    end
+
+    opt Optional LSP wiring
+        T->>LSP: Call opt-in LSP tool or callback
+        LSP-->>T: Diagnostics / formatting / symbol data
     end
 
     R->>S: AppendEvent(event)
@@ -213,15 +219,15 @@ config.json:
 
 CLI flags `--smol`, `--plan`, `--slow` override the active role for a single invocation.
 
-## LSP Integration
+## Optional LSP Integration
 
-The LSP system provides language intelligence through two mechanisms:
+The LSP system remains available in-tree, but it is no longer part of default core startup. Extensions or custom startup code can opt in to two pieces:
 
-**Hooks** (automatic, via `AfterToolCallback`):
-- **Format-on-write**: After `write` or `edit` tool calls, requests formatting from the language server and applies edits (5s timeout)
+**Hooks** (opt-in, via `BuildLSPAfterToolCallback`):
+- **Format-on-write**: After `write` tool calls, requests formatting from the language server and applies edits (5s timeout)
 - **Diagnostics-on-edit**: After file modifications, collects compiler errors/warnings with a 2s delay for server processing
 
-**Explicit tools** (LLM-invoked):
+**Explicit tools** (opt-in, via `tools.LSPTools`):
 - `lsp-diagnostics` — Get errors and warnings for a file
 - `lsp-definition` — Go to definition of symbol at position
 - `lsp-references` — Find all references to a symbol
@@ -375,28 +381,31 @@ sequenceDiagram
     participant Init as Deferred Init Goroutine
     participant Tools as Core Tools
     participant Git as Git
-    participant LSP as LSP Manager
     participant MCP as MCP Servers
     participant Skills as Skills Loader
     participant Agent as Agent Builder
+    participant LSP as Optional LSP Package
 
     TUI->>Init: Start background init
     Init->>Tools: Phase 1: Create sandbox + core tools
     par Parallel Initialization
         Init->>Git: Detect repo, discover agents
-        Init->>LSP: Create LSP manager + tools
         Init->>MCP: Launch MCP servers
         Init->>Skills: Load .SKILL.md files
     end
     Init->>Agent: Phase 3: Build orchestrator + agent
+    opt Custom startup or extension wires LSP
+        Agent->>LSP: Register manager, tools, callback
+    end
     Init->>TUI: InitEvent{Result: InitResult}
     TUI->>User: Ready to accept input
 ```
 
 **Key patterns:**
 - TUI starts immediately with spinner showing initialization progress
-- Heavy I/O operations run in parallel (git, LSP, MCP, skills)
-- Agent is created last after all dependencies are ready
+- Heavy I/O operations run in parallel (git, MCP, skills)
+- Agent is created last after all default-core dependencies are ready
+- LSP is available for opt-in wiring, but is not part of deferred init by default
 - Progress sent via `InitEvent` channel
 
 ## Retry & Error Handling

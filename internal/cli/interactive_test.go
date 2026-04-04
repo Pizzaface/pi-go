@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/dimetron/pi-go/internal/config"
+	"github.com/dimetron/pi-go/internal/tui"
 )
 
 // runGit is a helper that executes a git command in the given directory
@@ -135,4 +139,40 @@ func TestCleanupNilResources(t *testing.T) {
 	// cleanup should not panic when all resources are nil.
 	r := &initResources{}
 	r.cleanup() // Should not panic.
+}
+
+func TestDeferredInitDoesNotReportLSPSubsystem(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cwd := t.TempDir()
+	ch := make(chan tui.InitEvent, 32)
+	res := &initResources{}
+
+	go func() {
+		deferredInit(context.Background(), config.Config{}, &cliMockLLM{name: "test-llm", response: "ok"}, nil, cwd, cwd, ch, res)
+		close(ch)
+	}()
+
+	sawLSP := false
+	sawFinal := false
+	for ev := range ch {
+		if ev.Err != nil {
+			t.Fatalf("deferredInit error: %v", ev.Err)
+		}
+		if ev.Item == "lsp" {
+			sawLSP = true
+		}
+		if ev.Result != nil {
+			sawFinal = true
+		}
+	}
+
+	if sawLSP {
+		t.Fatal("default deferred init should not initialize or report LSP")
+	}
+	if !sawFinal {
+		t.Fatal("expected deferred init to emit a final result")
+	}
+
+	res.cleanup()
 }
