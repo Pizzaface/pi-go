@@ -206,11 +206,6 @@ func runNonInteractive(
 	}
 	defer func() { _ = sandbox.Close() }()
 
-	coreTools, err := tools.CoreTools(sandbox)
-	if err != nil {
-		return fmt.Errorf("creating core tools: %w", err)
-	}
-
 	var instruction string
 	if flagSystem != "" {
 		instruction = flagSystem
@@ -233,29 +228,19 @@ func runNonInteractive(
 			compactorCfg.MaxLines = cfg.Compactor.MaxLines
 		}
 	}
-	compactorCB := tools.BuildCompactorCallback(compactorCfg, tools.NewCompactMetrics())
+	compactorMetrics := tools.NewCompactMetrics()
+	compactorCB := tools.BuildCompactorCallback(compactorCfg, compactorMetrics)
 
-	hooks := convertHooks(cfg.Hooks)
-	beforeCBs := extension.BuildBeforeToolCallbacks(hooks)
-	afterCBs := extension.BuildAfterToolCallbacks(hooks)
-	afterCBs = append(afterCBs, compactorCB)
-
-	skillDirs := []string{}
-	if homeDir, hErr := os.UserHomeDir(); hErr == nil {
-		skillDirs = append(skillDirs, filepath.Join(homeDir, ".pi-go", "skills"))
+	runtime, err := extension.BuildRuntime(parentCtx, extension.RuntimeConfig{
+		Config:          cfg,
+		WorkDir:         cwd,
+		Sandbox:         sandbox,
+		BaseInstruction: instruction,
+	})
+	if err != nil {
+		return fmt.Errorf("building extension runtime: %w", err)
 	}
-	skillDirs = append(skillDirs,
-		filepath.Join(".pi-go", "skills"),
-		filepath.Join(".claude", "skills"),
-		filepath.Join(".cursor", "skills"),
-	)
-	skills, _ := extension.LoadSkills(skillDirs...)
-	if len(skills) > 0 {
-		instruction += "\n\n# Available Skills\n\n"
-		for _, s := range skills {
-			instruction += fmt.Sprintf("- /%s: %s\n", s.Name, s.Description)
-		}
-	}
+	afterCBs := append(runtime.AfterToolCallbacks, compactorCB)
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -269,10 +254,11 @@ func runNonInteractive(
 
 	ag, err := agent.New(agent.Config{
 		Model:               llm,
-		Tools:               coreTools,
-		Instruction:         instruction,
+		Tools:               runtime.Tools,
+		Toolsets:            runtime.Toolsets,
+		Instruction:         runtime.Instruction,
 		SessionService:      sessionSvc,
-		BeforeToolCallbacks: beforeCBs,
+		BeforeToolCallbacks: runtime.BeforeToolCallbacks,
 		AfterToolCallbacks:  afterCBs,
 	})
 	if err != nil {
@@ -296,6 +282,9 @@ func runNonInteractive(
 		if err != nil {
 			return fmt.Errorf("creating session: %w", err)
 		}
+	}
+	if err := runtime.RunLifecycleHooks(ctx, extension.LifecycleEventSessionStart, map[string]any{"session_id": sessionID, "mode": mode}); err != nil {
+		return fmt.Errorf("running extension session_start hooks: %w", err)
 	}
 
 	sessionLog, err := logger.New()

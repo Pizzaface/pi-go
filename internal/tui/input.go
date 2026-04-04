@@ -42,9 +42,10 @@ type InputModel struct {
 	MentionSelectedIndex int
 
 	// Dependencies (set by root model).
-	Skills    []extension.Skill
-	SkillDirs []string
-	WorkDir   string
+	Skills            []extension.Skill
+	SkillDirs         []string
+	ExtensionCommands []extension.SlashCommand
+	WorkDir           string
 }
 
 // NewInputModel creates an InputModel with initial state.
@@ -485,6 +486,13 @@ func (im *InputModel) AllCommandNames() []string {
 	}
 	for _, skill := range im.Skills {
 		name := "/" + skill.Name
+		if !seen[name] {
+			seen[name] = true
+			cmds = append(cmds, name)
+		}
+	}
+	for _, cmd := range im.ExtensionCommands {
+		name := "/" + strings.TrimPrefix(cmd.Name, "/")
 		if !seen[name] {
 			seen[name] = true
 			cmds = append(cmds, name)

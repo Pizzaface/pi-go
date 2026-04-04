@@ -70,9 +70,14 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	default:
+		name := strings.TrimPrefix(cmd, "/")
+		for _, extCmd := range m.cfg.ExtensionCommands {
+			if strings.EqualFold(extCmd.Name, name) {
+				return m.submitPrompt(extCmd.Render(parts[1:]), nil)
+			}
+		}
 		// Check if it's a dynamic skill command.
-		skillName := strings.TrimPrefix(cmd, "/")
-		if skill, ok := extension.FindSkill(m.cfg.Skills, skillName); ok {
+		if skill, ok := extension.FindSkill(m.cfg.Skills, name); ok {
 			return m.handleSkillCommand(skill, parts[1:])
 		}
 		m.chatModel.Messages = append(m.chatModel.Messages, message{
@@ -350,6 +355,16 @@ func (m *model) showCommandList() {
 		}
 		b.WriteString("\n")
 	}
+	if len(m.cfg.ExtensionCommands) > 0 {
+		b.WriteString("\n**Extension commands:**\n")
+		for _, cmd := range m.cfg.ExtensionCommands {
+			fmt.Fprintf(&b, "  `/%s`", strings.TrimPrefix(cmd.Name, "/"))
+			if cmd.Description != "" {
+				b.WriteString(" — " + cmd.Description)
+			}
+			b.WriteString("\n")
+		}
+	}
 	if len(m.cfg.Skills) > 0 {
 		b.WriteString("\n**Skills:**\n")
 		for _, skill := range m.cfg.Skills {
@@ -395,6 +410,17 @@ func (m *model) formatHelp() string {
 	b.WriteString("  `/skills`              — List available skills\n")
 	b.WriteString("  `/skills create <n>`   — Create a new skill\n")
 	b.WriteString("  `/skills load`         — Reload skills from disk\n")
+
+	if len(m.cfg.ExtensionCommands) > 0 {
+		b.WriteString("\n**Extension commands:**\n")
+		for _, cmd := range m.cfg.ExtensionCommands {
+			fmt.Fprintf(&b, "  `/%s`", strings.TrimPrefix(cmd.Name, "/"))
+			if cmd.Description != "" {
+				b.WriteString(" — " + cmd.Description)
+			}
+			b.WriteString("\n")
+		}
+	}
 
 	if len(m.cfg.Skills) > 0 {
 		b.WriteString("\n**Available skills:**\n")
