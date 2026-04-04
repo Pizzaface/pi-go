@@ -14,7 +14,6 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
@@ -44,7 +43,6 @@ func runInteractive(
 	cfg config.Config,
 	llm adkmodel.LLM,
 	info provider.Info,
-	tokenTracker *guardrail.Tracker,
 	activeRole, cwd, sandboxRoot string,
 ) error {
 	initCh := make(chan tui.InitEvent, 32)
@@ -58,7 +56,7 @@ func runInteractive(
 	go func() {
 		defer close(initDone)
 		defer close(initCh)
-		deferredInit(initCtx, cfg, llm, tokenTracker, cwd, sandboxRoot, initCh, &res)
+		deferredInit(initCtx, cfg, llm, cwd, sandboxRoot, initCh, &res)
 	}()
 
 	tuiErr := tui.Run(ctx, tui.Config{
@@ -69,7 +67,6 @@ func runInteractive(
 		Roles:        cfg.Roles,
 		WorkDir:      cwd,
 		ThemeName:    cfg.Theme,
-		TokenTracker: tokenTracker,
 		DeferredInit: initCh,
 	})
 
@@ -85,7 +82,6 @@ func deferredInit(
 	ctx context.Context,
 	cfg config.Config,
 	llm adkmodel.LLM,
-	tokenTracker *guardrail.Tracker,
 	cwd, sandboxRoot string,
 	ch chan<- tui.InitEvent,
 	res *initResources,
@@ -220,8 +216,7 @@ func deferredInit(
 			compactorCfg.MaxLines = cfg.Compactor.MaxLines
 		}
 	}
-	compactMetrics := tools.NewCompactMetrics()
-	compactorCB := tools.BuildCompactorCallback(compactorCfg, compactMetrics)
+	compactorCB := tools.BuildCompactorCallback(compactorCfg, tools.NewCompactMetrics())
 
 	hooks := convertHooks(cfg.Hooks)
 	beforeCBs := extension.BuildBeforeToolCallbacks(hooks)
@@ -272,29 +267,23 @@ func deferredInit(
 		sessionLog.SessionStart(sessionID, llm.Name(), "interactive")
 	}
 
-	// Commit message function.
-	commitMsgFn := buildCommitMsgFunc(ctx, cfg)
-
 	send("agent", true)
 
 	// Send final result.
 	ch <- tui.InitEvent{
 		Done: true,
 		Result: &tui.InitResult{
-			Agent:             ag,
-			SessionID:         sessionID,
-			SessionService:    sessionSvc,
-			Logger:            sessionLog,
-			Skills:            ps.skills,
-			SkillDirs:         ps.skillDirs,
-			GenerateCommitMsg: commitMsgFn,
-			TokenTracker:      tokenTracker,
-			CompactMetrics:    compactMetrics,
-			RestartCh:         restartCh,
-			Screen:            screen,
-			GitBranch:         ps.gitBranch,
-			DiffAdded:         ps.diffAdded,
-			DiffRemoved:       ps.diffRemoved,
+			Agent:          ag,
+			SessionID:      sessionID,
+			SessionService: sessionSvc,
+			Logger:         sessionLog,
+			Skills:         ps.skills,
+			SkillDirs:      ps.skillDirs,
+			RestartCh:      restartCh,
+			Screen:         screen,
+			GitBranch:      ps.gitBranch,
+			DiffAdded:      ps.diffAdded,
+			DiffRemoved:    ps.diffRemoved,
 		},
 	}
 }

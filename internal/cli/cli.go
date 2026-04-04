@@ -17,13 +17,11 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/jsonrpc"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
-	"github.com/dimetron/pi-go/internal/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -71,7 +69,6 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification for LLM API calls")
 
 	cmd.AddCommand(newPingCmd())
-	cmd.AddCommand(newAuditCmd())
 
 	return cmd
 }
@@ -156,10 +153,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating LLM provider: %w", err)
 	}
 
-	// Create token usage tracker and wrap LLM with guardrail.
-	tokenTracker := guardrail.New(cfg.MaxDailyTokens)
-	llm = guardrail.WrapModel(llm, tokenTracker)
-
 	prompt := strings.Join(args, " ")
 
 	cwd, err := os.Getwd()
@@ -191,11 +184,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// Interactive mode: show TUI immediately, initialize in background.
 	if mode == "interactive" {
-		return runInteractive(cmd.Context(), cfg, llm, info, tokenTracker, activeRole, cwd, sandboxRoot)
+		return runInteractive(cmd.Context(), cfg, llm, info, activeRole, cwd, sandboxRoot)
 	}
 
 	// Non-interactive modes: synchronous initialization.
-	return runNonInteractive(cmd.Context(), cmd, cfg, llm, info, tokenTracker, cwd, sandboxRoot, mode, prompt)
+	return runNonInteractive(cmd.Context(), cmd, cfg, llm, info, cwd, sandboxRoot, mode, prompt)
 }
 
 // runNonInteractive performs synchronous initialization and runs print/json/rpc modes.
@@ -205,7 +198,6 @@ func runNonInteractive(
 	cfg config.Config,
 	llm adkmodel.LLM,
 	info provider.Info,
-	tokenTracker *guardrail.Tracker,
 	cwd, sandboxRoot, mode, prompt string,
 ) error {
 	sandbox, err := tools.NewSandbox(sandboxRoot)
@@ -485,51 +477,6 @@ func runJSON(ctx context.Context, ag *agent.Agent, sessionID, prompt string, log
 	}
 	_ = enc.Encode(jsonEvent{Type: "message_end"})
 	return nil
-}
-
-// buildCommitMsgFunc creates the GenerateCommitMsg callback for /commit.
-// It resolves the "commit" role (falling back to "default") and creates a one-shot LLM.
-func buildCommitMsgFunc(ctx context.Context, cfg config.Config) func(context.Context, string) (string, error) {
-	// Resolve commit role, fall back to default.
-	commitModel, commitProvider, err := cfg.ResolveRole("commit")
-	if err != nil {
-		commitModel, commitProvider, err = cfg.ResolveRole("default")
-		if err != nil {
-			return nil // no model available
-		}
-	}
-
-	info, err := provider.Resolve(commitModel)
-	if err != nil {
-		return nil
-	}
-	if commitProvider != "" {
-		info.Provider = commitProvider
-	}
-
-	keys := config.APIKeys()
-	apiKey := keys[info.Provider]
-	baseURLs := config.BaseURLs()
-	baseURL := baseURLs[info.Provider]
-	if baseURL == "" && info.Ollama {
-		baseURL = "http://localhost:11434"
-	}
-
-	if info.Ollama {
-		if err := provider.CheckOllama(baseURL); err != nil {
-			return nil
-		}
-	}
-
-	llm, err := provider.NewLLM(ctx, info, apiKey, baseURL, "none", &provider.LLMOptions{
-		ExtraHeaders:    cfg.ExtraHeaders,
-		InsecureSkipTLS: cfg.InsecureSkipTLS,
-	})
-	if err != nil {
-		return nil
-	}
-
-	return tui.GenerateCommitMsgFunc(llm)
 }
 
 // mergeExtraHeaders merges config extraHeaders with CLI --header flags.

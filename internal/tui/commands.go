@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/extension"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	tea "charm.land/bubbletea/v2"
 )
 
 func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
@@ -50,8 +50,6 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		m.handleCompactCommand()
 	case "/history":
 		m.handleHistoryCommand(parts[1:])
-	case "/commit":
-		return m.handleCommitCommand()
 	case "/login":
 		return m.handleLoginCommand(parts[1:])
 	case "/skills":
@@ -64,8 +62,6 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleSkillListCommand()
 	case "/theme":
 		return m.handleThemeCommand(parts[1:])
-	case "/rtk":
-		m.handleRTKCommand(parts[1:])
 	case "/ping":
 		return m.handlePingCommand(parts[1:])
 	case "/restart":
@@ -206,7 +202,6 @@ func (m *model) handleCompactCommand() {
 	})
 }
 
-
 // formatModelInfo returns a formatted string showing the current model and all configured roles.
 func (m *model) formatModelInfo() string {
 	var b strings.Builder
@@ -331,7 +326,6 @@ func (m *model) formatContextUsage() string {
 		}
 	}
 
-
 	// Compaction stats.
 	if cm := m.cfg.CompactMetrics; cm != nil {
 		stats := cm.FormatStats()
@@ -387,7 +381,6 @@ func (m *model) formatHelp() string {
 	b.WriteString("  `/exit`, `/quit`       — Exit\n")
 
 	b.WriteString("\n**Git:**\n")
-	b.WriteString("  `/commit`              — Generate commit from staged changes\n")
 	b.WriteString("  `/branch <name>`       — Create/switch/list branches\n")
 
 	b.WriteString("\n**Display:**\n")
@@ -395,7 +388,6 @@ func (m *model) formatHelp() string {
 
 	b.WriteString("\n**System:**\n")
 
-	b.WriteString("  `/rtk`                 — Output compaction stats\n")
 	b.WriteString("  `/login <provider>`    — Configure API keys\n")
 	b.WriteString("  `/restart`             — Restart pi process\n")
 
@@ -506,31 +498,4 @@ func (m *model) handleThemeCommand(args []string) (tea.Model, tea.Cmd) {
 		content: fmt.Sprintf("Theme switched to `%s` (%s). Colors will apply to new output.", cur.Name, cur.DisplayName),
 	})
 	return m, nil
-}
-
-// handleRTKCommand handles the /rtk command and subcommands.
-func (m *model) handleRTKCommand(args []string) {
-	sub := "stats"
-	if len(args) > 0 {
-		sub = strings.ToLower(args[0])
-	}
-	switch sub {
-	case "stats":
-		if m.cfg.CompactMetrics == nil {
-			m.chatModel.Messages = append(m.chatModel.Messages, message{
-				role:    "assistant",
-				content: "Output compactor is not active.",
-			})
-			return
-		}
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: m.cfg.CompactMetrics.FormatStats(),
-		})
-	default:
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: "Usage: `/rtk` or `/rtk stats` — Show output compaction statistics",
-		})
-	}
 }

@@ -36,7 +36,7 @@ func renderWelcome() string {
 		"",
 		dim.Render("  Commands: ") +
 			cmd.Render("/help") + dim.Render(" ") +
-			cmd.Render("/commit") + dim.Render(" ") +
+			cmd.Render("/branch") + dim.Render(" ") +
 			cmd.Render("/ping"),
 		dim.Render("  Press ") + cmd.Render("Tab") + dim.Render(" to cycle commands, ") +
 			cmd.Render("@") + dim.Render(" to mention files"),

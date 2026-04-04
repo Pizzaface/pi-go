@@ -23,17 +23,12 @@ func TestNewAuditCmd(t *testing.T) {
 	}
 }
 
-func TestAuditCmdRegistered(t *testing.T) {
+func TestAuditCmdNotRegisteredOnRoot(t *testing.T) {
 	root := newRootCmd()
-	found := false
 	for _, c := range root.Commands() {
 		if c.Use == "audit" {
-			found = true
-			break
+			t.Fatal("audit command should not be registered on root by default")
 		}
-	}
-	if !found {
-		t.Error("audit command not registered on root")
 	}
 }
 

@@ -200,12 +200,12 @@ func TestSlashCommand_Skills(t *testing.T) {
 	}
 }
 
-func TestSlashCommand_RTK_NoMetrics(t *testing.T) {
+func TestSlashCommand_RTKUnknownByDefault(t *testing.T) {
 	m := newTestModel(t)
 	m.handleSlashCommand("/rtk")
 	last := m.chatModel.Messages[len(m.chatModel.Messages)-1]
-	if last.content != "Output compactor is not active." {
-		t.Errorf("unexpected rtk message: %q", last.content)
+	if !contains(last.content, "Unknown command") {
+		t.Errorf("expected unknown-command message, got %q", last.content)
 	}
 }
 
@@ -394,27 +394,6 @@ func TestRenderInput_CursorInMiddle(t *testing.T) {
 	out := m.inputModel.View(m.running)
 	if out == "" {
 		t.Error("expected non-empty rendered input")
-	}
-}
-
-// --- handleRTKCommand ---
-
-func TestHandleRTKCommand_WithMetrics(t *testing.T) {
-	m := newTestModel(t)
-	m.cfg.CompactMetrics = &mockCompactMetrics{}
-	m.handleRTKCommand([]string{})
-	last := m.chatModel.Messages[len(m.chatModel.Messages)-1]
-	if !contains(last.content, "Compacted") {
-		t.Errorf("expected compact stats, got %q", last.content)
-	}
-}
-
-func TestHandleRTKCommand_UnknownSubcommand(t *testing.T) {
-	m := newTestModel(t)
-	m.handleRTKCommand([]string{"unknown"})
-	last := m.chatModel.Messages[len(m.chatModel.Messages)-1]
-	if !contains(last.content, "Usage") {
-		t.Errorf("expected usage message, got %q", last.content)
 	}
 }
 

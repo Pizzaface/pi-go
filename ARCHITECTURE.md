@@ -11,12 +11,12 @@ pi-go/
 ├── cmd/pi/main.go                  # Entry point → cli.Execute()
 └── internal/
     ├── agent/                       # ADK agent setup, retry logic
-    ├── audit/                       # Hidden character scanner for skill audit
+    ├── audit/                       # Optional hidden-character scanner helpers kept in-tree
     ├── auth/                        # OAuth PKCE/device-code login flows
     ├── cli/                         # CLI flags, output modes, wiring
     ├── config/                      # Config loading (global + project), model roles
     ├── extension/                    # Hooks, skills, optional MCP building blocks
-    ├── guardrail/                    # Daily token usage tracking and limits
+    ├── guardrail/                    # Optional token-guardrail helpers kept in-tree
     ├── lsp/                         # Optional LSP integration (protocol, client, manager, languages, hooks)
     ├── logger/                      # Session logging to ~/.pi-go/log/
     ├── memory/                      # Optional persistent memory subsystem (not wired into default startup)
@@ -41,10 +41,10 @@ graph TD
     cli --> tui["tui"]
     cli --> rpc["rpc"]
     cli -. optional .-> lsp["lsp"]
-    cli --> guardrail["guardrail"]
     cli --> auth["auth"]
-    cli --> audit["audit"]
     cli --> logger["logger"]
+
+    extension -. skill-load auditing .-> audit["audit"]
 
     agent --> adk_runner["ADK runner"]
     agent --> adk_llmagent["ADK llmagent"]
@@ -70,10 +70,9 @@ graph TD
 
     session --> adk_session
 
-    guardrail --> cli
-    guardrail --> provider
+    guardrail -. optional wrapper .-> provider
 
-    audit --> tools
+    audit -. optional scan helper .-> extension
 
     logger --> cli
 
@@ -355,7 +354,6 @@ graph TD
 ~/.pi-go/sessions/             # Session storage
 ~/.pi-go/log/                  # Session logs
 ~/.pi-go/.env                  # API keys (written by /login)
-~/.pi-go/usage.json            # Daily token usage
 ```
 
 Planning and SOP directories are no longer part of core configuration. Any spec-driven or SOP-driven workflow is expected to come from extensions, prompts, or external packages.
@@ -365,12 +363,11 @@ Planning and SOP directories are no longer part of core configuration. Any spec-
 {
   "roles": { "default": {...}, "smol": {...} },
   "hooks": [...],
-  "maxDailyTokens": 0,
   "compactor": { "enabled": true }
 }
 ```
 
-Optional integrations may define additional config fields such as `mcp`, but they are not part of the minimal core path.
+Optional integrations may define additional config fields such as `mcp` or helper-specific settings, but they are not part of the minimal core path.
 
 ## Initialization Flow
 
@@ -457,47 +454,20 @@ graph TD
     style BubbleTea fill:#1a2a1a,color:#fff
 ```
 
-**Slash commands**: `/help`, `/clear`, `/model`, `/session`, `/context`, `/branch`, `/compact`, `/commit`, `/agents`, `/history`, `/login`, `/skills`, `/theme`, `/rtk`, `/ping`, `/restart`, `/exit`, `/quit`
+**Slash commands**: `/help`, `/clear`, `/model`, `/session`, `/context`, `/branch`, `/compact`, `/history`, `/login`, `/skills`, `/skill-create`, `/skill-load`, `/skill-list`, `/theme`, `/ping`, `/restart`, `/exit`, `/quit`
 
-**Keyboard**: Enter (submit), Ctrl+C/Esc (quit), Up/Down (history), PgUp/PgDown (scroll), Enter/Esc (commit confirm/cancel)
+**Keyboard**: Enter (submit), Ctrl+C/Esc (quit), Up/Down (history), PgUp/PgDown (scroll)
 
-## Guardrail System
+## Optional helper packages
 
-```mermaid
-graph TD
-    subgraph Tracking["Token Tracking"]
-        req["LLM Request"] --> tracker["Tracker"]
-        tracker --> guardrail["guardrail.Tracker"]
-        guardrail --> usage["usage.json"]
-    end
+The repo still keeps a few non-core helpers available for custom startup code, but they are no longer part of the default CLI/TUI surface:
 
-    subgraph Enforcement["Limit Enforcement"]
-        tracker -->|exceeds limit| error["LimitExceededError"]
-        tracker -->|within limit| proceed["Proceed"]
-    end
+- `internal/guardrail/` can still wrap an LLM with daily token tracking and limits
+- `internal/audit/` can still scan skill files for hidden Unicode/security issues
+- compactor metrics can still be collected internally without exposing dedicated `/rtk` UI commands
+- commit-generation helpers remain available in-tree for custom shells or extensions, but default TUI no longer ships a `/commit` workflow
 
-    style guardrail fill:#1a3a5c,color:#fff
-    style usage fill:#1a1a2a,color:#fff
-    style error fill:#5c1a1a,color:#fff
-```
-
-**Features:**
-- **Daily token tracking**: Input/output tokens, request count
-- **Configurable limits**: Set via `maxDailyTokens` in config
-- **Persistent storage**: `~/.pi-go/usage.json` (resets at midnight)
-- **Usage formatting**: Human-readable summaries with percentages
-
-**API:**
-```go
-type Tracker struct {
-    limit int64 // max tokens/day (0 = unlimited)
-    usage Usage
-}
-func (t *Tracker) Add(inputTokens, outputTokens int32) error
-func (t *Tracker) Check() error
-func (t *Tracker) Remaining() int64
-func (t *Tracker) PercentUsed() float64
-```
+Default core behavior now avoids assuming any policy or workflow opinion beyond generic harness essentials.
 
 ## Authentication System
 
@@ -536,43 +506,6 @@ graph TD
 
 **CLI command**: `/login [provider]` in TUI
 
-## Audit System
-
-```mermaid
-graph TD
-    subgraph Scan["Hidden Character Scanner"]
-        files["Files"] --> scanner["Scanner"]
-        scanner --> findings["ScanFinding[]"]
-    end
-
-    subgraph Severity["Severity Levels"]
-        findings -->|U+200B-ZWSP| critical["SeverityCritical"]
-        findings -->|U+2028/29|LTR| warning["SeverityWarning"]
-        findings -->|ZWJ/emoji| info["SeverityInfo"]
-    end
-
-    subgraph Output["Output Formats"]
-        findings --> text["Text Table"]
-        findings --> json["JSON"]
-        findings --> markdown["Markdown Table"]
-    end
-
-    style scanner fill:#3a5c5c,color:#fff
-```
-
-**Features:**
-- **Hidden character detection**: ZWSP, LTR marks, BOM, soft hyphens, etc.
-- **Smart context**: ZWJ between emoji downgraded to info
-- **Auto-fix**: `StripDangerous()` removes critical/warning chars
-- **Skill auditing**: `ScanSkillDirs()` audits all skills
-
-**Severity levels:**
-| Level | Characters | Exit Code |
-|-------|------------|-----------|
-| Critical | U+200B-200F (ZWSP, LTR marks) | 1 |
-| Warning | U+2028/29, U+00AD, etc. | 2 |
-| Info | ZWJ in emoji, BOM at start | 0 |
-
 ## Logger System
 
 ```mermaid
@@ -598,7 +531,7 @@ graph TD
 
 ## Planning and workflow guidance
 
-Planning workflows and subagent orchestration are no longer built into core. pi-go's core provides a generic chat TUI, tools, skills, extensions, and model roles; any spec-driven workflows or multi-agent orchestration should be layered on through prompts, skills, extensions, or external packages.
+Planning workflows and subagent orchestration are no longer built into core. pi-go's core provides a generic chat TUI, tools, skills, extensions, and model roles; any spec-driven workflows, security-policy layers, or git-assistant flows should be layered on through prompts, skills, extensions, or external packages.
 
 ## Memory System
 

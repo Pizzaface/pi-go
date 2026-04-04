@@ -558,9 +558,9 @@ func TestMatchingSlashCommands_All(t *testing.T) {
 
 func TestMatchingSlashCommands_Partial(t *testing.T) {
 	matches := matchingSlashCommands("/c")
-	// Should match: /clear, /context, /compact, /commit
-	if len(matches) != 4 {
-		t.Errorf("expected 4 matches for '/c', got %d: %v", len(matches), matches)
+	// Should match: /clear, /context, /compact
+	if len(matches) != 3 {
+		t.Errorf("expected 3 matches for '/c', got %d: %v", len(matches), matches)
 	}
 	for _, m := range matches {
 		if !strings.HasPrefix(m, "/c") {
@@ -1010,7 +1010,6 @@ func setupTestSessionWithID(t *testing.T) (*pisession.FileService, string) {
 	return svc, resp.Session.ID()
 }
 
-
 func TestFormatThemeList(t *testing.T) {
 	themes := []Theme{
 		{Name: "dark", DisplayName: "Dark Theme", ThemeType: "dark"},
@@ -1137,7 +1136,7 @@ func TestRenderWelcome(t *testing.T) {
 		"Welcome to pi-go",
 		"coding agent",
 		"help",
-		"commit",
+		"branch",
 		"Tab",
 	}
 	for _, want := range checks {

@@ -15,15 +15,14 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 
 - **Multi-provider LLM** — Claude (Anthropic), GPT/O-series (OpenAI), Gemini (Google), and Ollama for local models
 - **Sandboxed tools** — File read/write/edit, shell execution, grep, find, tree, and git operations, all restricted to the project directory via `os.Root`
-- **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), slash commands, and theming
+- **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), focused slash commands, and theming
 - **Session persistence** — JSONL append-only event logs with branching, compaction, and resume
-- **Model roles** — Named configurations (default, smol, slow, plan, commit) selectable via CLI flags
+- **Model roles** — Named configurations (default, smol, slow, plan) selectable via CLI flags
 - **Optional LSP integration** — In-tree JSON-RPC client and LSP tools for Go, TypeScript/JS, Python, Rust that can be wired in by extensions or custom startup code
-- **AI Git tools** — Repository overview, file diffs, hunk parsing, and LLM-generated conventional commits (`/commit`)
+- **Core Git visibility** — Repository overview, file diffs, and hunk parsing remain available as tools without prescribing commit workflows
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
-- **Extensions** — Hooks (shell callbacks) and skills (`.SKILL.md` instructions) in the default experience, with optional MCP building blocks available in-tree for custom integrations
-- **Minimal core startup** — Default startup wires core tools, sessions, and skills/hooks without assuming optional subsystems like LSP, MCP, or persistent memory
-- **Skills audit** — Security scanning for hidden Unicode characters, BiDi attacks, and supply-chain threats in skill files (`pi audit`)
+- **Extensions** — Hooks (shell callbacks) and skills (`.SKILL.md` instructions) in the default experience, with optional MCP and helper packages available in-tree for custom integrations
+- **Minimal core startup** — Default startup wires core tools, sessions, and skills/hooks without assuming optional subsystems or policy/workflow layers such as LSP, MCP, persistent memory, token guardrails, or built-in commit/audit helpers
 
 ## Architecture
 
@@ -33,14 +32,15 @@ internal/
 ├── agent/          ADK agent setup, retry logic, runner
 ├── cli/            Cobra CLI flags, output modes (interactive, print, json, rpc)
 ├── config/         Global and project config (roles, hooks, themes, optional integration settings)
-├── audit/          Security scanner for skills (hidden Unicode, supply-chain threats)
+├── audit/          Optional skill-audit helpers kept in-tree for custom wiring
 ├── extension/      Hooks, skills, and optional MCP building blocks
+├── guardrail/      Optional token-guardrail helpers kept in-tree for custom wiring
 ├── lsp/            Optional LSP JSON-RPC client, language registry, manager, hooks
 ├── provider/       LLM providers implementing genai model interface
 ├── rpc/            Unix socket JSON-RPC 2.0 server
 ├── session/        JSONL persistence, branching, compaction
 ├── tools/          Sandboxed tools (read, write, edit, bash, grep, find, git) plus optional LSP helpers
-└── tui/            Bubble Tea v2 UI, slash commands, commit workflow
+└── tui/            Bubble Tea v2 UI and slash commands
 ```
 
 `internal/memory/` remains in-tree as an optional subsystem, but the default core startup no longer initializes it or exposes memory tools automatically.
@@ -109,43 +109,27 @@ make clean      # remove binary
 | Command          | Description                                |
 |------------------|--------------------------------------------|
 | `/help`          | Show available commands                   |
+| `/clear`         | Clear conversation                        |
 | `/model`         | Show current model and roles              |
 | `/session`       | Show current session info                 |
+| `/context`       | Show context usage                        |
 | `/branch`        | Create a conversation branch              |
-| `/commit`        | Generate and apply a git commit           |
 | `/compact`       | Compact session history                   |
 | `/history`       | Show command history                      |
+| `/login`         | Configure API keys                        |
 | `/skills`        | List skill commands and available skills  |
 | `/skill-create`  | Create a new skill                        |
 | `/skill-list`    | List available skills                     |
 | `/skill-load`    | Reload skills from disk                   |
+| `/theme`         | List or switch themes                     |
+| `/ping`          | Test model connectivity                   |
 | `/restart`       | Restart pi-go                             |
-| `/clear`         | Clear conversation                        |
 | `/exit`          | Exit the agent                            |
-
-### Security audit
-
-```bash
-# Scan all skill files for hidden Unicode characters
-./pi audit
-
-# Scan with verbose output (include info-level findings)
-./pi audit -v
-
-# Output as JSON for CI pipelines
-./pi audit --format json --output report.json
-
-# Auto-remove dangerous characters (creates .bak backups)
-./pi audit --strip
-
-# Preview what would be removed
-./pi audit --strip --dry-run
-
-# Scan a specific file
-./pi audit --file path/to/SKILL.md
-```
+| `/quit`          | Exit the agent                            |
 
 Skills are automatically scanned on load — skills with critical findings (Unicode tags, BiDi overrides, variation selector attacks) are blocked from loading.
+
+The scanner and related reporting code remain in-tree as optional building blocks, but the default CLI no longer exposes a dedicated `pi audit` workflow.
 
 ## Configuration
 
@@ -155,6 +139,7 @@ Pi looks for configuration in `~/.pi-go/config.json` (global) and `.pi-go/config
 - **Hooks** — Shell commands triggered on tool events (e.g., post-write formatting)
 - **Themes** — Terminal color schemes via `theme` config field
 - **Optional integration settings** — Additional fields such as `mcp` may be consumed by custom startup code or extensions, but the default core startup does not launch MCP servers automatically
+- **Opt-in helper settings** — Internal helper packages may define extra config fields, but the default core path ignores policy/workflow-specific helpers unless custom startup code wires them in
 
 ## License
 

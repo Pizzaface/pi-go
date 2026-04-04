@@ -295,7 +295,7 @@ func TestCommitParsePorcelain(t *testing.T) {
 	}
 }
 
-func TestHandleSlashCommandHelpContainsCommit(t *testing.T) {
+func TestHandleSlashCommandHelpOmitsCommit(t *testing.T) {
 	m := &model{
 		inputModel: InputModel{Text: "/help"},
 		chatModel:  ChatModel{Messages: make([]message, 0)},
@@ -304,8 +304,8 @@ func TestHandleSlashCommandHelpContainsCommit(t *testing.T) {
 	newM, _ := m.handleSlashCommand("/help")
 	mm := newM.(*model)
 
-	if !strings.Contains(mm.chatModel.Messages[0].content, "/commit") {
-		t.Errorf("expected /help to mention /commit, got %q", mm.chatModel.Messages[0].content)
+	if strings.Contains(mm.chatModel.Messages[0].content, "/commit") {
+		t.Errorf("expected /help to omit /commit, got %q", mm.chatModel.Messages[0].content)
 	}
 }
 
