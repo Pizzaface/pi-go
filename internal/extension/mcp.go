@@ -16,7 +16,8 @@ type MCPServerConfig struct {
 	Args    []string `json:"args"`
 }
 
-// BuildMCPToolsets creates ADK Toolsets from MCP server configurations.
+// BuildMCPToolsets creates ADK Toolsets from MCP server configurations for
+// custom integrations that opt into MCP wiring.
 // Each server is launched as a subprocess using CommandTransport.
 func BuildMCPToolsets(servers []MCPServerConfig) ([]tool.Toolset, error) {
 	var toolsets []tool.Toolset

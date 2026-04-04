@@ -13,7 +13,6 @@ import (
 
 	adkmodel "google.golang.org/adk/model"
 	"google.golang.org/adk/session"
-	adktool "google.golang.org/adk/tool"
 
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
@@ -249,23 +248,6 @@ func runNonInteractive(
 	afterCBs := extension.BuildAfterToolCallbacks(hooks)
 	afterCBs = append(afterCBs, compactorCB)
 
-	var mcpToolsets []adktool.Toolset
-	if cfg.MCP != nil && len(cfg.MCP.Servers) > 0 {
-		mcpServers := make([]extension.MCPServerConfig, len(cfg.MCP.Servers))
-		for i, s := range cfg.MCP.Servers {
-			mcpServers[i] = extension.MCPServerConfig{
-				Name:    s.Name,
-				Command: s.Command,
-				Args:    s.Args,
-			}
-		}
-		var err error
-		mcpToolsets, err = extension.BuildMCPToolsets(mcpServers)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "pi-go: warning: MCP setup failed: %v\n", err)
-		}
-	}
-
 	skillDirs := []string{}
 	if homeDir, hErr := os.UserHomeDir(); hErr == nil {
 		skillDirs = append(skillDirs, filepath.Join(homeDir, ".pi-go", "skills"))
@@ -296,7 +278,6 @@ func runNonInteractive(
 	ag, err := agent.New(agent.Config{
 		Model:               llm,
 		Tools:               coreTools,
-		Toolsets:            mcpToolsets,
 		Instruction:         instruction,
 		SessionService:      sessionSvc,
 		BeforeToolCallbacks: beforeCBs,

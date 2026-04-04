@@ -36,7 +36,7 @@ type Config struct {
 	ExtraHeaders    map[string]string     `json:"extraHeaders,omitempty"`
 	InsecureSkipTLS bool                  `json:"insecureSkipTLS,omitempty"`
 	Tools           map[string]any        `json:"tools,omitempty"`
-	MCP             *MCPConfig            `json:"mcp,omitempty"`
+	MCP             *MCPConfig            `json:"mcp,omitempty"` // optional building blocks for custom integrations; ignored by default startup
 	Hooks           []HookConfig          `json:"hooks,omitempty"`
 	MaxDailyTokens  int64                 `json:"maxDailyTokens,omitempty"` // 0 = unlimited
 	Compactor       *CompactorConfig      `json:"compactor,omitempty"`

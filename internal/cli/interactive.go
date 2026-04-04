@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	adkmodel "google.golang.org/adk/model"
-	adktool "google.golang.org/adk/tool"
 
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
@@ -146,9 +145,6 @@ func deferredInit(
 		diffAdded   int
 		diffRemoved int
 
-		// MCP
-		mcpToolsets []adktool.Toolset
-
 		// Skills
 		skills    []extension.Skill
 		skillDirs []string
@@ -165,29 +161,6 @@ func deferredInit(
 		ps.gitBranch = detectBranch(cwd)
 		ps.diffAdded, ps.diffRemoved = computeDiffStats(cwd)
 		send("git", true)
-	}()
-
-	// MCP
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if cfg.MCP == nil || len(cfg.MCP.Servers) == 0 {
-			return
-		}
-		send("mcp", false)
-		mcpServers := make([]extension.MCPServerConfig, len(cfg.MCP.Servers))
-		for i, s := range cfg.MCP.Servers {
-			mcpServers[i] = extension.MCPServerConfig{
-				Name:    s.Name,
-				Command: s.Command,
-				Args:    s.Args,
-			}
-		}
-		ts, _ := extension.BuildMCPToolsets(mcpServers)
-		ps.mu.Lock()
-		ps.mcpToolsets = ts
-		ps.mu.Unlock()
-		send("mcp", true)
 	}()
 
 	// Skills
@@ -272,7 +245,6 @@ func deferredInit(
 	ag, err := agent.New(agent.Config{
 		Model:               llm,
 		Tools:               coreTools,
-		Toolsets:            ps.mcpToolsets,
 		Instruction:         instruction,
 		SessionService:      sessionSvc,
 		BeforeToolCallbacks: beforeCBs,

@@ -53,7 +53,7 @@ type Config struct {
 
 // InitEvent reports progress from deferred initialization.
 type InitEvent struct {
-	Item   string      // subsystem name (e.g. "tools", "skills", "mcp")
+	Item   string      // subsystem name (e.g. "tools", "git", "skills")
 	Done   bool        // true when this item finished loading
 	Result *InitResult // set on the final event when all init is complete
 	Err    error       // fatal initialization error
