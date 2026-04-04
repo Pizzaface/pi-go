@@ -120,7 +120,7 @@ func runPing(cmd *cobra.Command, args []string) error {
 	out := os.Stderr
 	w := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
 
-	w("* pi-go ping\n")
+	w("* go-pi ping\n")
 	w("* Provider:  %s\n", info.Provider)
 	w("* Model:     %s\n", info.Model)
 	w("* Ollama:    %v\n", info.Ollama)
@@ -260,7 +260,7 @@ func runPing(cmd *cobra.Command, args []string) error {
 	}
 
 	applyPingAuthHeaders(req, info, apiKey, llmOpts.ExtraHeaders)
-	req.Header.Set("User-Agent", "pi-go/"+Version)
+	req.Header.Set("User-Agent", "go-pi/"+Version)
 
 	w("> %s %s HTTP/1.1\n", req.Method, maskedRequestURI(req.URL))
 	w("> Host: %s\n", req.URL.Host)

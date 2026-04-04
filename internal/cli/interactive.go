@@ -43,6 +43,7 @@ func runInteractive(
 	cfg config.Config,
 	llm adkmodel.LLM,
 	info provider.Info,
+	reg *provider.Registry,
 	activeRole, cwd, sandboxRoot string,
 ) error {
 	initCh := make(chan tui.InitEvent, 32)
@@ -60,14 +61,15 @@ func runInteractive(
 	}()
 
 	tuiErr := tui.Run(ctx, tui.Config{
-		LLM:          llm,
-		ModelName:    llm.Name(),
-		ProviderName: info.Provider,
-		ActiveRole:   activeRole,
-		Roles:        cfg.Roles,
-		WorkDir:      cwd,
-		ThemeName:    cfg.Theme,
-		DeferredInit: initCh,
+		LLM:              llm,
+		ModelName:        llm.Name(),
+		ProviderName:     info.Provider,
+		ActiveRole:       activeRole,
+		Roles:            cfg.Roles,
+		ProviderRegistry: reg,
+		WorkDir:          cwd,
+		ThemeName:        cfg.Theme,
+		DeferredInit:     initCh,
 	})
 
 	initCancel() // signal deferred init to stop

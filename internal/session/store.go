@@ -25,6 +25,7 @@ type Meta struct {
 	ID        string    `json:"id"`
 	AppName   string    `json:"appName"`
 	UserID    string    `json:"userID"`
+	Title     string    `json:"title,omitempty"`
 	WorkDir   string    `json:"workDir,omitempty"`
 	Model     string    `json:"model,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -82,6 +83,7 @@ func (s *FileService) Create(_ context.Context, req *session.CreateRequest) (*se
 		ID:        sessionID,
 		AppName:   req.AppName,
 		UserID:    req.UserID,
+		Title:     defaultSessionTitle(now),
 		WorkDir:   cwd,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -185,7 +187,7 @@ func (s *FileService) List(_ context.Context, req *session.ListRequest) (*sessio
 		if err != nil {
 			continue // Skip invalid sessions.
 		}
-		if meta.AppName != req.AppName {
+		if !matchesAppName(meta.AppName, req.AppName) {
 			continue
 		}
 		if req.UserID != "" && meta.UserID != req.UserID {
@@ -264,6 +266,12 @@ func (s *FileService) AppendEvent(_ context.Context, curSession session.Session,
 	sess.updatedAt = event.Timestamp
 	sess.meta.UpdatedAt = event.Timestamp
 
+	if title := deriveSessionTitle(event); title != "" {
+		if sess.meta.Title == "" || sess.meta.Title == defaultSessionTitle(sess.meta.CreatedAt) {
+			sess.meta.Title = title
+		}
+	}
+
 	// Persist: append event to JSONL file.
 	sessionDir := filepath.Join(s.baseDir, sessionID)
 	if err := appendEventToFile(sessionDir, event); err != nil {
@@ -299,7 +307,7 @@ func (s *FileService) loadSession(sessionID, appName, userID string) (*fileSessi
 	if err != nil {
 		return nil, fmt.Errorf("session %s not found", sessionID)
 	}
-	if meta.AppName != appName || meta.UserID != userID {
+	if !matchesAppName(meta.AppName, appName) || meta.UserID != userID {
 		return nil, fmt.Errorf("session %s not found for app=%s user=%s", sessionID, appName, userID)
 	}
 
@@ -328,14 +336,21 @@ func (s *FileService) loadSession(sessionID, appName, userID string) (*fileSessi
 
 // LastSessionID returns the most recently updated session ID, or "" if none.
 func (s *FileService) LastSessionID(appName, userID string) string {
-	entries, err := os.ReadDir(s.baseDir)
-	if err != nil {
+	metas, err := s.ListMeta(appName, userID, 1)
+	if err != nil || len(metas) == 0 {
 		return ""
 	}
+	return metas[0].ID
+}
 
-	var latest string
-	var latestTime time.Time
+// ListMeta returns session metadata sorted by most recently updated first.
+func (s *FileService) ListMeta(appName, userID string, limit int) ([]Meta, error) {
+	entries, err := os.ReadDir(s.baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading sessions dir: %w", err)
+	}
 
+	metas := make([]Meta, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -345,15 +360,22 @@ func (s *FileService) LastSessionID(appName, userID string) string {
 		if err != nil {
 			continue
 		}
-		if meta.AppName != appName || meta.UserID != userID {
+		if !matchesAppName(meta.AppName, appName) || meta.UserID != userID {
 			continue
 		}
-		if meta.UpdatedAt.After(latestTime) {
-			latestTime = meta.UpdatedAt
-			latest = meta.ID
-		}
+		metas = append(metas, *meta)
 	}
-	return latest
+
+	sort.Slice(metas, func(i, j int) bool {
+		if metas[i].UpdatedAt.Equal(metas[j].UpdatedAt) {
+			return metas[i].ID < metas[j].ID
+		}
+		return metas[i].UpdatedAt.After(metas[j].UpdatedAt)
+	})
+	if limit > 0 && len(metas) > limit {
+		metas = metas[:limit]
+	}
+	return metas, nil
 }
 
 // fileSession holds session data in memory, backed by disk.
@@ -470,6 +492,43 @@ func (e eventList) At(i int) *session.Event {
 }
 
 // File I/O helpers.
+
+func defaultSessionTitle(now time.Time) string {
+	return now.Format("2006-01-02 15:04")
+}
+
+func normalizeAppName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	switch name {
+	case "pi-go":
+		return "go-pi"
+	default:
+		return name
+	}
+}
+
+func matchesAppName(stored, requested string) bool {
+	return normalizeAppName(stored) == normalizeAppName(requested)
+}
+
+func deriveSessionTitle(event *session.Event) string {
+	if event == nil || event.Content == nil || event.Content.Role != genai.RoleUser {
+		return ""
+	}
+	for _, part := range event.Content.Parts {
+		text := strings.TrimSpace(part.Text)
+		if text == "" {
+			continue
+		}
+		text = strings.Join(strings.Fields(text), " ")
+		runes := []rune(text)
+		if len(runes) > 60 {
+			text = string(runes[:57]) + "..."
+		}
+		return text
+	}
+	return ""
+}
 
 func writeMeta(sessionDir string, meta *Meta) error {
 	data, err := json.MarshalIndent(meta, "", "  ")

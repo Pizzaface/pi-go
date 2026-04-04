@@ -115,7 +115,7 @@ func packageScope(project bool) extension.PackageScope {
 
 func summarizePackageResources(dir string) string {
 	var found []string
-	for _, name := range []string{"extensions", "skills", "prompts", "themes"} {
+	for _, name := range []string{"extensions", "skills", "prompts", "themes", "models"} {
 		if info, err := os.Stat(fmt.Sprintf("%s/%s", dir, name)); err == nil && info.IsDir() {
 			found = append(found, name)
 		}

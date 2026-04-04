@@ -25,7 +25,7 @@ func renderWelcome() string {
 	lines := []string{
 		face,
 		"",
-		accent.Render("  Welcome to pi-go") + dim.Render(" — your AI coding agent"),
+		accent.Render("  Welcome to go-pi") + dim.Render(" — a minimal coding agent harness"),
 		"",
 		dim.Render("  Ask me anything or describe a task:"),
 		dim.Render("    - ") + dim.Render(`"research this codebase and explain the architecture"`),
@@ -36,8 +36,9 @@ func renderWelcome() string {
 		"",
 		dim.Render("  Commands: ") +
 			cmd.Render("/help") + dim.Render(" ") +
-			cmd.Render("/branch") + dim.Render(" ") +
-			cmd.Render("/ping"),
+			cmd.Render("/resume") + dim.Render(" ") +
+			cmd.Render("/fork") + dim.Render(" ") +
+			cmd.Render("/settings"),
 		dim.Render("  Press ") + cmd.Render("Tab") + dim.Render(" to cycle commands, ") +
 			cmd.Render("@") + dim.Render(" to mention files"),
 	}

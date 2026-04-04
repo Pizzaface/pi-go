@@ -1,5 +1,5 @@
 // Package agent sets up the ADK Go agent loop with tools, system prompt,
-// and runner for the pi-go coding agent.
+// and runner for the go-pi coding agent.
 package agent
 
 import (
@@ -26,14 +26,14 @@ type (
 
 const (
 	// AppName is the ADK application name used for session management.
-	AppName = "pi-go"
+	AppName = "go-pi"
 
 	// DefaultUserID is the default user ID for local single-user sessions.
 	DefaultUserID = "local"
 )
 
 // SystemInstruction is the default system prompt for the coding agent.
-const SystemInstruction = `You are pi-go, a coding agent that helps users with software engineering tasks.
+const SystemInstruction = `You are go-pi, a coding agent that helps users with software engineering tasks.
 
 You have access to tools for reading, writing, and editing files, running shell commands,
 and searching codebases. Use these tools to assist the user effectively.
@@ -98,7 +98,7 @@ The TUI tracks all active tools and shows them in the status bar. Only paralleli
 
 # Internal tools
 
-- restart — Restarts the pi process (re-exec with same binary and args). Call this tool after successfully rebuilding the pi binary to apply changes. The process will restart with the updated binary.
+- restart — Restarts the go-pi process (re-exec with the same binary and args). Call this tool after successfully rebuilding the binary to apply changes. The process will restart with the updated binary.
 
 # JSON String Escaping
 

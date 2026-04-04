@@ -37,6 +37,51 @@ func createTestSession(t *testing.T, svc *FileService) string {
 	return resp.Session.ID()
 }
 
+func TestAppendEventSetsSessionTitle(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	sessionID := createTestSession(t, svc)
+
+	getResp, err := svc.Get(ctx, &session.GetRequest{AppName: "test-app", UserID: "test-user", SessionID: sessionID})
+	if err != nil {
+		t.Fatalf("Get() error: %v", err)
+	}
+
+	event := &session.Event{Timestamp: time.Now()}
+	event.Content = genai.NewContentFromText("Investigate provider alias loading", genai.RoleUser)
+	if err := svc.AppendEvent(ctx, getResp.Session, event); err != nil {
+		t.Fatalf("AppendEvent() error: %v", err)
+	}
+
+	meta, err := readMeta(filepath.Join(svc.baseDir, sessionID))
+	if err != nil {
+		t.Fatalf("readMeta() error: %v", err)
+	}
+	if meta.Title != "Investigate provider alias loading" {
+		t.Fatalf("meta.Title = %q, want %q", meta.Title, "Investigate provider alias loading")
+	}
+}
+
+func TestListMetaMatchesLegacyAppName(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	resp, err := svc.Create(ctx, &session.CreateRequest{AppName: "pi-go", UserID: "test-user"})
+	if err != nil {
+		t.Fatalf("Create() error: %v", err)
+	}
+
+	metas, err := svc.ListMeta("go-pi", "test-user", 10)
+	if err != nil {
+		t.Fatalf("ListMeta() error: %v", err)
+	}
+	if len(metas) != 1 {
+		t.Fatalf("ListMeta() returned %d sessions, want 1", len(metas))
+	}
+	if metas[0].ID != resp.Session.ID() {
+		t.Fatalf("ListMeta()[0].ID = %q, want %q", metas[0].ID, resp.Session.ID())
+	}
+}
+
 func TestCreateSession(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()

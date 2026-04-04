@@ -508,6 +508,11 @@ var slashCommands = []string{
 	"/clear",
 	"/model",
 	"/session",
+	"/new",
+	"/resume",
+	"/fork",
+	"/tree",
+	"/settings",
 	"/context",
 	"/branch",
 	"/compact",
@@ -534,7 +539,17 @@ func slashCommandDesc(cmd string) string {
 	case "/model":
 		return "Show current model"
 	case "/session":
-		return "Show session info"
+		return "Show active session details"
+	case "/new":
+		return "Start a fresh session"
+	case "/resume":
+		return "List or switch saved sessions"
+	case "/fork":
+		return "Fork the current session into a branch"
+	case "/tree":
+		return "Show the current session branch tree"
+	case "/settings":
+		return "Show config and customization paths"
 	case "/context":
 		return "Show context usage"
 	case "/branch":

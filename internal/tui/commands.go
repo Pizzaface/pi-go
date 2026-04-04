@@ -2,13 +2,19 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/dimetron/pi-go/internal/agent"
+	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	pisession "github.com/dimetron/pi-go/internal/session"
+	"google.golang.org/adk/session"
+	"google.golang.org/genai"
 )
 
 func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
@@ -35,10 +41,17 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 			content: m.formatModelInfo(),
 		})
 	case "/session":
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: fmt.Sprintf("Session: `%s`", m.cfg.SessionID),
-		})
+		m.handleSessionCommand()
+	case "/new":
+		m.handleNewCommand(parts[1:])
+	case "/resume":
+		m.handleResumeCommand(parts[1:])
+	case "/fork":
+		m.handleForkCommand(parts[1:])
+	case "/tree":
+		m.handleTreeCommand()
+	case "/settings":
+		m.handleSettingsCommand()
 	case "/context":
 		m.chatModel.Messages = append(m.chatModel.Messages, message{
 			role:    "assistant",
@@ -151,10 +164,11 @@ func (m *model) handleBranchCommand(args []string) {
 			})
 			return
 		}
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: fmt.Sprintf("Switched to branch `%s`.", branchName),
-		})
+		if err := m.loadSessionMessages(m.cfg.SessionID); err != nil {
+			m.appendAssistant(fmt.Sprintf("Switched to branch `%s`, but could not reload the transcript: %v", branchName, err))
+			return
+		}
+		m.appendAssistant(fmt.Sprintf("Switched to branch `%s`.", branchName))
 
 	default:
 		// Treat as branch name to create.
@@ -173,11 +187,290 @@ func (m *model) handleBranchCommand(args []string) {
 		_ = m.cfg.SessionService.SwitchBranch(
 			m.cfg.SessionID, agent.AppName, agent.DefaultUserID, branchName,
 		)
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: fmt.Sprintf("Created and switched to branch `%s`.", branchName),
-		})
+		if err := m.loadSessionMessages(m.cfg.SessionID); err != nil {
+			m.appendAssistant(fmt.Sprintf("Created branch `%s`, but could not reload the transcript: %v", branchName, err))
+			return
+		}
+		m.appendAssistant(fmt.Sprintf("Created and switched to branch `%s`.", branchName))
 	}
+}
+
+func (m *model) appendAssistant(content string) {
+	m.chatModel.Messages = append(m.chatModel.Messages, message{role: "assistant", content: content})
+}
+
+func (m *model) formatSessionInfo() string {
+	if m.cfg.SessionID == "" {
+		return "No active session. Use `/new` to start one."
+	}
+	if m.cfg.SessionService == nil {
+		return fmt.Sprintf("Session: `%s`", m.cfg.SessionID)
+	}
+	meta, err := m.cfg.SessionService.ListMeta(agent.AppName, agent.DefaultUserID, 0)
+	if err != nil {
+		return fmt.Sprintf("Session: `%s`", m.cfg.SessionID)
+	}
+	var current *pisession.Meta
+	for i := range meta {
+		if meta[i].ID == m.cfg.SessionID {
+			current = &meta[i]
+			break
+		}
+	}
+	if current == nil {
+		return fmt.Sprintf("Session: `%s`", m.cfg.SessionID)
+	}
+	branch := "main"
+	if m.cfg.SessionService != nil {
+		branch = m.cfg.SessionService.ActiveBranch(m.cfg.SessionID)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Session:** %s\n\n", formatSessionLabel(*current))
+	fmt.Fprintf(&b, "- **ID**: `%s`\n", current.ID)
+	fmt.Fprintf(&b, "- **Branch**: `%s`\n", branch)
+	if current.WorkDir != "" {
+		fmt.Fprintf(&b, "- **Worktree**: `%s`\n", current.WorkDir)
+	}
+	fmt.Fprintf(&b, "- **Updated**: %s\n", current.UpdatedAt.Format(time.RFC3339))
+	b.WriteString("\nUse `/resume` to switch sessions, `/fork <name>` to branch this one, `/tree` to inspect branches, or `/new` for a clean session.")
+	return b.String()
+}
+
+func formatSessionLabel(meta pisession.Meta) string {
+	title := strings.TrimSpace(meta.Title)
+	if title == "" {
+		title = meta.ID
+	}
+	return fmt.Sprintf("**%s** (`%s`)", title, meta.ID)
+}
+
+func (m *model) handleSessionCommand() {
+	m.appendAssistant(m.formatSessionInfo())
+}
+
+func (m *model) handleNewCommand(args []string) {
+	if m.cfg.Agent == nil || m.cfg.SessionService == nil {
+		m.appendAssistant("Session switching is not available yet.")
+		return
+	}
+	sessionID, err := m.cfg.Agent.CreateSession(m.ctx)
+	if err != nil {
+		m.appendAssistant(fmt.Sprintf("Error creating session: %v", err))
+		return
+	}
+	m.cfg.SessionID = sessionID
+	m.chatModel.Messages = nil
+	m.chatModel.Scroll = 0
+	title := "New session"
+	if metas, err := m.cfg.SessionService.ListMeta(agent.AppName, agent.DefaultUserID, 0); err == nil {
+		for _, meta := range metas {
+			if meta.ID == sessionID && strings.TrimSpace(meta.Title) != "" {
+				title = meta.Title
+				break
+			}
+		}
+	}
+	m.appendAssistant(fmt.Sprintf("Started %s. Ask a question or use `/resume` to jump back to another thread.", formatSessionLabel(pisession.Meta{ID: sessionID, Title: title})))
+}
+
+func (m *model) handleResumeCommand(args []string) {
+	if m.cfg.SessionService == nil {
+		m.appendAssistant("Resume is not available (no session service configured).")
+		return
+	}
+	metas, err := m.cfg.SessionService.ListMeta(agent.AppName, agent.DefaultUserID, 12)
+	if err != nil {
+		m.appendAssistant(fmt.Sprintf("Error listing sessions: %v", err))
+		return
+	}
+	if len(args) == 0 {
+		if len(metas) == 0 {
+			m.appendAssistant("No saved sessions found. Use `/new` to start one.")
+			return
+		}
+		var b strings.Builder
+		b.WriteString("**Recent sessions:**\n")
+		for _, meta := range metas {
+			marker := " "
+			if meta.ID == m.cfg.SessionID {
+				marker = "*"
+			}
+			fmt.Fprintf(&b, "- %s %s — updated %s\n", marker, formatSessionLabel(meta), meta.UpdatedAt.Format(time.RFC3339))
+		}
+		b.WriteString("\nUse `/resume <session-id>` to switch.")
+		m.appendAssistant(b.String())
+		return
+	}
+	query := strings.TrimSpace(args[0])
+	if strings.EqualFold(query, "latest") && len(metas) > 0 {
+		query = metas[0].ID
+	}
+	matches := make([]pisession.Meta, 0, 1)
+	for _, meta := range metas {
+		if meta.ID == query || strings.HasPrefix(meta.ID, query) {
+			matches = append(matches, meta)
+		}
+	}
+	if len(matches) == 0 {
+		m.appendAssistant(fmt.Sprintf("No session matched `%s`. Use `/resume` to list recent sessions.", query))
+		return
+	}
+	if len(matches) > 1 {
+		m.appendAssistant(fmt.Sprintf("`%s` matched multiple sessions. Use a longer prefix.", query))
+		return
+	}
+	if err := m.loadSessionMessages(matches[0].ID); err != nil {
+		m.appendAssistant(fmt.Sprintf("Error loading session `%s`: %v", matches[0].ID, err))
+		return
+	}
+	m.appendAssistant(fmt.Sprintf("Resumed %s.", formatSessionLabel(matches[0])))
+}
+
+func (m *model) handleForkCommand(args []string) {
+	if len(args) == 0 {
+		m.appendAssistant("Usage: `/fork <name>`")
+		return
+	}
+	m.handleBranchCommand(args)
+}
+
+func (m *model) handleTreeCommand() {
+	if m.cfg.SessionService == nil {
+		m.appendAssistant("Branch tree is not available (no session service configured).")
+		return
+	}
+	branches, active, err := m.cfg.SessionService.ListBranches(m.cfg.SessionID, agent.AppName, agent.DefaultUserID)
+	if err != nil {
+		m.appendAssistant(fmt.Sprintf("Error listing branches: %v", err))
+		return
+	}
+	children := make(map[string][]pisession.BranchInfo)
+	var roots []pisession.BranchInfo
+	for _, br := range branches {
+		if br.Parent == nil {
+			roots = append(roots, br)
+			continue
+		}
+		children[*br.Parent] = append(children[*br.Parent], br)
+	}
+	sort.Slice(roots, func(i, j int) bool { return roots[i].Name < roots[j].Name })
+	for name := range children {
+		sort.Slice(children[name], func(i, j int) bool { return children[name][i].Name < children[name][j].Name })
+	}
+	var b strings.Builder
+	b.WriteString("**Session tree:**\n")
+	var walk func(pisession.BranchInfo, string)
+	walk = func(br pisession.BranchInfo, indent string) {
+		marker := " "
+		if br.Name == active {
+			marker = "*"
+		}
+		fmt.Fprintf(&b, "%s%s `%s`\n", indent, marker, br.Name)
+		for _, child := range children[br.Name] {
+			walk(child, indent+"  ")
+		}
+	}
+	for _, root := range roots {
+		walk(root, "")
+	}
+	m.appendAssistant(b.String())
+}
+
+func (m *model) handleSettingsCommand() {
+	m.appendAssistant(m.formatSettingsInfo())
+}
+
+func (m *model) formatSettingsInfo() string {
+	home, _ := os.UserHomeDir()
+	globalConfig := filepath.Join(home, ".pi-go", "config.json")
+	projectConfig := filepath.Join(m.cfg.WorkDir, ".pi-go", "config.json")
+	keys := config.APIKeys()
+	var b strings.Builder
+	b.WriteString("**Settings**\n\n")
+	fmt.Fprintf(&b, "- **Global config**: `%s`\n", globalConfig)
+	fmt.Fprintf(&b, "- **Project config**: `%s`\n", projectConfig)
+	themeName := "default"
+	if m.themeManager != nil {
+		themeName = m.themeManager.CurrentName()
+	}
+	fmt.Fprintf(&b, "- **Theme**: `%s`\n", themeName)
+	fmt.Fprintf(&b, "- **Role**: `%s`\n", defaultString(m.cfg.ActiveRole, "default"))
+	fmt.Fprintf(&b, "- **Provider / model**: `%s / %s`\n", m.cfg.ProviderName, m.cfg.ModelName)
+	if len(keys) == 0 {
+		b.WriteString("- **API keys**: none detected via environment or `~/.pi-go/.env`\n")
+	} else {
+		providers := make([]string, 0, len(keys))
+		for name := range keys {
+			providers = append(providers, name)
+		}
+		sort.Strings(providers)
+		fmt.Fprintf(&b, "- **API keys**: %s\n", strings.Join(providers, ", "))
+	}
+	if reg := m.cfg.ProviderRegistry; reg != nil {
+		providers := reg.Providers()
+		models := reg.Models()
+		if len(providers) > 0 {
+			b.WriteString("\n**Loaded provider families / aliases:**\n")
+			for _, def := range providers {
+				fmt.Fprintf(&b, "- `%s` → %s\n", def.Name, def.Family)
+			}
+		}
+		if len(models) > 0 {
+			b.WriteString("\n**Loaded model aliases:**\n")
+			for _, mdl := range models {
+				fmt.Fprintf(&b, "- `%s` → %s/%s\n", mdl.Name, mdl.Provider, mdl.Target)
+			}
+		}
+		b.WriteString("\nCompatible provider resources extend existing families (`anthropic`, `openai`, `gemini`, `ollama`). If a backend needs a brand-new SDK or auth flow, wire it in intentionally instead of forcing it through `models/*.json`.\n")
+	}
+	b.WriteString("\nUse `/theme`, `/model`, `/login`, and `pi package list` for day-to-day customization. Docs: `docs/settings.md`, `docs/providers.md`, `docs/extensions.md`, `docs/packages.md`. ")
+	return b.String()
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func (m *model) loadSessionMessages(sessionID string) error {
+	resp, err := m.cfg.SessionService.Get(m.ctx, &session.GetRequest{
+		AppName:   agent.AppName,
+		UserID:    agent.DefaultUserID,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("loading session: %w", err)
+	}
+	messages := make([]message, 0)
+	for i := 0; i < resp.Session.Events().Len(); i++ {
+		ev := resp.Session.Events().At(i)
+		if ev == nil || ev.Content == nil {
+			continue
+		}
+		for _, part := range ev.Content.Parts {
+			switch {
+			case part.Text != "" && ev.Content.Role == genai.RoleUser:
+				messages = append(messages, message{role: "user", content: part.Text})
+			case part.Text != "" && ev.Content.Role == "thinking":
+				messages = append(messages, message{role: "thinking", content: part.Text})
+			case part.Text != "":
+				messages = append(messages, message{role: "assistant", content: part.Text})
+			case part.FunctionCall != nil:
+				messages = append(messages, message{role: "tool", tool: part.FunctionCall.Name, toolIn: toolCallSummary(part.FunctionCall.Name, part.FunctionCall.Args)})
+			}
+		}
+	}
+	m.cfg.SessionID = sessionID
+	m.chatModel.Messages = messages
+	m.chatModel.Streaming = ""
+	m.chatModel.Thinking = ""
+	m.chatModel.Scroll = 0
+	if m.cfg.SessionService != nil {
+		m.statusModel.GitBranch = detectBranch(m.cfg.WorkDir)
+	}
+	return nil
 }
 
 // handleCompactCommand triggers session compaction.
@@ -234,6 +527,22 @@ func (m *model) formatModelInfo() string {
 				provInfo = fmt.Sprintf(" [%s]", rc.Provider)
 			}
 			fmt.Fprintf(&b, "- %s **%s**: `%s`%s\n", marker, name, rc.Model, provInfo)
+		}
+	}
+	if reg := m.cfg.ProviderRegistry; reg != nil && reg.HasCustomizations() {
+		providers := reg.Providers()
+		models := reg.Models()
+		if len(providers) > 0 {
+			b.WriteString("\n**Loaded provider aliases:**\n")
+			for _, def := range providers {
+				fmt.Fprintf(&b, "- `%s` → %s\n", def.Name, def.Family)
+			}
+		}
+		if len(models) > 0 {
+			b.WriteString("\n**Loaded model aliases:**\n")
+			for _, mdl := range models {
+				fmt.Fprintf(&b, "- `%s` → %s/%s\n", mdl.Name, mdl.Provider, mdl.Target)
+			}
 		}
 	}
 	return b.String()
@@ -388,14 +697,19 @@ func (m *model) formatHelp() string {
 	b.WriteString("**Commands:**\n")
 	b.WriteString("  `/help`                — Show this help\n")
 	b.WriteString("  `/clear`               — Clear conversation\n")
-	b.WriteString("  `/model`               — Show current model and roles\n")
-	b.WriteString("  `/session`             — Show session info\n")
+	b.WriteString("  `/model`               — Show current model, roles, and loaded aliases\n")
+	b.WriteString("  `/session`             — Show active session details\n")
+	b.WriteString("  `/new`                 — Start a fresh session\n")
+	b.WriteString("  `/resume [id]`         — List or switch saved sessions\n")
+	b.WriteString("  `/fork <name>`         — Fork the current session\n")
+	b.WriteString("  `/tree`                — Show the current session branch tree\n")
+	b.WriteString("  `/settings`            — Show config and customization paths\n")
 	b.WriteString("  `/context`             — Show context usage\n")
 	b.WriteString("  `/compact`             — Compact session context\n")
 	b.WriteString("  `/history [query]`     — Command history\n")
 	b.WriteString("  `/exit`, `/quit`       — Exit\n")
 
-	b.WriteString("\n**Git:**\n")
+	b.WriteString("\n**Branches:**\n")
 	b.WriteString("  `/branch <name>`       — Create/switch/list branches\n")
 
 	b.WriteString("\n**Display:**\n")
@@ -404,7 +718,7 @@ func (m *model) formatHelp() string {
 	b.WriteString("\n**System:**\n")
 
 	b.WriteString("  `/login <provider>`    — Configure API keys\n")
-	b.WriteString("  `/restart`             — Restart pi process\n")
+	b.WriteString("  `/restart`             — Restart the go-pi process\n")
 
 	b.WriteString("\n**Skills:**\n")
 	b.WriteString("  `/skills`              — List available skills\n")

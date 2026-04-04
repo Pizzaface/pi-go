@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
@@ -12,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/adk/session"
+	"google.golang.org/genai"
 )
 
 func TestHandleSlashCommandHelp(t *testing.T) {
@@ -475,6 +477,116 @@ func TestHandleSlashCommandBranchSwitchNoName(t *testing.T) {
 	}
 	if !strings.Contains(mm.chatModel.Messages[0].content, "Usage") {
 		t.Errorf("expected usage message, got %q", mm.chatModel.Messages[0].content)
+	}
+}
+
+func TestHandleSlashCommandForkAliasesBranchCreate(t *testing.T) {
+	svc, sessionID := setupTestSessionWithID(t)
+	m := &model{
+		inputModel: InputModel{Text: "/fork experiment"},
+		chatModel:  ChatModel{Messages: make([]message, 0)},
+		cfg:        Config{SessionService: svc, SessionID: sessionID},
+	}
+
+	newM, _ := m.handleSlashCommand("/fork experiment")
+	mm := newM.(*model)
+	if len(mm.chatModel.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(mm.chatModel.Messages))
+	}
+	if !strings.Contains(mm.chatModel.Messages[0].content, "Created and switched to branch") {
+		t.Fatalf("unexpected content: %q", mm.chatModel.Messages[0].content)
+	}
+}
+
+func TestHandleSlashCommandTreeShowsBranches(t *testing.T) {
+	svc, sessionID := setupTestSessionWithID(t)
+	if err := svc.CreateBranch(sessionID, agent.AppName, agent.DefaultUserID, "experiment"); err != nil {
+		t.Fatalf("CreateBranch() error: %v", err)
+	}
+	m := &model{
+		inputModel: InputModel{Text: "/tree"},
+		chatModel:  ChatModel{Messages: make([]message, 0)},
+		cfg:        Config{SessionService: svc, SessionID: sessionID},
+	}
+
+	newM, _ := m.handleSlashCommand("/tree")
+	mm := newM.(*model)
+	if !strings.Contains(mm.chatModel.Messages[0].content, "main") || !strings.Contains(mm.chatModel.Messages[0].content, "experiment") {
+		t.Fatalf("expected tree output, got %q", mm.chatModel.Messages[0].content)
+	}
+}
+
+func TestHandleSlashCommandResumeListsSessions(t *testing.T) {
+	svc, sessionID := setupTestSessionWithID(t)
+	m := &model{
+		inputModel: InputModel{Text: "/resume"},
+		chatModel:  ChatModel{Messages: make([]message, 0)},
+		cfg:        Config{SessionService: svc, SessionID: sessionID},
+	}
+
+	newM, _ := m.handleSlashCommand("/resume")
+	mm := newM.(*model)
+	if !strings.Contains(mm.chatModel.Messages[0].content, "Recent sessions") {
+		t.Fatalf("expected recent sessions output, got %q", mm.chatModel.Messages[0].content)
+	}
+}
+
+func TestHandleSlashCommandResumeLoadsMessages(t *testing.T) {
+	svc, sessionID := setupTestSessionWithID(t)
+	ctx := t.Context()
+	getResp, err := svc.Get(ctx, &session.GetRequest{AppName: agent.AppName, UserID: agent.DefaultUserID, SessionID: sessionID})
+	if err != nil {
+		t.Fatalf("Get() error: %v", err)
+	}
+	userEvent := &session.Event{Timestamp: time.Now()}
+	userEvent.Content = genai.NewContentFromText("remember me", genai.RoleUser)
+	if err := svc.AppendEvent(ctx, getResp.Session, userEvent); err != nil {
+		t.Fatalf("AppendEvent(user) error: %v", err)
+	}
+	assistantEvent := &session.Event{Timestamp: time.Now().Add(time.Second)}
+	assistantEvent.Content = genai.NewContentFromText("I remember", genai.RoleModel)
+	if err := svc.AppendEvent(ctx, getResp.Session, assistantEvent); err != nil {
+		t.Fatalf("AppendEvent(model) error: %v", err)
+	}
+
+	m := &model{
+		inputModel: InputModel{Text: "/resume " + sessionID},
+		chatModel:  ChatModel{Messages: make([]message, 0)},
+		cfg:        Config{SessionService: svc, SessionID: "different-session"},
+	}
+
+	newM, _ := m.handleSlashCommand("/resume " + sessionID)
+	mm := newM.(*model)
+	if mm.cfg.SessionID != sessionID {
+		t.Fatalf("SessionID = %q, want %q", mm.cfg.SessionID, sessionID)
+	}
+	if len(mm.chatModel.Messages) == 0 {
+		t.Fatal("expected restored messages")
+	}
+	found := false
+	for _, msg := range mm.chatModel.Messages {
+		if msg.content == "remember me" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected restored user message, got %#v", mm.chatModel.Messages)
+	}
+}
+
+func TestHandleSlashCommandSettings(t *testing.T) {
+	m := &model{
+		inputModel:   InputModel{Text: "/settings"},
+		chatModel:    ChatModel{Messages: make([]message, 0)},
+		themeManager: NewThemeManager(),
+		cfg:          Config{WorkDir: t.TempDir(), ProviderName: "openai", ModelName: "gpt-5.4", ActiveRole: "default"},
+	}
+
+	newM, _ := m.handleSlashCommand("/settings")
+	mm := newM.(*model)
+	if !strings.Contains(mm.chatModel.Messages[0].content, "Global config") {
+		t.Fatalf("expected settings output, got %q", mm.chatModel.Messages[0].content)
 	}
 }
 
@@ -1133,10 +1245,10 @@ func TestRenderWelcome(t *testing.T) {
 	got := renderWelcome()
 	// Check for key content (some words may be split by ANSI style codes).
 	checks := []string{
-		"Welcome to pi-go",
+		"Welcome to go-pi",
 		"coding agent",
 		"help",
-		"branch",
+		"resume",
 		"Tab",
 	}
 	for _, want := range checks {
