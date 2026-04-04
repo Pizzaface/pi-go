@@ -204,7 +204,8 @@ func formatObservations(obs []*memory.Observation) string {
 }
 
 // MemoryTools returns memory search tools that operate against the given store.
-// Returns nil if store is nil (memory disabled).
+// The default core does not register these automatically; callers must opt in.
+// Returns nil if store is nil.
 func MemoryTools(store memory.Store) ([]tool.Tool, error) {
 	if store == nil {
 		return nil, nil

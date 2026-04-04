@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
 
 	adkmodel "google.golang.org/adk/model"
 	"google.golang.org/adk/session"
@@ -23,7 +22,6 @@ import (
 	"github.com/dimetron/pi-go/internal/jsonrpc"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/lsp"
-	"github.com/dimetron/pi-go/internal/memory"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
@@ -40,13 +38,12 @@ var (
 	flagURL     string
 	flagHeaders []string
 
-	flagContinue  bool
-	flagInsecure  bool
-	flagSmol      bool
-	flagSlow      bool
-	flagPlan      bool
-	flagMemoryOff bool
-	flagSystem    string
+	flagContinue bool
+	flagInsecure bool
+	flagSmol     bool
+	flagSlow     bool
+	flagPlan     bool
+	flagSystem   string
 )
 
 // Version is set at build time via -ldflags.
@@ -74,7 +71,6 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flagSystem, "system", "", "System instruction (overrides default)")
 	cmd.Flags().StringArrayVar(&flagHeaders, "header", nil, "Extra HTTP header for LLM requests (key=value, repeatable)")
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification for LLM API calls")
-	cmd.Flags().BoolVar(&flagMemoryOff, "memory-off", false, "Disable the persistent memory system for this session")
 
 	cmd.AddCommand(newPingCmd())
 	cmd.AddCommand(newAuditCmd())
@@ -225,63 +221,6 @@ func runNonInteractive(
 		return fmt.Errorf("creating core tools: %w", err)
 	}
 
-
-	// Initialize memory system.
-	var memStore memory.Store
-	var memWorker *memory.Worker
-	memEnabled := !flagMemoryOff && (cfg.Memory == nil || cfg.Memory.Enabled == nil || *cfg.Memory.Enabled)
-	if memEnabled {
-		memCfg := config.MemoryDefaults()
-		if cfg.Memory != nil {
-			if cfg.Memory.DBPath != "" {
-				memCfg.DBPath = cfg.Memory.DBPath
-			}
-			if cfg.Memory.TokenBudget > 0 {
-				memCfg.TokenBudget = cfg.Memory.TokenBudget //nolint:govet // used by context generator
-			}
-			if cfg.Memory.MaxPending > 0 {
-				memCfg.MaxPending = cfg.Memory.MaxPending
-			}
-			if cfg.Memory.LookbackHours > 0 {
-				memCfg.LookbackHours = cfg.Memory.LookbackHours //nolint:govet // reserved for future use
-			}
-		}
-		dbPath := memCfg.DBPath
-		if dbPath == "" {
-			if home, hErr := os.UserHomeDir(); hErr == nil {
-				dbPath = filepath.Join(home, ".pi-go", "memory", "claude-mem.db")
-			}
-		}
-		memDB, memErr := memory.OpenDB(dbPath)
-		if memErr != nil {
-			fmt.Fprintf(os.Stderr, "pi-go: warning: memory system disabled: %v\n", memErr)
-		} else {
-			memStore = memory.NewSQLiteStore(memDB)
-			compressor := memory.NewNoopCompressor()
-			memWorker = memory.NewWorker(memStore, compressor, memCfg.MaxPending)
-			memWorker.Start(parentCtx)
-		}
-	}
-	defer func() {
-		if memWorker != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = memWorker.Shutdown(shutdownCtx)
-		}
-		if memStore != nil {
-			_ = memStore.Close()
-		}
-	}()
-
-	if memStore != nil {
-		memTools, memErr := tools.MemoryTools(memStore)
-		if memErr != nil {
-			fmt.Fprintf(os.Stderr, "pi-go: warning: memory tools disabled: %v\n", memErr)
-		} else if memTools != nil {
-			coreTools = append(coreTools, memTools...)
-		}
-	}
-
 	var instruction string
 	if flagSystem != "" {
 		instruction = flagSystem
@@ -314,35 +253,6 @@ func runNonInteractive(
 	defer lspMgr.Shutdown()
 	afterCBs = append(afterCBs, lsp.BuildLSPAfterToolCallback(lspMgr))
 	afterCBs = append(afterCBs, compactorCB)
-
-	var memSessionID string
-	if memWorker != nil {
-		var excludedTools map[string]bool
-		if cfg.Memory != nil && len(cfg.Memory.ExcludedTools) > 0 {
-			excludedTools = make(map[string]bool, len(cfg.Memory.ExcludedTools))
-			for _, t := range cfg.Memory.ExcludedTools {
-				excludedTools[t] = true
-			}
-		}
-		afterCBs = append(afterCBs, func(_ adktool.Context, t adktool.Tool, args, result map[string]any, toolErr error) (map[string]any, error) {
-			if toolErr != nil || memSessionID == "" {
-				return result, nil
-			}
-			name := t.Name()
-			if excludedTools[name] {
-				return result, nil
-			}
-			memWorker.Enqueue(memory.RawObservation{
-				SessionID:  memSessionID,
-				Project:    cwd,
-				ToolName:   name,
-				ToolInput:  args,
-				ToolOutput: result,
-				Timestamp:  time.Now(),
-			})
-			return result, nil
-		})
-	}
 
 	lspTools, err := tools.LSPTools(lspMgr)
 	if err != nil {
@@ -381,20 +291,6 @@ func runNonInteractive(
 		instruction += "\n\n# Available Skills\n\n"
 		for _, s := range skills {
 			instruction += fmt.Sprintf("- /%s: %s\n", s.Name, s.Description)
-		}
-	}
-
-	if memStore != nil {
-		memCfg := config.MemoryDefaults()
-		if cfg.Memory != nil && cfg.Memory.TokenBudget > 0 {
-			memCfg.TokenBudget = cfg.Memory.TokenBudget
-		}
-		ctxGen := memory.NewContextGenerator(memStore, memCfg.TokenBudget)
-		memContext, ctxErr := ctxGen.Generate(parentCtx, cwd)
-		if ctxErr != nil {
-			fmt.Fprintf(os.Stderr, "pi-go: warning: memory context generation failed: %v\n", ctxErr)
-		} else if memContext != "" {
-			instruction += "\n\n" + memContext
 		}
 	}
 
@@ -438,16 +334,6 @@ func runNonInteractive(
 		if err != nil {
 			return fmt.Errorf("creating session: %w", err)
 		}
-	}
-
-	if memStore != nil {
-		memSessionID = sessionID
-		_ = memStore.CreateSession(ctx, &memory.Session{
-			SessionID: sessionID,
-			Project:   cwd,
-			StartedAt: time.Now(),
-			Status:    "active",
-		})
 	}
 
 	sessionLog, err := logger.New()

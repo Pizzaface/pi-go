@@ -102,8 +102,8 @@ func TestContextGenerator_BasicOutput(t *testing.T) {
 	if !strings.Contains(result, "bugfix") {
 		t.Error("missing bugfix type")
 	}
-	if !strings.Contains(result, "mem-search") {
-		t.Error("missing footer with tool references")
+	if strings.Contains(result, "mem-search") {
+		t.Error("default context output should not assume memory tools are registered")
 	}
 	if !strings.Contains(result, "internal/api/client.go") {
 		t.Error("missing source file grouping")

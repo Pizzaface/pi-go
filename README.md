@@ -22,6 +22,7 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 - **AI Git tools** — Repository overview, file diffs, hunk parsing, and LLM-generated conventional commits (`/commit`)
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
 - **Extensions** — Hooks (shell callbacks), skills (`.SKILL.md` instructions), and MCP server support
+- **Minimal core startup** — Default startup wires core tools, sessions, LSP, and extensions without assuming a persistent memory backend
 - **Skills audit** — Security scanning for hidden Unicode characters, BiDi attacks, and supply-chain threats in skill files (`pi audit`)
 
 ## Architecture
@@ -41,6 +42,8 @@ internal/
 ├── tools/          Sandboxed tools (read, write, edit, bash, grep, find, git, lsp)
 └── tui/            Bubble Tea v2 UI, slash commands, commit workflow
 ```
+
+`internal/memory/` remains in-tree as an optional subsystem, but the default core startup no longer initializes it or exposes memory tools automatically.
 
 ### Request flow
 

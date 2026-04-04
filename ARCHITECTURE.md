@@ -19,7 +19,7 @@ pi-go/
     ├── guardrail/                    # Daily token usage tracking and limits
     ├── lsp/                         # LSP integration (protocol, client, manager, languages, hooks)
     ├── logger/                      # Session logging to ~/.pi-go/log/
-    ├── memory/                      # Persistent memory system (SQLite + AI compression)
+    ├── memory/                      # Optional persistent memory subsystem (not wired into default startup)
     ├── provider/                    # LLM providers (Anthropic, OpenAI, Gemini)
     ├── rpc/                         # Unix socket JSON-RPC server
     ├── session/                     # JSONL persistence, branching, compaction
@@ -73,9 +73,6 @@ graph TD
     guardrail --> cli
     guardrail --> provider
 
-    memory["memory"] --> sqlite["modernc.org/sqlite"]
-    memory --> config
-
     audit --> tools
 
     logger --> cli
@@ -93,7 +90,6 @@ graph TD
     style auth fill:#5c3a5c,color:#fff
     style audit fill:#3a5c5c,color:#fff
     style logger fill:#5c5c5c,color:#fff
-    style memory fill:#1a5c3a,color:#fff
 ```
 
 ## Request Flow
@@ -351,7 +347,6 @@ graph TD
 ~/.pi-go/skills/*.SKILL.md     # Global skills
 .pi-go/skills/*.SKILL.md       # Project skills (override global)
 ~/.pi-go/sessions/             # Session storage
-~/.pi-go/memory/               # Memory SQLite database
 ~/.pi-go/log/                  # Session logs
 ~/.pi-go/.env                  # API keys (written by /login)
 ~/.pi-go/usage.json            # Daily token usage
@@ -363,10 +358,9 @@ Planning and SOP directories are no longer part of core configuration. Any spec-
 ```json
 {
   "roles": { "default": {...}, "smol": {...} },
-  "memory": { "enabled": true, "token_budget": 5000 },
   "hooks": [...],
   "mcp": { "servers": [...] },
-  "guardrail": { "max_daily_tokens": 0 },
+  "maxDailyTokens": 0,
   "compactor": { "enabled": true }
 }
 ```
@@ -382,7 +376,6 @@ sequenceDiagram
     participant Tools as Core Tools
     participant Git as Git
     participant LSP as LSP Manager
-    participant Mem as Memory DB
     participant MCP as MCP Servers
     participant Skills as Skills Loader
     participant Agent as Agent Builder
@@ -392,7 +385,6 @@ sequenceDiagram
     par Parallel Initialization
         Init->>Git: Detect repo, discover agents
         Init->>LSP: Create LSP manager + tools
-        Init->>Mem: Open SQLite, create context
         Init->>MCP: Launch MCP servers
         Init->>Skills: Load .SKILL.md files
     end
@@ -403,7 +395,7 @@ sequenceDiagram
 
 **Key patterns:**
 - TUI starts immediately with spinner showing initialization progress
-- Heavy I/O operations run in parallel (git, LSP, memory, MCP, skills)
+- Heavy I/O operations run in parallel (git, LSP, MCP, skills)
 - Agent is created last after all dependencies are ready
 - Progress sent via `InitEvent` channel
 
@@ -479,7 +471,7 @@ graph TD
 
 **Features:**
 - **Daily token tracking**: Input/output tokens, request count
-- **Configurable limits**: Set via `max_daily_tokens` in config
+- **Configurable limits**: Set via `maxDailyTokens` in config
 - **Persistent storage**: `~/.pi-go/usage.json` (resets at midnight)
 - **Usage formatting**: Human-readable summaries with percentages
 
@@ -598,92 +590,12 @@ Planning workflows and subagent orchestration are no longer built into core. pi-
 
 ## Memory System
 
-> **Status**: Implemented — not yet production-ready, see `internal/memory/` for implementation.
+`internal/memory/` and the `mem-search` / `mem-timeline` / `mem-get` tools still exist in-tree, but they are no longer part of the default core bootstrap path.
 
-Persistent memory compression system inspired by [claude-mem](https://github.com/thedotmack/claude-mem), implemented natively in Go.
+Current core behavior:
+- startup does **not** open a SQLite memory database
+- startup does **not** start compression/background memory workers
+- startup does **not** inject memory context into the base system prompt
+- default tool registration does **not** expose memory search tools
 
-```mermaid
-graph TD
-    subgraph Capture["Observation Capture"]
-        after_cb["AfterToolCallback"] -->|"enqueue"| queue["Buffered Channel"]
-        queue --> bg["Background Goroutine"]
-    end
-
-    subgraph Compress["Compression"]
-        bg --> compressor["NoopCompressor<br/>(metadata extraction)"]
-        compressor -->|"structured observation"| db
-    end
-
-    subgraph Store["SQLite Storage (~/.pi-go/memory/)"]
-        db["claude-mem.db<br/>WAL mode"]
-        db --- sessions_t["sessions"]
-        db --- obs_t["observations<br/>+ FTS5"]
-        db --- sum_t["session_summaries<br/>+ FTS5"]
-    end
-
-    subgraph Retrieve["Context & Search"]
-        start["SessionStart"] -->|"inject context"| instruction["System Instruction"]
-        search_tool["mem-search tool"] --> db
-        timeline_tool["mem-timeline tool"] --> db
-        get_obs_tool["mem-get tool"] --> db
-    end
-
-    style Capture fill:#1a2a1a,color:#fff
-    style Compress fill:#2a1a2a,color:#fff
-    style Store fill:#1a1a2a,color:#fff
-    style Retrieve fill:#1a2a3a,color:#fff
-```
-
-**Core Components:**
-- **Observation Capture**: `AfterToolCallback` enqueues tool usage to a buffered channel (non-blocking)
-- **Compression**: Background goroutine uses NoopCompressor to extract basic metadata from tool calls (extensible via the Compressor interface)
-- **SQLite Storage**: `modernc.org/sqlite` (pure Go, no CGO) with FTS5 full-text search
-- **Context Injection**: Recent observations injected into system instruction at session start
-- **Search Tools**: Native `mem-search`, `mem-timeline`, `mem-get` tools registered in `CoreTools()`
-
-**Database Schema (migrations):**
-
-| Version | Contents |
-|---------|----------|
-| 1 | `sessions`, `observations`, `session_summaries` tables with indexes |
-| 2 | FTS5 virtual tables + sync triggers |
-
-**Data Model:**
-| Table | Key Fields |
-|-------|------------|
-| sessions | id, session_id, project, started_at, status |
-| observations | id, session_id, project, title, type, text, source_files, created_at |
-| session_summaries | id, session_id, project, request, investigated, learned, completed, next_steps |
-
-**Observation Types:**
-- `decision` — architectural decisions
-- `bugfix` — bug fixes
-- `feature` — new features
-- `refactor` — refactoring
-- `discovery` — codebase insights
-- `change` — general changes
-
-**3-Layer Search Workflow:**
-1. `mem-search(query)` — compact index with IDs (~50-100 tokens/result)
-2. `mem-timeline(anchor=ID)` — chronological context around results
-3. `mem-get(ids=[...])` — full details for filtered IDs (~500-1000 tokens/result)
-
-**Privacy Filtering:**
-- `privacy.go` contains PII detection and redaction
-- Configurable via `memory.privacy` config section
-
-**Configuration:**
-```json
-{
-  "memory": {
-    "enabled": true,
-    "db_path": "~/.pi-go/memory/claude-mem.db",
-    "token_budget": 5000,
-    "max_pending": 100,
-    "lookback_hours": 168,
-    "excluded_tools": ["screen", "restart"]
-  }
-}
-```
-
-See `specs/claude-mem/` for the full design specification.
+If persistent memory returns in the future, it should be wired in explicitly as an optional subsystem or extension rather than assumed by core.

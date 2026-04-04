@@ -385,23 +385,7 @@ func TestInsecureSkipTLSFalseByDefault(t *testing.T) {
 	}
 }
 
-func TestMemoryDefaults(t *testing.T) {
-	m := MemoryDefaults()
-	if m.TokenBudget != 8000 {
-		t.Errorf("expected token budget 8000, got %d", m.TokenBudget)
-	}
-	if m.CompressionRole != "smol" {
-		t.Errorf("expected compression role smol, got %s", m.CompressionRole)
-	}
-	if m.MaxPending != 100 {
-		t.Errorf("expected max pending 100, got %d", m.MaxPending)
-	}
-	if m.LookbackHours != 72 {
-		t.Errorf("expected lookback hours 72, got %d", m.LookbackHours)
-	}
-}
-
-func TestMemoryConfigFromJSON(t *testing.T) {
+func TestLegacyMemoryConfigIsIgnored(t *testing.T) {
 	tmp := t.TempDir()
 	origDir, _ := os.Getwd()
 	if err := os.Chdir(tmp); err != nil {
@@ -433,30 +417,11 @@ func TestMemoryConfigFromJSON(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.Memory == nil {
-		t.Fatal("expected memory config to be set")
+	if cfg.Roles["default"].Model != "gpt-4o" {
+		t.Fatalf("expected default role to survive legacy memory config, got %q", cfg.Roles["default"].Model)
 	}
-	if cfg.Memory.Enabled == nil || *cfg.Memory.Enabled != false {
-		t.Error("expected memory enabled to be false")
-	}
-	if cfg.Memory.DBPath != "/tmp/test.db" {
-		t.Errorf("expected db_path /tmp/test.db, got %s", cfg.Memory.DBPath)
-	}
-	if cfg.Memory.TokenBudget != 4000 {
-		t.Errorf("expected token_budget 4000, got %d", cfg.Memory.TokenBudget)
-	}
-	if cfg.Memory.MaxPending != 50 {
-		t.Errorf("expected max_pending 50, got %d", cfg.Memory.MaxPending)
-	}
-	if len(cfg.Memory.ExcludedTools) != 2 {
-		t.Errorf("expected 2 excluded tools, got %d", len(cfg.Memory.ExcludedTools))
-	}
-}
-
-func TestMemoryConfigNilWhenNotSet(t *testing.T) {
-	cfg := Defaults()
-	if cfg.Memory != nil {
-		t.Error("expected memory config to be nil in defaults")
+	if cfg.Compactor != nil {
+		t.Fatalf("expected unrelated config defaults to remain untouched")
 	}
 }
 

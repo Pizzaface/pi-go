@@ -173,7 +173,7 @@ func TestE2EFullCycle(t *testing.T) {
 	}
 
 	// Verify context contains key elements
-	for _, want := range []string{"e2e-project", "Compressed:", "mem-search"} {
+	for _, want := range []string{"e2e-project", "Compressed:"} {
 		if !contains(markdown, want) {
 			t.Errorf("context markdown missing %q", want)
 		}

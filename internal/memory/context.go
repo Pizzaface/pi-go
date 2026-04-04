@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// ContextGenerator builds markdown context from recent observations for system instruction injection.
+// ContextGenerator builds markdown context from recent observations for optional system instruction injection.
 type ContextGenerator struct {
 	store       Store
 	tokenBudget int
@@ -108,9 +108,6 @@ func (g *ContextGenerator) Generate(ctx context.Context, project string) (string
 		b.WriteString(section)
 		tokens += sectionTokens
 	}
-
-	footer := "\nAccess past observations with mem-search, mem-timeline, mem-get tools.\n"
-	b.WriteString(footer)
 
 	return b.String(), nil
 }
