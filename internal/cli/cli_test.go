@@ -163,6 +163,9 @@ func TestNewRootCmd(t *testing.T) {
 			t.Errorf("missing flag: %s", name)
 		}
 	}
+	if cmd.Flags().Lookup("memory-off") != nil {
+		t.Error("memory-off flag should not be exposed by the default core CLI")
+	}
 }
 
 func TestRootCmdNoPromptExitsCleanly(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	adkmodel "google.golang.org/adk/model"
 	adktool "google.golang.org/adk/tool"
@@ -19,7 +18,6 @@ import (
 	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/lsp"
-	"github.com/dimetron/pi-go/internal/memory"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
@@ -30,22 +28,12 @@ import (
 type initResources struct {
 	sandbox    *tools.Sandbox
 	lspMgr     *lsp.Manager
-	memStore   memory.Store
-	memWorker  *memory.Worker
 	sessionLog *logger.Logger
 }
 
 func (r *initResources) cleanup() {
 	if r.sessionLog != nil {
 		_ = r.sessionLog.Close()
-	}
-	if r.memWorker != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = r.memWorker.Shutdown(ctx)
-	}
-	if r.memStore != nil {
-		_ = r.memStore.Close()
 	}
 	if r.lspMgr != nil {
 		r.lspMgr.Shutdown()
@@ -158,20 +146,14 @@ func deferredInit(
 		mu sync.Mutex
 
 		// Git
-		repoRoot  string
-		gitBranch string
-		diffAdded    int
-		diffRemoved  int
+		repoRoot    string
+		gitBranch   string
+		diffAdded   int
+		diffRemoved int
 
 		// LSP
 		lspMgr   *lsp.Manager
 		lspTools []adktool.Tool
-
-		// Memory (DB + tools opened in parallel; worker created in sequential phase)
-		memStore      memory.Store
-		memTools      []adktool.Tool
-		memContext    string
-		memMaxPending int
 
 		// MCP
 		mcpToolsets []adktool.Toolset
@@ -206,61 +188,6 @@ func deferredInit(
 		ps.lspTools = lt
 		ps.mu.Unlock()
 		send("lsp", true)
-	}()
-
-	// Memory (DB open + tools + context gen; worker created after orchestrator)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		memEnabled := !flagMemoryOff && (cfg.Memory == nil || cfg.Memory.Enabled == nil || *cfg.Memory.Enabled)
-		if !memEnabled {
-			return
-		}
-		send("memory", false)
-		memCfg := config.MemoryDefaults()
-		if cfg.Memory != nil {
-			if cfg.Memory.DBPath != "" {
-				memCfg.DBPath = cfg.Memory.DBPath
-			}
-			if cfg.Memory.TokenBudget > 0 {
-				memCfg.TokenBudget = cfg.Memory.TokenBudget
-			}
-			if cfg.Memory.MaxPending > 0 {
-				memCfg.MaxPending = cfg.Memory.MaxPending
-			}
-			if cfg.Memory.LookbackHours > 0 {
-				memCfg.LookbackHours = cfg.Memory.LookbackHours //nolint:govet // reserved for future use
-			}
-		}
-		dbPath := memCfg.DBPath
-		if dbPath == "" {
-			if home, hErr := os.UserHomeDir(); hErr == nil {
-				dbPath = filepath.Join(home, ".pi-go", "memory", "claude-mem.db")
-			}
-		}
-		memDB, memErr := memory.OpenDB(dbPath)
-		if memErr != nil {
-			send("memory", true) // non-fatal
-			return
-		}
-		store := memory.NewSQLiteStore(memDB)
-		mt, _ := tools.MemoryTools(store)
-
-		var memCtx string
-		tokenBudget := memCfg.TokenBudget
-		if cfg.Memory != nil && cfg.Memory.TokenBudget > 0 {
-			tokenBudget = cfg.Memory.TokenBudget
-		}
-		ctxGen := memory.NewContextGenerator(store, tokenBudget)
-		memCtx, _ = ctxGen.Generate(ctx, cwd)
-
-		ps.mu.Lock()
-		ps.memStore = store
-		ps.memTools = mt
-		ps.memContext = memCtx
-		ps.memMaxPending = memCfg.MaxPending
-		ps.mu.Unlock()
-		send("memory", true)
 	}()
 
 	// MCP
@@ -315,25 +242,10 @@ func deferredInit(
 
 	// Store cleanup resources.
 	res.lspMgr = ps.lspMgr
-	res.memStore = ps.memStore
-
-	// Create memory worker.
-	var memWorker *memory.Worker
-	if ps.memStore != nil {
-		compressor := memory.NewNoopCompressor()
-		memWorker = memory.NewWorker(ps.memStore, compressor, ps.memMaxPending)
-		memWorker.Start(ctx)
-		res.memWorker = memWorker
-	}
 
 	// Append LSP tools.
 	if ps.lspTools != nil {
 		coreTools = append(coreTools, ps.lspTools...)
-	}
-
-	// Append memory tools.
-	if ps.memTools != nil {
-		coreTools = append(coreTools, ps.memTools...)
 	}
 
 	// Build system instruction.
@@ -348,9 +260,6 @@ func deferredInit(
 		for _, s := range ps.skills {
 			instruction += fmt.Sprintf("- /%s: %s\n", s.Name, s.Description)
 		}
-	}
-	if ps.memContext != "" {
-		instruction += "\n\n" + ps.memContext
 	}
 
 	// Build callbacks.
@@ -379,36 +288,6 @@ func deferredInit(
 		afterCBs = append(afterCBs, lsp.BuildLSPAfterToolCallback(ps.lspMgr))
 	}
 	afterCBs = append(afterCBs, compactorCB)
-
-	// Memory after-tool callback.
-	var memSessionID string
-	if memWorker != nil {
-		var excludedTools map[string]bool
-		if cfg.Memory != nil && len(cfg.Memory.ExcludedTools) > 0 {
-			excludedTools = make(map[string]bool, len(cfg.Memory.ExcludedTools))
-			for _, t := range cfg.Memory.ExcludedTools {
-				excludedTools[t] = true
-			}
-		}
-		afterCBs = append(afterCBs, func(_ adktool.Context, t adktool.Tool, args, result map[string]any, toolErr error) (map[string]any, error) {
-			if toolErr != nil || memSessionID == "" {
-				return result, nil
-			}
-			name := t.Name()
-			if excludedTools[name] {
-				return result, nil
-			}
-			memWorker.Enqueue(memory.RawObservation{
-				SessionID:  memSessionID,
-				Project:    cwd,
-				ToolName:   name,
-				ToolInput:  args,
-				ToolOutput: result,
-				Timestamp:  time.Now(),
-			})
-			return result, nil
-		})
-	}
 
 	// Session service.
 	homeDir, err := os.UserHomeDir()
@@ -448,17 +327,6 @@ func deferredInit(
 		}
 	}
 
-	// Activate memory capture.
-	if ps.memStore != nil {
-		memSessionID = sessionID
-		_ = ps.memStore.CreateSession(ctx, &memory.Session{
-			SessionID: sessionID,
-			Project:   cwd,
-			StartedAt: time.Now(),
-			Status:    "active",
-		})
-	}
-
 	// Session logger.
 	sessionLog, logErr := logger.New()
 	if logErr == nil {
@@ -478,7 +346,7 @@ func deferredInit(
 			Agent:             ag,
 			SessionID:         sessionID,
 			SessionService:    sessionSvc,
-				Logger:            sessionLog,
+			Logger:            sessionLog,
 			Skills:            ps.skills,
 			SkillDirs:         ps.skillDirs,
 			GenerateCommitMsg: commitMsgFn,
