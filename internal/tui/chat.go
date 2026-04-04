@@ -37,7 +37,6 @@ func renderWelcome() string {
 		dim.Render("  Commands: ") +
 			cmd.Render("/help") + dim.Render(" ") +
 			cmd.Render("/commit") + dim.Render(" ") +
-			cmd.Render("/agents") + dim.Render(" ") +
 			cmd.Render("/ping"),
 		dim.Render("  Press ") + cmd.Render("Tab") + dim.Render(" to cycle commands, ") +
 			cmd.Render("@") + dim.Render(" to mention files"),
@@ -52,21 +51,6 @@ type message struct {
 	isWarning bool   // if true, render with warning style
 	tool      string // tool name (for role=="tool")
 	toolIn    string // tool input args (for role=="tool")
-	// Subagent event stream (for tool=="agent" or tool=="subagent").
-	agentID       string    // subagent ID for matching events
-	agentType     string    // subagent type (e.g. "task", "explore")
-	agentTitle    string    // short description from prompt
-	agentEvents   []agentEv // streamed events from the subagent
-	pipelineID    string    // pipeline ID for grouping
-	pipelineMode  string    // "single", "parallel", "chain"
-	pipelineStep  int       // 1-based step in pipeline
-	pipelineTotal int       // total steps in pipeline
-}
-
-// agentEv is a single event from a subagent's event stream.
-type agentEv struct {
-	kind    string // "tool_call", "tool_result", "text"
-	content string
 }
 
 // traceEntry represents a single entry in the debug trace log.

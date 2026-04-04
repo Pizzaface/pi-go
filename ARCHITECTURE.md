@@ -23,8 +23,7 @@ pi-go/
     ├── provider/                    # LLM providers (Anthropic, OpenAI, Gemini)
     ├── rpc/                         # Unix socket JSON-RPC server
     ├── session/                     # JSONL persistence, branching, compaction
-    ├── subagent/                    # Subagent orchestration (pool, spawner, worktree, orchestrator)
-    ├── tools/                       # Sandboxed tools (read, write, edit, bash, grep, find, ls, tree, git, lsp, agent)
+    ├── tools/                       # Sandboxed tools (read, write, edit, bash, grep, find, ls, tree, git, lsp)
     └── tui/                         # Bubble Tea v2 interactive UI
 ```
 
@@ -41,7 +40,6 @@ graph TD
     cli --> session["session"]
     cli --> tui["tui"]
     cli --> rpc["rpc"]
-    cli --> subagent["subagent"]
     cli --> lsp["lsp"]
     cli --> guardrail["guardrail"]
     cli --> auth["auth"]
@@ -59,8 +57,6 @@ graph TD
     tools --> sandbox["os.Root sandbox"]
     tools --> adk_tool["ADK tool/functiontool"]
 
-    subagent --> config
-    subagent --> provider
 
     lsp --> config
 
@@ -78,7 +74,6 @@ graph TD
     guardrail --> provider
 
     memory["memory"] --> sqlite["modernc.org/sqlite"]
-    memory --> subagent
     memory --> config
 
     audit --> tools
@@ -161,8 +156,6 @@ graph LR
     end
 
     bash["bash<br/>Shell command<br/>(runs in sandbox dir)"]
-    agent_tool["agent<br/>Spawn subagent"]
-
     registry["CoreTools(sandbox)"] --> read
     registry --> write
     registry --> edit
@@ -181,14 +174,11 @@ graph LR
     lsp_registry --> lsp_hover
     lsp_registry --> lsp_sym
 
-    agent_registry["AgentTool(orchestrator)"] --> agent_tool
-
     style Sandbox fill:#1a2a1a,stroke:#4a4,color:#fff
     style GitTools fill:#1a1a2a,stroke:#44a,color:#fff
     style LSPTools fill:#2a1a1a,stroke:#a44,color:#fff
     style registry fill:#333,color:#fff
     style lsp_registry fill:#333,color:#fff
-    style agent_registry fill:#333,color:#fff
 ```
 
 All file tools operate through the `Sandbox` which uses Go's `os.Root` to restrict access to the working directory tree. Paths cannot escape via `..` or symlinks.
@@ -226,41 +216,6 @@ config.json:
 `ResolveRole(role)` resolves a role name to a model and provider. Falls back to "default" role if the requested role is not configured. The provider is auto-detected from the model name prefix (claude→anthropic, gpt/o1-4→openai, gemini→gemini).
 
 CLI flags `--smol`, `--plan`, `--slow` override the active role for a single invocation.
-
-## Subagent System
-
-The subagent system enables the main agent to spawn autonomous child agents for parallel task execution.
-
-```mermaid
-graph TD
-    agent_tool["agent tool<br/>(LLM-initiated)"] --> orchestrator["Orchestrator"]
-
-    orchestrator --> pool["Pool<br/>Concurrency limiter<br/>(max 5)"]
-    orchestrator --> spawner["Spawner<br/>Process manager"]
-    orchestrator --> worktree["WorktreeManager<br/>Git worktree isolation"]
-
-    spawner --> subprocess["pi subprocess<br/>(JSON output mode)"]
-    worktree --> git["git worktree<br/>.pi-go/worktrees/"]
-
-    subgraph AgentTypes["Agent Types"]
-        explore["explore<br/>Fast read-only<br/>(smol model)"]
-        plan["plan<br/>Analysis & planning<br/>(plan model)"]
-        designer["designer<br/>Code creation<br/>(slow model, worktree)"]
-        reviewer["reviewer<br/>Code review<br/>(slow model)"]
-        task["task<br/>Full coding tasks<br/>(default model, worktree)"]
-        quick_task["quick_task<br/>Small tasks<br/>(smol model)"]
-    end
-
-    orchestrator --> AgentTypes
-
-    style orchestrator fill:#3a1a5c,color:#fff
-    style pool fill:#1a3a5c,color:#fff
-    style spawner fill:#1a3a5c,color:#fff
-    style worktree fill:#1a3a5c,color:#fff
-    style AgentTypes fill:#1a1a2a,color:#fff
-```
-
-Each agent type defines: model role, worktree isolation, system instruction, and allowed tools. The orchestrator validates agent type, resolves the model via roles, acquires a pool slot, optionally creates a git worktree for isolation, and spawns a `pi` subprocess in JSON output mode. Events stream back via JSONL.
 
 ## LSP Integration
 
@@ -425,7 +380,7 @@ sequenceDiagram
     participant TUI as TUI (Bubble Tea)
     participant Init as Deferred Init Goroutine
     participant Tools as Core Tools
-    participant Git as Git + Subagents
+    participant Git as Git
     participant LSP as LSP Manager
     participant Mem as Memory DB
     participant MCP as MCP Servers
@@ -639,7 +594,7 @@ graph TD
 
 ## Planning and workflow guidance
 
-Planning workflows are no longer built into core. pi-go's core provides a generic chat TUI, tools, subagents, skills, extensions, and model roles; any spec-driven or SOP-driven workflow should be layered on through prompts, skills, extensions, or external packages rather than native `/plan` or `/run` command paths.
+Planning workflows and subagent orchestration are no longer built into core. pi-go's core provides a generic chat TUI, tools, skills, extensions, and model roles; any spec-driven workflows or multi-agent orchestration should be layered on through prompts, skills, extensions, or external packages.
 
 ## Memory System
 
@@ -654,9 +609,8 @@ graph TD
         queue --> bg["Background Goroutine"]
     end
 
-    subgraph Compress["AI Compression"]
-        bg --> spawner["Subagent Spawner"]
-        spawner --> compressor["memory-compressor<br/>(smol model)"]
+    subgraph Compress["Compression"]
+        bg --> compressor["NoopCompressor<br/>(metadata extraction)"]
         compressor -->|"structured observation"| db
     end
 
@@ -682,7 +636,7 @@ graph TD
 
 **Core Components:**
 - **Observation Capture**: `AfterToolCallback` enqueues tool usage to a buffered channel (non-blocking)
-- **AI Compression**: Background goroutine spawns `memory-compressor` subagent (smol model) to extract structured observations
+- **Compression**: Background goroutine uses NoopCompressor to extract basic metadata from tool calls (extensible via the Compressor interface)
 - **SQLite Storage**: `modernc.org/sqlite` (pure Go, no CGO) with FTS5 full-text search
 - **Context Injection**: Recent observations injected into system instruction at session start
 - **Search Tools**: Native `mem-search`, `mem-timeline`, `mem-get` tools registered in `CoreTools()`

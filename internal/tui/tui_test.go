@@ -9,7 +9,6 @@ import (
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/subagent"
 
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/adk/session"
@@ -1011,114 +1010,6 @@ func setupTestSessionWithID(t *testing.T) (*pisession.FileService, string) {
 	return svc, resp.Session.ID()
 }
 
-func TestHandleAgentsCommand_NoOrchestrator(t *testing.T) {
-	m := &model{
-		cfg:       Config{},
-		chatModel: ChatModel{Messages: make([]message, 0)},
-	}
-	m.handleAgentsCommand()
-	if len(m.chatModel.Messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(m.chatModel.Messages))
-	}
-	if m.chatModel.Messages[0].content != "Subagent system not available." {
-		t.Errorf("unexpected message: %q", m.chatModel.Messages[0].content)
-	}
-}
-
-func TestHandleAgentsCommand_EmptyList(t *testing.T) {
-	orch := subagent.NewOrchestrator(&config.Config{}, "", nil)
-	m := &model{
-		cfg: Config{
-			Orchestrator: orch,
-		},
-		chatModel: ChatModel{Messages: make([]message, 0)},
-	}
-	m.handleAgentsCommand()
-	if len(m.chatModel.Messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(m.chatModel.Messages))
-	}
-	if m.chatModel.Messages[0].content != "No subagents have been spawned yet." {
-		t.Errorf("unexpected message: %q", m.chatModel.Messages[0].content)
-	}
-}
-
-func TestCountAgentsByStatus(t *testing.T) {
-	agents := []subagent.AgentStatus{
-		{Status: "running"},
-		{Status: "running"},
-		{Status: "completed"},
-		{Status: "failed"},
-		{Status: "canceled"},
-	}
-	running, done, failed := countAgentsByStatus(agents)
-	if running != 2 {
-		t.Errorf("running = %d, want 2", running)
-	}
-	if done != 1 {
-		t.Errorf("done = %d, want 1", done)
-	}
-	if failed != 1 {
-		t.Errorf("failed = %d, want 1", failed)
-	}
-}
-
-func TestAgentStatusIcon(t *testing.T) {
-	tests := []struct {
-		status string
-		want   string
-	}{
-		{"running", "▶ "},
-		{"completed", "✓ "},
-		{"failed", "✗ "},
-		{"canceled", "◼ "},
-		{"unknown", "  "},
-	}
-	for _, tt := range tests {
-		if got := agentStatusIcon(tt.status); got != tt.want {
-			t.Errorf("agentStatusIcon(%q) = %q, want %q", tt.status, got, tt.want)
-		}
-	}
-}
-
-func TestFormatAgentsList_Empty(t *testing.T) {
-	got := formatAgentsList(nil)
-	if got != "No subagents have been spawned yet." {
-		t.Errorf("got %q", got)
-	}
-}
-
-func TestFormatAgentsList_WithAgents(t *testing.T) {
-	agents := []subagent.AgentStatus{
-		{AgentID: "agent-abc12345", Type: "task", Status: "running", Prompt: "do something", Duration: "5s"},
-		{AgentID: "agent-def67890", Type: "plan", Status: "completed", Prompt: "plan it", Duration: "10s"},
-		{AgentID: "agent-ghi11111", Type: "fix", Status: "failed", Prompt: "fix bug", Duration: "2s"},
-	}
-	got := formatAgentsList(agents)
-
-	if !strings.Contains(got, "3 total") {
-		t.Errorf("missing total count in %q", got)
-	}
-	if !strings.Contains(got, "1 running") {
-		t.Errorf("missing running count")
-	}
-	if !strings.Contains(got, "1 failed") {
-		t.Errorf("missing failed count")
-	}
-	if !strings.Contains(got, "agent-ab") {
-		t.Errorf("missing agent ID prefix")
-	}
-}
-
-func TestFormatAgentsList_LongPromptTruncation(t *testing.T) {
-	agents := []subagent.AgentStatus{
-		{AgentID: "agent-abc12345", Type: "task", Status: "running",
-			Prompt: strings.Repeat("x", 100), Duration: "1s"},
-	}
-	got := formatAgentsList(agents)
-	if !strings.Contains(got, "...") {
-		t.Errorf("expected truncated prompt with '...'")
-	}
-}
 
 func TestFormatThemeList(t *testing.T) {
 	themes := []Theme{
@@ -1247,7 +1138,6 @@ func TestRenderWelcome(t *testing.T) {
 		"coding agent",
 		"help",
 		"commit",
-		"agents",
 		"Tab",
 	}
 	for _, want := range checks {

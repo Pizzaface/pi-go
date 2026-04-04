@@ -26,23 +26,12 @@ type agentToolResultMsg struct {
 }
 type agentDoneMsg struct{ err error }
 
-// agentSubEventMsg carries a streamed event from a running subagent to the TUI.
-type agentSubEventMsg struct {
-	agentID       string // which subagent
-	kind          string // "tool_call", "tool_result", "text"
-	content       string
-	pipelineID    string // groups agents in same call
-	pipelineMode  string // "single", "parallel", "chain"
-	pipelineStep  int    // 1-based position
-	pipelineTotal int    // total agents in pipeline
-}
 
 func (agentTextMsg) agentMsg()       {}
 func (agentThinkingMsg) agentMsg()   {}
 func (agentToolCallMsg) agentMsg()   {}
 func (agentToolResultMsg) agentMsg() {}
 func (agentDoneMsg) agentMsg()       {}
-func (agentSubEventMsg) agentMsg()   {}
 
 // waitForAgent returns a Cmd that waits for the next message on the agent channel.
 func waitForAgent(ch chan agentMsg) tea.Cmd {
@@ -58,26 +47,6 @@ func waitForAgent(ch chan agentMsg) tea.Cmd {
 	}
 }
 
-func waitForSubEvent(ch <-chan AgentSubEvent) tea.Cmd {
-	if ch == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		ev, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return agentSubEventMsg{
-			agentID:       ev.AgentID,
-			kind:          ev.Kind,
-			content:       ev.Content,
-			pipelineID:    ev.PipelineID,
-			pipelineMode:  ev.Mode,
-			pipelineStep:  ev.Step,
-			pipelineTotal: ev.Total,
-		}
-	}
-}
 
 // cancelAgent stops a running agent and drains its channel.
 func (m *model) cancelAgent() {
@@ -267,24 +236,6 @@ func (m *model) handleAgentToolCall(msg agentToolCallMsg) (tea.Model, tea.Cmd) {
 	newMsg := message{
 		role: "tool", tool: msg.name, toolIn: toolIn,
 	}
-	if msg.name == "agent" || msg.name == "subagent" {
-		agentType, _ := msg.args["type"].(string)
-		if agentType == "" {
-			agentType, _ = msg.args["agent"].(string)
-		}
-		newMsg.agentType = agentType
-		prompt, _ := msg.args["prompt"].(string)
-		if prompt == "" {
-			prompt, _ = msg.args["task"].(string)
-		}
-		if idx := strings.IndexByte(prompt, '\n'); idx > 0 {
-			prompt = prompt[:idx]
-		}
-		if len(prompt) > 60 {
-			prompt = prompt[:57] + "..."
-		}
-		newMsg.agentTitle = prompt
-	}
 	m.chatModel.Messages = append(m.chatModel.Messages, newMsg)
 	return m, waitForAgent(m.agentCh)
 }
@@ -317,37 +268,6 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 	return m, waitForAgent(m.agentCh)
 }
 
-// handleAgentSubEvent processes an agentSubEventMsg.
-func (m *model) handleAgentSubEvent(msg agentSubEventMsg) (tea.Model, tea.Cmd) {
-	if msg.kind == "spawn" {
-		for i := len(m.chatModel.Messages) - 1; i >= 0; i-- {
-			if (m.chatModel.Messages[i].tool == "agent" || m.chatModel.Messages[i].tool == "subagent") && m.chatModel.Messages[i].agentID == "" {
-				m.chatModel.Messages[i].agentID = msg.agentID
-				m.chatModel.Messages[i].pipelineID = msg.pipelineID
-				m.chatModel.Messages[i].pipelineMode = msg.pipelineMode
-				m.chatModel.Messages[i].pipelineStep = msg.pipelineStep
-				m.chatModel.Messages[i].pipelineTotal = msg.pipelineTotal
-				break
-			}
-		}
-	} else {
-		for i := len(m.chatModel.Messages) - 1; i >= 0; i-- {
-			if (m.chatModel.Messages[i].tool == "agent" || m.chatModel.Messages[i].tool == "subagent") && m.chatModel.Messages[i].agentID == msg.agentID {
-				evKind := msg.kind
-				if evKind == "text_delta" {
-					evKind = "text"
-				}
-				m.chatModel.Messages[i].agentEvents = append(m.chatModel.Messages[i].agentEvents, agentEv{
-					kind:    evKind,
-					content: msg.content,
-				})
-				break
-			}
-		}
-	}
-	m.chatModel.Scroll = 0
-	return m, waitForSubEvent(m.cfg.AgentEventCh)
-}
 
 // handleAgentDone processes an agentDoneMsg.
 func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {

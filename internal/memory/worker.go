@@ -83,7 +83,7 @@ func (w *Worker) processOne(ctx context.Context, raw RawObservation) {
 	raw.ToolInput = StripPrivateFromMap(raw.ToolInput)
 	raw.ToolOutput = StripPrivateFromMap(raw.ToolOutput)
 
-	// Compress via subagent (or mock)
+	// Compress observation
 	obs, err := w.compressor.CompressObservation(ctx, raw)
 	if err != nil {
 		slog.Warn("memory: compression failed, storing fallback",

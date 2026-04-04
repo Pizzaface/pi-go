@@ -1139,14 +1139,6 @@ func TestSlashCommand_Session(t *testing.T) {
 	}
 }
 
-func TestSlashCommand_Agents_NoOrchestrator(t *testing.T) {
-	m := newTestModel(t)
-	m.handleSlashCommand("/agents")
-	if len(m.chatModel.Messages) == 0 {
-		t.Fatal("expected message from /agents")
-	}
-}
-
 func TestSlashCommand_Branch_NoService(t *testing.T) {
 	m := newTestModel(t)
 	m.handleSlashCommand("/branch")
@@ -1371,7 +1363,6 @@ func TestAgentMsgMarkers(t *testing.T) {
 	agentToolCallMsg{}.agentMsg()
 	agentToolResultMsg{}.agentMsg()
 	agentDoneMsg{}.agentMsg()
-	agentSubEventMsg{}.agentMsg()
 }
 
 // --- waitForAgent ---
@@ -1423,18 +1414,6 @@ func TestSlashCommand_HistoryWithQuery(t *testing.T) {
 	m.handleSlashCommand("/history help")
 	if len(m.chatModel.Messages) == 0 {
 		t.Fatal("expected filtered history output")
-	}
-}
-
-// --- renderStatusBar: orchestrator with agents ---
-
-func TestRenderStatusBar_WithOrchestrator(t *testing.T) {
-	m := newTestModel(t)
-	// Can't easily mock Orchestrator since it's an interface we don't control
-	// but we can test without it
-	out := m.statusModel.Render(m.statusRenderInput())
-	if out == "" {
-		t.Error("expected non-empty status bar")
 	}
 }
 
