@@ -111,16 +111,21 @@ func TestEditBefore(t *testing.T) {
 }
 
 func TestBuildLSPAfterToolCallback_NilManager(t *testing.T) {
-	// Verify the callback builder doesn't panic with a valid manager.
-	mgr := &Manager{
-		languages:   make(map[string]*LanguageConfig),
-		servers:     make(map[string]*Server),
-		diagnostics: make(map[string][]Diagnostic),
-		available:   make(map[string]bool),
-	}
-	cb := BuildLSPAfterToolCallback(mgr)
+	cb := BuildLSPAfterToolCallback(nil)
 	if cb == nil {
 		t.Fatal("expected non-nil callback")
+	}
+
+	result := map[string]any{"path": "/tmp/test.go"}
+	got, err := cb(nil, &mockTool{name: "write"}, nil, result, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["path"] != "/tmp/test.go" {
+		t.Fatalf("expected original result to be returned, got %+v", got)
+	}
+	if _, ok := got["lsp_formatted"]; ok {
+		t.Fatal("nil manager callback should be a no-op")
 	}
 }
 

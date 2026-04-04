@@ -17,7 +17,6 @@ import (
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/logger"
-	"github.com/dimetron/pi-go/internal/lsp"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
@@ -27,16 +26,12 @@ import (
 // initResources tracks resources created during deferred init for cleanup.
 type initResources struct {
 	sandbox    *tools.Sandbox
-	lspMgr     *lsp.Manager
 	sessionLog *logger.Logger
 }
 
 func (r *initResources) cleanup() {
 	if r.sessionLog != nil {
 		_ = r.sessionLog.Close()
-	}
-	if r.lspMgr != nil {
-		r.lspMgr.Shutdown()
 	}
 	if r.sandbox != nil {
 		_ = r.sandbox.Close()
@@ -151,10 +146,6 @@ func deferredInit(
 		diffAdded   int
 		diffRemoved int
 
-		// LSP
-		lspMgr   *lsp.Manager
-		lspTools []adktool.Tool
-
 		// MCP
 		mcpToolsets []adktool.Toolset
 
@@ -174,20 +165,6 @@ func deferredInit(
 		ps.gitBranch = detectBranch(cwd)
 		ps.diffAdded, ps.diffRemoved = computeDiffStats(cwd)
 		send("git", true)
-	}()
-
-	// LSP
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		send("lsp", false)
-		mgr := lsp.NewManager(nil)
-		lt, _ := tools.LSPTools(mgr)
-		ps.mu.Lock()
-		ps.lspMgr = mgr
-		ps.lspTools = lt
-		ps.mu.Unlock()
-		send("lsp", true)
 	}()
 
 	// MCP
@@ -240,14 +217,6 @@ func deferredInit(
 	// --- Phase 3: Sequential finalization ---
 	send("agent", false)
 
-	// Store cleanup resources.
-	res.lspMgr = ps.lspMgr
-
-	// Append LSP tools.
-	if ps.lspTools != nil {
-		coreTools = append(coreTools, ps.lspTools...)
-	}
-
 	// Build system instruction.
 	var instruction string
 	if flagSystem != "" {
@@ -284,9 +253,6 @@ func deferredInit(
 	hooks := convertHooks(cfg.Hooks)
 	beforeCBs := extension.BuildBeforeToolCallbacks(hooks)
 	afterCBs := extension.BuildAfterToolCallbacks(hooks)
-	if ps.lspMgr != nil {
-		afterCBs = append(afterCBs, lsp.BuildLSPAfterToolCallback(ps.lspMgr))
-	}
 	afterCBs = append(afterCBs, compactorCB)
 
 	// Session service.

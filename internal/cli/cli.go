@@ -21,7 +21,6 @@ import (
 	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/jsonrpc"
 	"github.com/dimetron/pi-go/internal/logger"
-	"github.com/dimetron/pi-go/internal/lsp"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
@@ -248,17 +247,7 @@ func runNonInteractive(
 	hooks := convertHooks(cfg.Hooks)
 	beforeCBs := extension.BuildBeforeToolCallbacks(hooks)
 	afterCBs := extension.BuildAfterToolCallbacks(hooks)
-
-	lspMgr := lsp.NewManager(nil)
-	defer lspMgr.Shutdown()
-	afterCBs = append(afterCBs, lsp.BuildLSPAfterToolCallback(lspMgr))
 	afterCBs = append(afterCBs, compactorCB)
-
-	lspTools, err := tools.LSPTools(lspMgr)
-	if err != nil {
-		return fmt.Errorf("creating LSP tools: %w", err)
-	}
-	coreTools = append(coreTools, lspTools...)
 
 	var mcpToolsets []adktool.Toolset
 	if cfg.MCP != nil && len(cfg.MCP.Servers) > 0 {

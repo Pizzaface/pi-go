@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/dimetron/pi-go?include_prereleases)](https://github.com/dimetron/pi-go/releases)
 [![codecov](https://codecov.io/gh/dimetron/pi-go/graph/badge.svg)](https://codecov.io/gh/dimetron/pi-go)
 
-A terminal-based coding agent built on [Google ADK Go](https://google.github.io/adk-go/) with multi-provider LLM support, sandboxed tool execution, LSP integration, and a subagent system.
+A terminal-based coding agent built on [Google ADK Go](https://google.github.io/adk-go/) with multi-provider LLM support, sandboxed tool execution, optional LSP integration, and a subagent system.
 
 ![pi-go TUI](docs/screen/pi-go.png)
 
@@ -18,11 +18,11 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 - **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), slash commands, and theming
 - **Session persistence** — JSONL append-only event logs with branching, compaction, and resume
 - **Model roles** — Named configurations (default, smol, slow, plan, commit) selectable via CLI flags
-- **LSP integration** — JSON-RPC client for Go, TypeScript/JS, Python, Rust with auto-format and diagnostics hooks
+- **Optional LSP integration** — In-tree JSON-RPC client and LSP tools for Go, TypeScript/JS, Python, Rust that can be wired in by extensions or custom startup code
 - **AI Git tools** — Repository overview, file diffs, hunk parsing, and LLM-generated conventional commits (`/commit`)
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
 - **Extensions** — Hooks (shell callbacks), skills (`.SKILL.md` instructions), and MCP server support
-- **Minimal core startup** — Default startup wires core tools, sessions, LSP, and extensions without assuming a persistent memory backend
+- **Minimal core startup** — Default startup wires core tools, sessions, and extensions without assuming optional subsystems like LSP or persistent memory
 - **Skills audit** — Security scanning for hidden Unicode characters, BiDi attacks, and supply-chain threats in skill files (`pi audit`)
 
 ## Architecture
@@ -35,11 +35,11 @@ internal/
 ├── config/         Global and project config (roles, hooks, MCP, themes)
 ├── audit/          Security scanner for skills (hidden Unicode, supply-chain threats)
 ├── extension/      Hooks, skills, MCP server integration
-├── lsp/            LSP JSON-RPC client, language registry, manager, hooks
+├── lsp/            Optional LSP JSON-RPC client, language registry, manager, hooks
 ├── provider/       LLM providers implementing genai model interface
 ├── rpc/            Unix socket JSON-RPC 2.0 server
 ├── session/        JSONL persistence, branching, compaction
-├── tools/          Sandboxed tools (read, write, edit, bash, grep, find, git, lsp)
+├── tools/          Sandboxed tools (read, write, edit, bash, grep, find, git) plus optional LSP helpers
 └── tui/            Bubble Tea v2 UI, slash commands, commit workflow
 ```
 
@@ -49,9 +49,12 @@ internal/
 
 ```
 User input → CLI → Agent → LLM provider → Tool calls → Sandbox → Response → TUI
-                     ↕                        ↕
-              Session store              LSP servers
-              (JSONL events)          (format, diagnostics)
+                     ↕
+              Session store
+              (JSONL events)
+
+Optional capability:
+Agent/extensions → LSP tools & hooks → LSP servers
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed documentation.

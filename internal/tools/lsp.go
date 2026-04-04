@@ -86,8 +86,8 @@ func newLSPDiagnosticsTool(mgr *lsp.Manager) (tool.Tool, error) {
 		`Get LSP diagnostics (errors, warnings) for a file.
 
 Returns compiler errors, type errors, and warnings from the language server.
-Use this to check a file for errors without editing it, or to get more detail
-than the automatic diagnostics provided after write/edit.`,
+Use this to check a file for errors without editing it when LSP is registered,
+or to get more detail than any caller-specific diagnostics flow.`,
 		func(ctx tool.Context, input LSPFileInput) (LSPDiagnosticsOutput, error) {
 			return lspDiagnosticsHandler(ctx, mgr, input)
 		}, lspFileAliases)
@@ -137,7 +137,8 @@ type declarations, constants, and variables with their line ranges.`,
 		}, lspFileAliases)
 }
 
-// LSPTools returns the 5 explicit LSP ADK tools.
+// LSPTools returns the 5 explicit LSP ADK tools for opt-in registration.
+// Default core startup does not include these tools.
 func LSPTools(mgr *lsp.Manager) ([]tool.Tool, error) {
 	builders := []func(*lsp.Manager) (tool.Tool, error){
 		newLSPDiagnosticsTool,
