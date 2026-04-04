@@ -1,5 +1,5 @@
 // Package extension provides hooks (before/after tool call), skill loading,
-// and MCP tool integration for the pi-go agent.
+// and optional MCP building blocks for custom pi-go integrations.
 package extension
 
 import (

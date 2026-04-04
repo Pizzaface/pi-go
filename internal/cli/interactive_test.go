@@ -176,3 +176,48 @@ func TestDeferredInitDoesNotReportLSPSubsystem(t *testing.T) {
 
 	res.cleanup()
 }
+
+func TestDeferredInitDoesNotReportMCPSubsystem(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cwd := t.TempDir()
+	ch := make(chan tui.InitEvent, 32)
+	res := &initResources{}
+	cfg := config.Config{
+		MCP: &config.MCPConfig{
+			Servers: []config.MCPServer{{
+				Name:    "echo",
+				Command: "echo",
+				Args:    []string{"hello"},
+			}},
+		},
+	}
+
+	go func() {
+		deferredInit(context.Background(), cfg, &cliMockLLM{name: "test-llm", response: "ok"}, nil, cwd, cwd, ch, res)
+		close(ch)
+	}()
+
+	sawMCP := false
+	sawFinal := false
+	for ev := range ch {
+		if ev.Err != nil {
+			t.Fatalf("deferredInit error: %v", ev.Err)
+		}
+		if ev.Item == "mcp" {
+			sawMCP = true
+		}
+		if ev.Result != nil {
+			sawFinal = true
+		}
+	}
+
+	if sawMCP {
+		t.Fatal("default deferred init should not initialize or report MCP")
+	}
+	if !sawFinal {
+		t.Fatal("expected deferred init to emit a final result")
+	}
+
+	res.cleanup()
+}

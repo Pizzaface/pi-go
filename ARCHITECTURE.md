@@ -2,7 +2,7 @@
 
 ## Overview
 
-pi-go is a coding agent built on [Google ADK Go](https://google.golang.org/adk) with multi-provider LLM support, sandboxed tool execution, session persistence, an interactive terminal UI, optional LSP integration, and a subagent orchestration system.
+pi-go is a coding agent built on [Google ADK Go](https://google.golang.org/adk) with multi-provider LLM support, sandboxed tool execution, session persistence, an interactive terminal UI, optional extension points, and a subagent orchestration system.
 
 ## Package Structure
 
@@ -15,7 +15,7 @@ pi-go/
     ├── auth/                        # OAuth PKCE/device-code login flows
     ├── cli/                         # CLI flags, output modes, wiring
     ├── config/                      # Config loading (global + project), model roles
-    ├── extension/                    # Hooks, skills, MCP integration
+    ├── extension/                    # Hooks, skills, optional MCP building blocks
     ├── guardrail/                    # Daily token usage tracking and limits
     ├── lsp/                         # Optional LSP integration (protocol, client, manager, languages, hooks)
     ├── logger/                      # Session logging to ~/.pi-go/log/
@@ -324,16 +324,16 @@ graph TD
     subgraph Extensions
         hooks["Hooks<br/>Shell commands<br/>before/after tool calls"]
         skills["Skills<br/>*.SKILL.md files<br/>Reusable instructions"]
-        mcp["MCP Servers<br/>External tool providers<br/>via subprocess"]
+        mcp["MCP Building Blocks<br/>Optional subprocess transport<br/>for custom integrations"]
     end
 
     config["config.json"] --> hooks
     skilldir["~/.pi-go/skills/<br/>.pi-go/skills/"] --> skills
-    config --> mcp
+    config -. optional custom wiring .-> mcp
 
     hooks --> agent["Agent Callbacks"]
     skills --> agent
-    mcp --> agent
+    mcp -. opt-in .-> agent
 
     style Extensions fill:#1a1a2a,color:#fff
 ```
@@ -342,7 +342,7 @@ graph TD
 
 **Skills**: Markdown instruction files with YAML frontmatter. Loaded from global and project directories.
 
-**MCP**: Launch external tool servers as subprocesses. Tools bridged into agent's toolset via ADK.
+**MCP**: In-tree helpers remain available for launching external tool servers as subprocesses and bridging them into ADK toolsets, but default core startup does not wire them automatically.
 
 ## Configuration
 
@@ -365,11 +365,12 @@ Planning and SOP directories are no longer part of core configuration. Any spec-
 {
   "roles": { "default": {...}, "smol": {...} },
   "hooks": [...],
-  "mcp": { "servers": [...] },
   "maxDailyTokens": 0,
   "compactor": { "enabled": true }
 }
 ```
+
+Optional integrations may define additional config fields such as `mcp`, but they are not part of the minimal core path.
 
 ## Initialization Flow
 
@@ -381,21 +382,23 @@ sequenceDiagram
     participant Init as Deferred Init Goroutine
     participant Tools as Core Tools
     participant Git as Git
-    participant MCP as MCP Servers
     participant Skills as Skills Loader
     participant Agent as Agent Builder
     participant LSP as Optional LSP Package
+    participant MCP as Optional MCP Wiring
 
     TUI->>Init: Start background init
     Init->>Tools: Phase 1: Create sandbox + core tools
     par Parallel Initialization
         Init->>Git: Detect repo, discover agents
-        Init->>MCP: Launch MCP servers
         Init->>Skills: Load .SKILL.md files
     end
     Init->>Agent: Phase 3: Build orchestrator + agent
     opt Custom startup or extension wires LSP
         Agent->>LSP: Register manager, tools, callback
+    end
+    opt Custom startup or extension wires MCP
+        Agent->>MCP: Register optional toolsets
     end
     Init->>TUI: InitEvent{Result: InitResult}
     TUI->>User: Ready to accept input
@@ -403,9 +406,9 @@ sequenceDiagram
 
 **Key patterns:**
 - TUI starts immediately with spinner showing initialization progress
-- Heavy I/O operations run in parallel (git, MCP, skills)
+- Heavy I/O operations run in parallel for the minimal path (git, skills)
 - Agent is created last after all default-core dependencies are ready
-- LSP is available for opt-in wiring, but is not part of deferred init by default
+- LSP and MCP are available for opt-in wiring, but are not part of deferred init by default
 - Progress sent via `InitEvent` channel
 
 ## Retry & Error Handling

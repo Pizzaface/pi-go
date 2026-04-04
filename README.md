@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/dimetron/pi-go?include_prereleases)](https://github.com/dimetron/pi-go/releases)
 [![codecov](https://codecov.io/gh/dimetron/pi-go/graph/badge.svg)](https://codecov.io/gh/dimetron/pi-go)
 
-A terminal-based coding agent built on [Google ADK Go](https://google.github.io/adk-go/) with multi-provider LLM support, sandboxed tool execution, optional LSP integration, and a subagent system.
+A terminal-based coding agent built on [Google ADK Go](https://google.github.io/adk-go/) with multi-provider LLM support, sandboxed tool execution, optional extension points, and a subagent system.
 
 ![pi-go TUI](docs/screen/pi-go.png)
 
@@ -21,8 +21,8 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 - **Optional LSP integration** — In-tree JSON-RPC client and LSP tools for Go, TypeScript/JS, Python, Rust that can be wired in by extensions or custom startup code
 - **AI Git tools** — Repository overview, file diffs, hunk parsing, and LLM-generated conventional commits (`/commit`)
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
-- **Extensions** — Hooks (shell callbacks), skills (`.SKILL.md` instructions), and MCP server support
-- **Minimal core startup** — Default startup wires core tools, sessions, and extensions without assuming optional subsystems like LSP or persistent memory
+- **Extensions** — Hooks (shell callbacks) and skills (`.SKILL.md` instructions) in the default experience, with optional MCP building blocks available in-tree for custom integrations
+- **Minimal core startup** — Default startup wires core tools, sessions, and skills/hooks without assuming optional subsystems like LSP, MCP, or persistent memory
 - **Skills audit** — Security scanning for hidden Unicode characters, BiDi attacks, and supply-chain threats in skill files (`pi audit`)
 
 ## Architecture
@@ -32,9 +32,9 @@ cmd/pi/             Entry point — CLI parsing, output mode selection
 internal/
 ├── agent/          ADK agent setup, retry logic, runner
 ├── cli/            Cobra CLI flags, output modes (interactive, print, json, rpc)
-├── config/         Global and project config (roles, hooks, MCP, themes)
+├── config/         Global and project config (roles, hooks, themes, optional integration settings)
 ├── audit/          Security scanner for skills (hidden Unicode, supply-chain threats)
-├── extension/      Hooks, skills, MCP server integration
+├── extension/      Hooks, skills, and optional MCP building blocks
 ├── lsp/            Optional LSP JSON-RPC client, language registry, manager, hooks
 ├── provider/       LLM providers implementing genai model interface
 ├── rpc/            Unix socket JSON-RPC 2.0 server
@@ -153,8 +153,8 @@ Pi looks for configuration in `~/.pi-go/config.json` (global) and `.pi-go/config
 
 - **Model roles** — Map role names to specific model strings
 - **Hooks** — Shell commands triggered on tool events (e.g., post-write formatting)
-- **MCP servers** — External tool servers via Model Context Protocol
 - **Themes** — Terminal color schemes via `theme` config field
+- **Optional integration settings** — Additional fields such as `mcp` may be consumed by custom startup code or extensions, but the default core startup does not launch MCP servers automatically
 
 ## License
 
