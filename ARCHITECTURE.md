@@ -21,7 +21,7 @@ pi-go/
     ├── logger/                      # Session logging to ~/.pi-go/log/
     ├── memory/                      # Optional persistent memory subsystem (not wired into default startup)
     ├── provider/                    # LLM providers (Anthropic, OpenAI, Gemini)
-    ├── rpc/                         # Unix socket JSON-RPC server
+    ├── jsonrpc/                     # Unix socket JSON-RPC server
     ├── session/                     # JSONL persistence, branching, compaction
     ├── tools/                       # Sandboxed tools (read, write, edit, bash, grep, find, ls, tree, git) plus optional LSP helpers
     └── tui/                         # Bubble Tea v2 interactive UI
@@ -239,25 +239,31 @@ The `Manager` starts language servers on demand based on file extension, caches 
 
 ```mermaid
 graph TD
-    resolve["provider.Resolve(modelName)"]
+    config["config roles + providers/models"] --> registry["provider registry"]
+    resources["discoverable models/*.json resources"] --> registry
+    builtin["built-in compatible families"] --> registry
+    registry --> resolve["Resolve(model, provider?)"]
 
-    resolve -->|"claude*"| anthropic["Anthropic<br/>anthropic-sdk-go"]
-    resolve -->|"gpt*, o1*, o3*, o4*"| openai["OpenAI<br/>openai-go"]
-    resolve -->|"gemini*"| gemini["Gemini<br/>ADK native"]
-    resolve -->|"*:cloud"| ollama["Ollama<br/>Anthropic-compatible API"]
+    resolve --> anthropic["Anthropic family<br/>anthropic-sdk-go"]
+    resolve --> openai["OpenAI family<br/>openai-go"]
+    resolve --> gemini["Gemini family<br/>ADK native"]
+    resolve --> ollama["Ollama family<br/>native Ollama API"]
 
     anthropic --> llm["model.LLM interface"]
     openai --> llm
     gemini --> llm
-    ollama --> anthropic
+    ollama --> llm
 
     llm --> agent["Agent"]
 
+    style registry fill:#333,color:#fff
     style resolve fill:#333,color:#fff
     style llm fill:#1a3a5c,color:#fff
 ```
 
-Each provider implements the ADK `model.LLM` interface:
+Provider selection is now data-driven: built-ins seed a small compatibility registry, discoverable `models/*.json` resources extend or override it, and config-local `providers` / `models` apply last. That keeps startup generic while still allowing aliases, alternate compatible backends, custom base URLs, and provider-specific default headers without editing core resolution logic.
+
+Each provider family implements the ADK `model.LLM` interface:
 
 ```go
 type LLM interface {
@@ -266,8 +272,7 @@ type LLM interface {
 }
 ```
 
-**API keys** from environment: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`
-**Base URLs** from environment: `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `GEMINI_BASE_URL`
+Built-in families still default to their usual environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, etc.), but compatible custom providers can declare their own API key env vars, base URL env vars/defaults, ping endpoints, and default headers through the registry.
 
 ## Session Management
 
@@ -314,7 +319,7 @@ graph LR
     style mode fill:#333,color:#fff
 ```
 
-**JSON event types**: `message_start`, `text_delta`, `tool_call`, `tool_result`, `message_end`
+**JSON event types**: `message_start`, `thinking_delta`, `text_delta`, `tool_call`, `tool_result`, `message_end`
 
 ## Extension System
 
@@ -324,6 +329,7 @@ graph TD
         discovery["Resource discovery<br/>packages + loose dirs"]
         prompts["Prompt fragments<br/>prompt / prompt_file"]
         prompt_templates["Prompt templates<br/>prompts/*.md"]
+        models["Provider/model registries<br/>models/*.json"]
         hooks["Tool hooks<br/>before_tool / after_tool"]
         lifecycle["Lifecycle hooks<br/>startup / session_start"]
         skills["Skills<br/>skills_dir + resource dirs"]
@@ -334,6 +340,7 @@ graph TD
 
     discovery --> prompts
     discovery --> prompt_templates
+    discovery --> models
     discovery --> hooks
     discovery --> lifecycle
     discovery --> skills
@@ -351,13 +358,15 @@ graph TD
     style Runtime fill:#1a1a2a,color:#fff
 ```
 
-The extension runtime is now the **primary customization surface** for go-pi.
+The extension runtime is now the **primary customization surface** for pi-go.
 
 **Discovery**: `DiscoverResourceDirs(...)` builds an ordered list of global and project resource directories, including installed packages under `packages/*/`. Later directories override earlier ones by resource name.
 
 **Prompt contributions**: Extensions can append system-instruction fragments with `prompt` or `prompt_file`.
 
 **Prompt templates**: Markdown files in discoverable `prompts/` directories are loaded as first-class `PromptTemplate` resources and exposed to the TUI through the existing slash-command seam.
+
+**Provider/model registries**: JSON files in discoverable `models/` directories extend the built-in provider registry with compatible provider definitions, exact model aliases, custom base URLs, env names, and default headers.
 
 **Tool hooks**: `before_tool` and `after_tool` shell hooks are merged into the agent callback chain.
 
@@ -383,6 +392,8 @@ See [docs/extensions.md](docs/extensions.md) for the authoring guide.
 .pi-go/skills/*.SKILL.md       # Project skills (override global)
 ~/.pi-go/extensions/*/extension.json  # Global extension manifests
 .pi-go/extensions/*/extension.json    # Project extension manifests
+~/.pi-go/models/*.json                # Global provider/model registry resources
+.pi-go/models/*.json                  # Project provider/model registry resources
 ~/.pi-go/packages/*/                  # Global resource packages
 .pi-go/packages/*/                    # Project resource packages
 ~/.pi-go/sessions/             # Session storage

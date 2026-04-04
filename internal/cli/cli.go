@@ -78,14 +78,19 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	// Load API keys from ~/.pi-go/.env (set by /login command).
 	loadDotEnv()
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Resolve model: CLI flag overrides default role.
-	if flagModel != "" {
-		cfg.Roles["default"] = config.RoleConfig{Model: flagModel}
+	reg, err := extension.BuildProviderRegistry(cwd, cfg)
+	if err != nil {
+		return fmt.Errorf("building provider registry: %w", err)
 	}
 
 	// Determine active role from flags.
@@ -99,7 +104,10 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		activeRole = "plan"
 	}
 
-	modelName, providerName, err := cfg.ResolveRole(activeRole)
+	// Resolve model: CLI flag overrides the selected active role.
+	applyModelOverride(&cfg, activeRole, flagModel)
+
+	info, err := cfg.ResolveRoleInfoWithRegistry(activeRole, reg)
 	if err != nil {
 		return fmt.Errorf("resolving model role: %w", err)
 	}
@@ -109,30 +117,16 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		mode = detectMode()
 	}
 
-	info, err := provider.Resolve(modelName)
-	// If config explicitly set a provider, use it over auto-detection.
-	if err == nil && providerName != "" {
-		info.Provider = providerName
-	}
-	if err != nil {
-		return fmt.Errorf("resolving model: %w", err)
-	}
-
-	keys := config.APIKeys()
-	apiKey := keys[info.Provider]
-	if apiKey == "" && info.Provider != "gemini" && info.Provider != "ollama" && !info.Ollama {
-		envVar := providerEnvVar(info.Provider)
+	apiKey := reg.APIKey(info.Provider)
+	if apiKey == "" && reg.RequiresAPIKey(info.Provider) {
+		envVar := reg.ProviderEnvVar(info.Provider)
 		return fmt.Errorf("no API key found for provider %q (set %s)", info.Provider, envVar)
 	}
 
-	// Resolve base URL: --url flag takes precedence over env var, then Ollama default.
+	// Resolve base URL: --url flag takes precedence over registry env/defaults.
 	baseURL := flagURL
 	if baseURL == "" {
-		baseURLs := config.BaseURLs()
-		baseURL = baseURLs[info.Provider]
-	}
-	if baseURL == "" && info.Ollama {
-		baseURL = "http://localhost:11434"
+		baseURL = reg.BaseURL(info.Provider)
 	}
 
 	// Check Ollama is online before proceeding.
@@ -142,9 +136,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Build LLM options: extra headers + insecure TLS.
+	// Build LLM options: registry headers + config headers + CLI headers + insecure TLS.
 	llmOpts := &provider.LLMOptions{
-		ExtraHeaders:    mergeExtraHeaders(cfg.ExtraHeaders, flagHeaders),
+		ExtraHeaders:    mergeExtraHeaders(mergeExtraHeaders(reg.DefaultHeaders(info.Provider), nil), append(headerMapToPairs(cfg.ExtraHeaders), flagHeaders...)),
 		InsecureSkipTLS: cfg.InsecureSkipTLS || flagInsecure,
 	}
 
@@ -156,10 +150,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	prompt := strings.Join(args, " ")
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting working directory: %w", err)
-	}
 	sandboxRoot := os.Getenv("PI_SANDBOX_ROOT")
 	if sandboxRoot == "" {
 		sandboxRoot = cwd
@@ -317,17 +307,18 @@ func runNonInteractive(
 	}
 }
 
-func providerEnvVar(p string) string {
-	switch p {
-	case "anthropic":
-		return "ANTHROPIC_API_KEY"
-	case "openai":
-		return "OPENAI_API_KEY"
-	case "gemini":
-		return "GOOGLE_API_KEY"
-	default:
-		return strings.ToUpper(p) + "_API_KEY"
+func ensureRolesMap(cfg *config.Config) {
+	if cfg != nil && cfg.Roles == nil {
+		cfg.Roles = map[string]config.RoleConfig{}
 	}
+}
+
+func applyModelOverride(cfg *config.Config, activeRole, model string) {
+	if cfg == nil || model == "" {
+		return
+	}
+	ensureRolesMap(cfg)
+	cfg.Roles[activeRole] = config.RoleConfig{Model: model}
 }
 
 // detectMode returns the default output mode based on terminal state.
@@ -384,7 +375,7 @@ func runPrint(ctx context.Context, ag *agent.Agent, sessionID, prompt string, lo
 }
 
 // jsonEvent represents a JSONL event for JSON output mode.
-// Event types follow the spec: message_start, text_delta, tool_call, tool_result, message_end.
+// Event types: message_start, thinking_delta, text_delta, tool_call, tool_result, message_end.
 type jsonEvent struct {
 	Type      string `json:"type"`
 	Agent     string `json:"agent,omitempty"`
@@ -489,6 +480,17 @@ func mergeExtraHeaders(cfgHeaders map[string]string, cliHeaders []string) map[st
 		return nil
 	}
 	return merged
+}
+
+func headerMapToPairs(headers map[string]string) []string {
+	if len(headers) == 0 {
+		return nil
+	}
+	pairs := make([]string, 0, len(headers))
+	for k, v := range headers {
+		pairs = append(pairs, k+"="+v)
+	}
+	return pairs
 }
 
 // convertHooks converts config.HookConfig to extension.HookConfig.

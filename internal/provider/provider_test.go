@@ -143,7 +143,7 @@ func TestNewGemini(t *testing.T) {
 	if os.Getenv("GOOGLE_API_KEY") == "" && os.Getenv("GEMINI_API_KEY") == "" {
 		t.Skip("skipping: no Google/Gemini API key set")
 	}
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "", nil)
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "", nil)
 	if err != nil {
 		t.Fatalf("NewGemini() error: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 func TestNewGeminiWithExtraHeaders(t *testing.T) {
 	t.Setenv("GOOGLE_API_KEY", "test-google-key")
 
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "", &LLMOptions{
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "", &LLMOptions{
 		ExtraHeaders: map[string]string{
 			"X-Custom-Header": "value1",
 			"X-Another":       "value2",
@@ -375,7 +375,7 @@ func TestNewGeminiWithExtraHeaders(t *testing.T) {
 func TestNewGeminiWithBaseURL(t *testing.T) {
 	t.Setenv("GOOGLE_API_KEY", "test-google-key")
 
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "https://custom-gemini.example.com", nil)
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "https://custom-gemini.example.com", nil)
 	if err != nil {
 		t.Fatalf("NewGemini() with baseURL error: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestNewGeminiWithBaseURL(t *testing.T) {
 func TestNewGeminiWithBaseURLAndHeaders(t *testing.T) {
 	t.Setenv("GOOGLE_API_KEY", "test-google-key")
 
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "https://custom.example.com", &LLMOptions{
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "https://custom.example.com", &LLMOptions{
 		ExtraHeaders: map[string]string{"X-Custom": "val"},
 	})
 	if err != nil {
@@ -402,9 +402,22 @@ func TestNewGeminiWithGeminiAPIKeyEnv(t *testing.T) {
 	t.Setenv("GOOGLE_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "test-gemini-key")
 
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "", nil)
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "", nil)
 	if err != nil {
 		t.Fatalf("NewGemini() with GEMINI_API_KEY error: %v", err)
+	}
+	if llm == nil {
+		t.Fatal("NewGemini() returned nil")
+	}
+}
+
+func TestNewGeminiWithExplicitAPIKey(t *testing.T) {
+	t.Setenv("GOOGLE_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	llm, err := NewGemini(context.TODO(), "custom-gemini", "gemini-2.5-flash", "explicit-key", "", nil)
+	if err != nil {
+		t.Fatalf("NewGemini() with explicit API key error: %v", err)
 	}
 	if llm == nil {
 		t.Fatal("NewGemini() returned nil")
@@ -417,7 +430,7 @@ func TestNewGeminiNoAPIKeyEnvVars(t *testing.T) {
 
 	// Without API keys, NewGemini may still succeed (using ADC) or fail depending on environment.
 	// We just verify it doesn't panic.
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "", nil)
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "", nil)
 	_ = llm
 	_ = err
 }
@@ -477,9 +490,15 @@ func TestBuildTransport(t *testing.T) {
 		if tr == nil {
 			t.Fatal("expected non-nil transport")
 		}
-		// Should be an *http.Transport with InsecureSkipVerify.
-		if _, ok := tr.(*http.Transport); !ok {
+		httpTr, ok := tr.(*http.Transport)
+		if !ok {
 			t.Fatalf("expected *http.Transport, got %T", tr)
+		}
+		if httpTr.Proxy == nil {
+			t.Fatal("expected cloned default transport to preserve proxy settings")
+		}
+		if httpTr.TLSClientConfig == nil || !httpTr.TLSClientConfig.InsecureSkipVerify {
+			t.Fatal("expected InsecureSkipVerify to be enabled")
 		}
 	})
 
@@ -565,7 +584,7 @@ func TestNewGeminiInsecureTLSOnly(t *testing.T) {
 	// Exercise the InsecureSkipTLS path in NewGemini without extra headers.
 	t.Setenv("GOOGLE_API_KEY", "test-google-key")
 
-	llm, err := NewGemini(context.TODO(), "gemini-2.5-flash", "", &LLMOptions{
+	llm, err := NewGemini(context.TODO(), "gemini", "gemini-2.5-flash", "", "", &LLMOptions{
 		InsecureSkipTLS: true,
 	})
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/dimetron/pi-go/internal/config"
+	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/provider"
 )
 
@@ -39,6 +40,8 @@ Examples:
 	}
 	cmd.Flags().StringVar(&flagModel, "model", "", "LLM model to use")
 	cmd.Flags().StringVar(&flagURL, "url", "", "Alternative base URL for the LLM API endpoint")
+	cmd.Flags().StringArrayVar(&flagHeaders, "header", nil, "Extra HTTP header for LLM requests (key=value, repeatable)")
+	cmd.Flags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification for LLM API calls")
 	cmd.Flags().BoolVar(&flagSmol, "smol", false, "Use the smol role")
 	cmd.Flags().BoolVar(&flagSlow, "slow", false, "Use the slow role")
 	cmd.Flags().BoolVar(&flagPlan, "plan", false, "Use the plan role")
@@ -64,30 +67,22 @@ func defaultAPIBaseURL(providerName string) string {
 	}
 }
 
-// pingEndpoint returns the health-check URL path for a provider.
-func pingEndpoint(providerName string) string {
-	switch providerName {
-	case "anthropic":
-		return "/v1/messages"
-	case "openai":
-		return "/v1/models"
-	case "gemini":
-		return "/v1beta/models"
-	default:
-		return "/"
-	}
-}
-
 func runPing(cmd *cobra.Command, args []string) error {
 	loadDotEnv()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	if flagModel != "" {
-		cfg.Roles["default"] = config.RoleConfig{Model: flagModel}
+	reg, err := extension.BuildProviderRegistry(cwd, cfg)
+	if err != nil {
+		return fmt.Errorf("building provider registry: %w", err)
 	}
 
 	activeRole := "default"
@@ -100,32 +95,26 @@ func runPing(cmd *cobra.Command, args []string) error {
 		activeRole = "plan"
 	}
 
-	modelName, providerName, err := cfg.ResolveRole(activeRole)
+	applyModelOverride(&cfg, activeRole, flagModel)
+
+	info, err := cfg.ResolveRoleInfoWithRegistry(activeRole, reg)
 	if err != nil {
 		return fmt.Errorf("resolving model role: %w", err)
 	}
 
-	info, err := provider.Resolve(modelName)
-	if err != nil {
-		return fmt.Errorf("resolving model: %w", err)
-	}
-	if providerName != "" {
-		info.Provider = providerName
-	}
-
-	keys := config.APIKeys()
-	apiKey := keys[info.Provider]
+	apiKey := reg.APIKey(info.Provider)
 
 	baseURL := flagURL
 	if baseURL == "" {
-		baseURLs := config.BaseURLs()
-		baseURL = baseURLs[info.Provider]
-	}
-	if baseURL == "" && info.Ollama {
-		baseURL = "http://localhost:11434"
+		baseURL = reg.BaseURL(info.Provider)
 	}
 	if baseURL == "" {
-		baseURL = defaultAPIBaseURL(info.Provider)
+		baseURL = defaultAPIBaseURL(info.Family)
+	}
+
+	llmOpts := &provider.LLMOptions{
+		ExtraHeaders:    mergeExtraHeaders(mergeExtraHeaders(reg.DefaultHeaders(info.Provider), nil), append(headerMapToPairs(cfg.ExtraHeaders), flagHeaders...)),
+		InsecureSkipTLS: cfg.InsecureSkipTLS || flagInsecure,
 	}
 
 	out := os.Stderr
@@ -148,7 +137,7 @@ func runPing(cmd *cobra.Command, args []string) error {
 	w("*\n")
 
 	// Parse the target URL.
-	endpoint := pingEndpoint(info.Provider)
+	endpoint := reg.PingEndpoint(info.Provider)
 	targetURL := strings.TrimRight(baseURL, "/") + endpoint
 	u, err := url.Parse(targetURL)
 	if err != nil {
@@ -180,16 +169,30 @@ func runPing(cmd *cobra.Command, args []string) error {
 
 	// Phase 2: TCP connection.
 	w("* ─── TCP Connection ───\n")
-	tcpAddr := net.JoinHostPort(addrs[0], port)
-	tcpStart := time.Now()
-	conn, tcpErr := net.DialTimeout("tcp", tcpAddr, 10*time.Second)
-	tcpDur := time.Since(tcpStart)
+	var (
+		tcpAddr string
+		tcpDur  time.Duration
+		tcpErr  error
+	)
+	for _, addr := range addrs {
+		candidate := net.JoinHostPort(addr, port)
+		start := time.Now()
+		conn, err := net.DialTimeout("tcp", candidate, 10*time.Second)
+		tcpDur = time.Since(start)
+		if err != nil {
+			tcpErr = err
+			continue
+		}
+		tcpAddr = candidate
+		_ = conn.Close()
+		tcpErr = nil
+		break
+	}
 	if tcpErr != nil {
 		w("* TCP FAILED: %v  (%s)\n", tcpErr, tcpDur.Round(time.Millisecond))
-		w("*\n* RESULT: connection issue — TCP connect failed to %s\n", tcpAddr)
+		w("*\n* RESULT: connection issue — TCP connect failed to any resolved address for %s:%s\n", host, port)
 		return fmt.Errorf("TCP connect failed: %w", tcpErr)
 	}
-	_ = conn.Close()
 	w("*   Connected to %s  (%s)\n", tcpAddr, tcpDur.Round(time.Millisecond))
 
 	// Phase 3: TLS handshake (if https).
@@ -198,8 +201,8 @@ func runPing(cmd *cobra.Command, args []string) error {
 		tlsStart := time.Now()
 		tlsConn, tlsErr := tls.DialWithDialer(
 			&net.Dialer{Timeout: 10 * time.Second},
-			"tcp", net.JoinHostPort(host, port),
-			&tls.Config{ServerName: host},
+			"tcp", tcpAddr,
+			&tls.Config{ServerName: host, InsecureSkipVerify: llmOpts.InsecureSkipTLS}, //nolint:gosec // user-requested
 		)
 		tlsDur := time.Since(tlsStart)
 		if tlsErr != nil {
@@ -256,31 +259,14 @@ func runPing(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	// Set auth headers.
-	switch info.Provider {
-	case "anthropic":
-		if apiKey != "" {
-			req.Header.Set("x-api-key", apiKey)
-			req.Header.Set("anthropic-version", "2023-06-01")
-		}
-	case "openai":
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-	case "gemini":
-		if apiKey != "" {
-			q := req.URL.Query()
-			q.Set("key", apiKey)
-			req.URL.RawQuery = q.Encode()
-		}
-	}
+	applyPingAuthHeaders(req, info, apiKey, llmOpts.ExtraHeaders)
 	req.Header.Set("User-Agent", "pi-go/"+Version)
 
-	w("> %s %s HTTP/1.1\n", req.Method, req.URL.RequestURI())
+	w("> %s %s HTTP/1.1\n", req.Method, maskedRequestURI(req.URL))
 	w("> Host: %s\n", req.URL.Host)
 	for k, vs := range req.Header {
 		for _, v := range vs {
-			if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Api-Key") {
+			if isSensitiveHeader(k) {
 				v = v[:min(10, len(v))] + "..."
 			}
 			w("> %s: %s\n", k, v)
@@ -288,8 +274,9 @@ func runPing(cmd *cobra.Command, args []string) error {
 	}
 	w(">\n")
 
+	httpClient := provider.BuildHTTPClient(llmOpts, 30*time.Second)
 	httpStart := time.Now()
-	resp, httpErr := http.DefaultClient.Do(req)
+	resp, httpErr := httpClient.Do(req)
 	httpDur := time.Since(httpStart)
 
 	if httpErr != nil {
@@ -318,9 +305,14 @@ func runPing(cmd *cobra.Command, args []string) error {
 		w("* Status: %s\n", resp.Status)
 		httpAlive = true
 	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		if info.Provider == "gemini" && apiKey == "" {
+			w("* ⚠ Raw HTTP probe is unauthenticated (HTTP %d), but built-in Gemini may still work via ADC\n", resp.StatusCode)
+			httpAlive = true
+			break
+		}
 		w("* ✗ Authentication failed (HTTP %d)\n", resp.StatusCode)
 		w("* The API endpoint is reachable but the API key is invalid or missing.\n")
-		w("* Check %s\n", providerEnvVar(info.Provider))
+		w("* Check %s\n", reg.ProviderEnvVar(info.Provider))
 	case resp.StatusCode == 404:
 		w("* ✗ Endpoint not found (HTTP %d)\n", resp.StatusCode)
 		w("* The server is reachable but the model endpoint was not found.\n")
@@ -387,7 +379,7 @@ func runPing(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	llm, llmErr := provider.NewLLM(cmd.Context(), info, apiKey, baseURL, "none", nil)
+	llm, llmErr := provider.NewLLM(cmd.Context(), info, apiKey, baseURL, "none", llmOpts)
 	if llmErr != nil {
 		w("* ✗ Failed to create LLM client: %v\n", llmErr)
 		return fmt.Errorf("creating LLM for ping: %w", llmErr)
@@ -653,6 +645,49 @@ func ollamaPingFull(ctx context.Context, baseURL, modelName, prompt string, isPi
 		return "", fmt.Errorf("model returned empty response in both modes")
 	}
 	return reply, nil
+}
+
+func isSensitiveHeader(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return strings.Contains(lower, "auth") || strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "key")
+}
+
+func maskedRequestURI(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	copyURL := *u
+	q := copyURL.Query()
+	for _, key := range []string{"key", "api_key", "apikey"} {
+		if q.Has(key) {
+			q.Set(key, "***")
+		}
+	}
+	copyURL.RawQuery = q.Encode()
+	return copyURL.RequestURI()
+}
+
+func applyPingAuthHeaders(req *http.Request, info provider.Info, apiKey string, extraHeaders map[string]string) {
+	switch info.Family {
+	case "anthropic":
+		if apiKey != "" {
+			req.Header.Set("x-api-key", apiKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+		}
+	case "openai":
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+	case "gemini":
+		if apiKey != "" {
+			q := req.URL.Query()
+			q.Set("key", apiKey)
+			req.URL.RawQuery = q.Encode()
+		}
+	}
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
 }
 
 func truncate(s string, n int) string {

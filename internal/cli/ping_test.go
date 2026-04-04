@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dimetron/pi-go/internal/config"
+	"github.com/dimetron/pi-go/internal/provider"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 )
@@ -268,28 +270,6 @@ func TestDefaultAPIBaseURL(t *testing.T) {
 	}
 }
 
-func TestPingEndpoint(t *testing.T) {
-	tests := []struct {
-		provider string
-		want     string
-	}{
-		{"anthropic", "/v1/messages"},
-		{"openai", "/v1/models"},
-		{"gemini", "/v1beta/models"},
-		{"ollama", "/"},
-		{"", "/"},
-		{"unknown", "/"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.provider, func(t *testing.T) {
-			got := pingEndpoint(tt.provider)
-			if got != tt.want {
-				t.Errorf("pingEndpoint(%q) = %q, want %q", tt.provider, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestTruncate(t *testing.T) {
 	tests := []struct {
 		name string
@@ -342,10 +322,64 @@ func TestNewPingCmd(t *testing.T) {
 		t.Errorf("unexpected Use: %s", cmd.Use)
 	}
 	// Verify flags exist.
-	flags := []string{"model", "url", "smol", "slow", "plan"}
+	flags := []string{"model", "url", "header", "insecure", "smol", "slow", "plan"}
 	for _, name := range flags {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("missing flag: %s", name)
+		}
+	}
+}
+
+func TestEnsureRolesMapInitializesNilMap(t *testing.T) {
+	cfg := config.Config{}
+	ensureRolesMap(&cfg)
+	cfg.Roles["default"] = config.RoleConfig{Model: "gpt-4o"}
+	if cfg.Roles["default"].Model != "gpt-4o" {
+		t.Fatalf("roles map not initialized: %+v", cfg.Roles)
+	}
+}
+
+func TestApplyModelOverrideUsesActiveRole(t *testing.T) {
+	cfg := config.Config{Roles: map[string]config.RoleConfig{"default": {Model: "gpt-4o"}, "smol": {Model: "gpt-4o-mini"}}}
+	applyModelOverride(&cfg, "smol", "gemini-2.5-flash")
+	if cfg.Roles["smol"].Model != "gemini-2.5-flash" {
+		t.Fatalf("smol role not overridden: %+v", cfg.Roles)
+	}
+	if cfg.Roles["default"].Model != "gpt-4o" {
+		t.Fatalf("default role should stay unchanged: %+v", cfg.Roles)
+	}
+}
+
+func TestApplyPingAuthHeadersUsesProviderFamily(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/models", nil)
+	applyPingAuthHeaders(req, provider.Info{Provider: "openrouter", Family: "openai"}, "sk-test", map[string]string{"HTTP-Referer": "https://example.com/app"})
+	if got := req.Header.Get("Authorization"); got != "Bearer sk-test" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	if got := req.Header.Get("HTTP-Referer"); got != "https://example.com/app" {
+		t.Fatalf("HTTP-Referer = %q", got)
+	}
+}
+
+func TestApplyPingAuthHeadersGeminiUsesAPIKeyQuery(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/v1beta/models", nil)
+	applyPingAuthHeaders(req, provider.Info{Provider: "vertex-proxy", Family: "gemini"}, "gem-key", nil)
+	if got := req.URL.Query().Get("key"); got != "gem-key" {
+		t.Fatalf("key query = %q", got)
+	}
+}
+
+func TestMaskedRequestURIHidesSensitiveQueryParams(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/v1beta/models?key=secret&other=1", nil)
+	if got := maskedRequestURI(req.URL); got != "/v1beta/models?key=%2A%2A%2A&other=1" {
+		t.Fatalf("maskedRequestURI() = %q", got)
+	}
+}
+
+func TestIsSensitiveHeader(t *testing.T) {
+	for _, name := range []string{"Authorization", "Proxy-Authorization", "X-Api-Key", "Api-Key", "X-Secret-Token"} {
+		if !isSensitiveHeader(name) {
+			t.Fatalf("expected %q to be treated as sensitive", name)
 		}
 	}
 }
@@ -530,26 +564,3 @@ func TestOllamaPingFullNonStreamingError(t *testing.T) {
 // ------------------------------------------------------------------
 // runPing integration tests (using mock provider endpoint)
 // ------------------------------------------------------------------
-
-// TestRunPingDNSError tests runPing when DNS resolution fails.
-// Note: This is a placeholder - DNS failure testing requires network manipulation
-// or a custom resolver. The actual DNS error handling is tested implicitly
-// when the host cannot be resolved.
-func TestRunPingDNSError(t *testing.T) {
-	// DNS lookup will fail for this hostname.
-	invalidHost := "this-host-definitely-does-not-exist-12345.invalid"
-	_ = invalidHost
-}
-
-// TestRunPingHTTPError401 tests HTTP 401 response handling.
-func TestRunPingHTTPError401(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
-	var output strings.Builder
-	// This test would require mocking the config and provider resolution.
-	// Skipping for now as runPing has many dependencies on config/system state.
-	_ = output
-}

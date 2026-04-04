@@ -26,8 +26,13 @@ func BuildTransport(opts *LLMOptions) http.RoundTripper {
 
 	base := http.DefaultTransport
 	if opts.InsecureSkipTLS {
-		base = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // user-requested
+		if cloned, ok := http.DefaultTransport.(*http.Transport); ok {
+			transport := cloned.Clone()
+			if transport.TLSClientConfig == nil {
+				transport.TLSClientConfig = &tls.Config{}
+			}
+			transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // user-requested
+			base = transport
 		}
 	}
 	if hasHeaders {
@@ -59,62 +64,19 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(req)
 }
 
-// Info describes a provider and the model to use.
+// Info describes a provider family and resolved model target.
 type Info struct {
 	Provider string
+	Family   string
 	Model    string
 	Ollama   bool // true when model is served by Ollama
 }
 
-// Known model prefixes mapped to providers.
-var modelPrefixes = map[string]string{
-	"claude": "anthropic",
-	"gpt":    "openai",
-	"gpt-5":  "openai",
-	"gemini": "gemini",
-}
-
-// OllamaModelPrefixes are common Ollama model name prefixes.
-var OllamaModelPrefixes = []string{"qwen", "minimax", "deepseek", "llama", "mistral", "phi", "codellama", "gemma"}
-
-// Resolve determines the provider from a model name.
-// Ollama models are routed to the native "ollama" provider.
+// Resolve determines the provider from a model name using the built-in registry.
 func Resolve(modelName string) (Info, error) {
-	if modelName == "" {
-		return Info{}, fmt.Errorf("no model specified")
-	}
-
-	// Detect ollama/ prefix → native Ollama provider.
-	// The prefix is stripped; the remainder is the Ollama model name.
-	if strings.HasPrefix(strings.ToLower(modelName), "ollama/") {
-		return Info{Provider: "ollama", Model: modelName[len("ollama/"):], Ollama: true}, nil
-	}
-
-	// Detect :cloud or :local suffix → native Ollama provider.
-	// Keep the full model name — :cloud/:local are valid Ollama model tags.
-	if strings.HasSuffix(modelName, ":cloud") || strings.HasSuffix(modelName, ":local") {
-		return Info{Provider: "ollama", Model: modelName, Ollama: true}, nil
-	}
-
-	lower := strings.ToLower(modelName)
-	for prefix, provider := range modelPrefixes {
-		if strings.HasPrefix(lower, prefix) {
-			return Info{Provider: provider, Model: modelName}, nil
-		}
-	}
-
-	// Detect common Ollama model prefixes → native Ollama provider.
-	for _, prefix := range OllamaModelPrefixes {
-		if strings.HasPrefix(lower, prefix) {
-			model := modelName
-			if !strings.Contains(model, ":") {
-				model = modelName + ":latest"
-			}
-			return Info{Provider: "ollama", Model: model, Ollama: true}, nil
-		}
-	}
-
-	return Info{}, fmt.Errorf("unknown model %q: cannot determine provider (known prefixes: claude, gpt, gemini, qwen, minimax, deepseek, llama, mistral, phi, codellama, gemma, or use ollama/ prefix for Ollama)", modelName)
+	reg := NewRegistry()
+	reg.AddBuiltins()
+	return reg.Resolve(modelName, "")
 }
 
 // CheckOllama verifies that the Ollama server at baseURL is reachable.
@@ -167,16 +129,20 @@ func NewLLM(ctx context.Context, info Info, apiKey, baseURL, thinkingLevel strin
 	if opts == nil {
 		opts = &LLMOptions{}
 	}
-	switch info.Provider {
+	family := info.Family
+	if family == "" {
+		family = info.Provider
+	}
+	switch family {
 	case "ollama":
 		return NewOllama(ctx, info.Model, baseURL, thinkingLevel, opts)
 	case "gemini":
-		return NewGemini(ctx, info.Model, baseURL, opts)
+		return NewGemini(ctx, info.Provider, info.Model, apiKey, baseURL, opts)
 	case "openai":
 		return NewOpenAI(ctx, info.Model, apiKey, baseURL, opts)
 	case "anthropic":
 		return NewAnthropic(ctx, info.Model, apiKey, baseURL, thinkingLevel, opts)
 	default:
-		return nil, fmt.Errorf("unsupported provider: %s", info.Provider)
+		return nil, fmt.Errorf("unsupported provider family: %s", family)
 	}
 }

@@ -15,6 +15,7 @@ type ResourceDirs struct {
 	SkillDirs     []string
 	PromptDirs    []string
 	ThemeDirs     []string
+	ModelDirs     []string
 }
 
 // PromptTemplate is a first-class prompt resource that can be exposed in the TUI
@@ -69,18 +70,24 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 			packageResourceDirs(globalRoot, "themes")...,
 		)
 		out.ThemeDirs = append(out.ThemeDirs, filepath.Join(globalRoot, "themes"))
+
+		out.ModelDirs = append(out.ModelDirs,
+			packageResourceDirs(globalRoot, "models")...,
+		)
+		out.ModelDirs = append(out.ModelDirs, filepath.Join(globalRoot, "models"))
 	}
 
 	if workDir != "" {
-		projectRoot := filepath.Join(workDir, ".pi-go")
+		resourceRoot := resolveResourceRoot(workDir)
+		projectRoot := filepath.Join(resourceRoot, ".pi-go")
 		out.ExtensionDirs = append(out.ExtensionDirs, packageResourceDirs(projectRoot, "extensions")...)
 		out.ExtensionDirs = append(out.ExtensionDirs, filepath.Join(projectRoot, "extensions"))
 
 		out.SkillDirs = append(out.SkillDirs, packageResourceDirs(projectRoot, "skills")...)
 		out.SkillDirs = append(out.SkillDirs,
 			filepath.Join(projectRoot, "skills"),
-			filepath.Join(workDir, ".claude", "skills"),
-			filepath.Join(workDir, ".cursor", "skills"),
+			filepath.Join(resourceRoot, ".claude", "skills"),
+			filepath.Join(resourceRoot, ".cursor", "skills"),
 		)
 
 		out.PromptDirs = append(out.PromptDirs, packageResourceDirs(projectRoot, "prompts")...)
@@ -88,13 +95,36 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 
 		out.ThemeDirs = append(out.ThemeDirs, packageResourceDirs(projectRoot, "themes")...)
 		out.ThemeDirs = append(out.ThemeDirs, filepath.Join(projectRoot, "themes"))
+
+		out.ModelDirs = append(out.ModelDirs, packageResourceDirs(projectRoot, "models")...)
+		out.ModelDirs = append(out.ModelDirs, filepath.Join(projectRoot, "models"))
 	}
 
 	out.ExtensionDirs = dedupeStrings(out.ExtensionDirs)
 	out.SkillDirs = dedupeStrings(out.SkillDirs)
 	out.PromptDirs = dedupeStrings(out.PromptDirs)
 	out.ThemeDirs = dedupeStrings(out.ThemeDirs)
+	out.ModelDirs = dedupeStrings(out.ModelDirs)
 	return out
+}
+
+func resolveResourceRoot(workDir string) string {
+	current := filepath.Clean(workDir)
+	for {
+		if pathExists(filepath.Join(current, ".pi-go")) || pathExists(filepath.Join(current, ".git")) {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return workDir
+		}
+		current = parent
+	}
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func packageResourceDirs(root, resource string) []string {
@@ -173,13 +203,15 @@ func parsePromptTemplateFile(path string) (PromptTemplate, error) {
 		trimmed := strings.TrimSpace(line)
 
 		if trimmed == "---" && !frontmatterDone {
-			if !inFrontmatter {
+			if !inFrontmatter && body.Len() == 0 {
 				inFrontmatter = true
 				continue
 			}
-			inFrontmatter = false
-			frontmatterDone = true
-			continue
+			if inFrontmatter {
+				inFrontmatter = false
+				frontmatterDone = true
+				continue
+			}
 		}
 
 		if inFrontmatter {

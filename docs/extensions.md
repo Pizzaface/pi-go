@@ -1,6 +1,6 @@
 # Extensions
 
-go-pi's primary customization surface is the **extension runtime**.
+pi-go's primary customization surface is the **extension runtime**.
 
 If you want to add new behavior, prefer an extension over expanding the core. The core should stay small: agent loop, tools sandbox, sessions, TUI shell, and the runtime that loads extensions.
 
@@ -16,6 +16,7 @@ These resource types are discoverable:
 - `skills/` — reusable `SKILL.md` folders
 - `prompts/` — markdown prompt templates exposed as slash commands
 - `themes/` — JSON theme files layered on top of built-in themes
+- `models/` — JSON provider/model registry documents for compatible transport families
 
 ### Loading order
 
@@ -97,6 +98,7 @@ Packages are just installable directories that can contain any combination of:
 ```text
 my-package/
 ├── extensions/
+├── models/
 ├── prompts/
 ├── skills/
 └── themes/
@@ -123,6 +125,49 @@ pi package remove <name>
 - `update` refreshes from the recorded source
 
 This keeps customization lightweight and shareable without expanding core startup.
+
+## Provider and model registries
+
+Compatible provider/model customization comes in through discoverable `models/*.json` resources and matching `providers` / `models` arrays in config.
+
+A registry document can declare:
+
+- `providers[]` — provider name, compatible `family` (`anthropic`, `openai`, `gemini`, `ollama`), API key env vars, base URL env/default, optional default headers, and `match` rules
+- `models[]` — exact aliases mapping a friendly name to a provider and target model
+
+Example:
+
+```json
+{
+  "providers": [
+    {
+      "name": "openrouter",
+      "family": "openai",
+      "api_key_env": ["OPENROUTER_API_KEY"],
+      "base_url_env": "OPENROUTER_BASE_URL",
+      "default_base_url": "https://openrouter.ai/api/v1",
+      "ping_endpoint": "/models",
+      "default_headers": {
+        "HTTP-Referer": "https://example.com/my-pi-go"
+      },
+      "match": [
+        { "prefix": "openrouter/", "strip_prefix": true }
+      ]
+    }
+  ],
+  "models": [
+    {
+      "name": "router-sonnet",
+      "provider": "openrouter",
+      "target": "anthropic/claude-sonnet-4"
+    }
+  ]
+}
+```
+
+Loading order follows the same resource precedence as everything else: packaged global → loose global → packaged project → loose project, with later entries overriding earlier ones by provider/model name. Config-local `providers` / `models` are applied last.
+
+This is intentionally a **compatible transport** seam, not a full provider-plugin framework. Use it when a backend can ride one of the existing families. If it needs a brand new protocol, SDK, or auth flow, add that intentionally instead of stretching the registry beyond compatibility.
 
 ## Prompt templates
 
@@ -245,6 +290,7 @@ Phase 2 work should build on these seams instead of rewriting startup again:
 - shared discovery model: `DiscoverResourceDirs(...)`
 - prompt-template discovery: `LoadPromptTemplates(...)`
 - package lifecycle: `InstallPackage(...)`, `UpdatePackage(...)`, `RemovePackage(...)`, `ListInstalledPackages(...)`
+- provider/model registry assembly: `DiscoverResourceDirs(...)` + `BuildProviderRegistry(...)`
 - tool registration path: `mcp_servers`
 - prompt contribution path: `prompt` / `prompt_file`
 - extension resource dir path: `skills_dir`
