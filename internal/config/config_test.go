@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dimetron/pi-go/internal/provider"
 )
 
 func TestDefaults(t *testing.T) {
@@ -95,6 +97,7 @@ func TestResolveRole_AutoDetectProvider(t *testing.T) {
 		{"gpt-4o", "openai"},
 		{"gpt-5.4", "openai"},
 		{"gemini-2.5-pro", "gemini"},
+		{"o3-mini", "openai"},
 		{"minimax-m2.5:cloud", "ollama"},
 	}
 
@@ -528,5 +531,89 @@ func TestAutoDetectProviderOllamaPrefix(t *testing.T) {
 	}
 	if prov != "ollama" {
 		t.Errorf("expected ollama provider for ollama/ prefix model, got %q", prov)
+	}
+}
+
+func TestResolveRoleWithRegistry_ModelAlias(t *testing.T) {
+	cfg := Config{
+		Roles: map[string]RoleConfig{
+			"default": {Model: "router-sonnet"},
+		},
+	}
+	reg := provider.NewRegistry()
+	reg.AddBuiltins()
+	reg.AddDocument(provider.RegistryDocument{
+		Providers: []provider.Definition{{Name: "openrouter", Family: "openai"}},
+		Models:    []provider.ModelDefinition{{Name: "router-sonnet", Provider: "openrouter", Target: "anthropic/claude-sonnet-4"}},
+	})
+
+	model, prov, err := cfg.ResolveRoleWithRegistry("default", reg)
+	if err != nil {
+		t.Fatalf("ResolveRoleWithRegistry() error: %v", err)
+	}
+	if model != "anthropic/claude-sonnet-4" || prov != "openrouter" {
+		t.Fatalf("unexpected resolution: model=%q provider=%q", model, prov)
+	}
+}
+
+func TestResolveRoleWithRegistry_UnknownAliasReturnsError(t *testing.T) {
+	cfg := Config{
+		Roles: map[string]RoleConfig{
+			"default": {Model: "router-sonnet"},
+		},
+		DefaultProvider: "openai",
+	}
+	reg := provider.NewRegistry()
+	reg.AddBuiltins()
+	reg.AddDocument(provider.RegistryDocument{Providers: []provider.Definition{{Name: "openrouter", Family: "openai"}}})
+
+	_, _, err := cfg.ResolveRoleWithRegistry("default", reg)
+	if err == nil {
+		t.Fatal("expected unresolved alias to return an error")
+	}
+}
+
+func TestLoad_MergesProviderAndModelDefinitionsAcrossGlobalAndProject(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+
+	globalDir := filepath.Join(home, ".pi-go")
+	if err := os.MkdirAll(globalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalDir, "config.json"), []byte(`{
+		"providers": [{"name": "global-openai", "family": "openai"}],
+		"models": [{"name": "global-model", "provider": "global-openai", "target": "gpt-4o"}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := filepath.Join(dir, ".pi-go")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "config.json"), []byte(`{
+		"providers": [{"name": "project-openai", "family": "openai"}],
+		"models": [{"name": "project-model", "provider": "project-openai", "target": "gpt-4.1"}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", home)
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Providers) != 2 {
+		t.Fatalf("expected merged providers, got %+v", cfg.Providers)
+	}
+	if len(cfg.Models) != 2 {
+		t.Fatalf("expected merged models, got %+v", cfg.Models)
 	}
 }

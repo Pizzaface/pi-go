@@ -316,25 +316,6 @@ func TestRootCmdMissingAPIKey(t *testing.T) {
 	}
 }
 
-func TestProviderEnvVar(t *testing.T) {
-	tests := []struct {
-		provider string
-		want     string
-	}{
-		{"anthropic", "ANTHROPIC_API_KEY"},
-		{"openai", "OPENAI_API_KEY"},
-		{"gemini", "GOOGLE_API_KEY"},
-		{"custom", "CUSTOM_API_KEY"},
-	}
-
-	for _, tt := range tests {
-		got := providerEnvVar(tt.provider)
-		if got != tt.want {
-			t.Errorf("providerEnvVar(%q) = %q, want %q", tt.provider, got, tt.want)
-		}
-	}
-}
-
 func TestContinueNoSessionError(t *testing.T) {
 	// --continue with no previous sessions should error.
 	os.Setenv("OPENAI_API_KEY", "test-key")
@@ -1165,29 +1146,5 @@ func TestRunJSONThinkingDelta(t *testing.T) {
 	}
 	if !hasTextDelta {
 		t.Error("expected at least one text_delta event in JSON output")
-	}
-}
-
-func TestProviderEnvVarAllCases(t *testing.T) {
-	tests := []struct {
-		provider string
-		want     string
-	}{
-		{"anthropic", "ANTHROPIC_API_KEY"},
-		{"openai", "OPENAI_API_KEY"},
-		{"gemini", "GOOGLE_API_KEY"},
-		{"custom", "CUSTOM_API_KEY"},
-		{"ollama", "OLLAMA_API_KEY"},
-		{"azure", "AZURE_API_KEY"},
-		{"", "_API_KEY"},
-	}
-
-	for _, tt := range tests {
-		t.Run("provider_"+tt.provider, func(t *testing.T) {
-			got := providerEnvVar(tt.provider)
-			if got != tt.want {
-				t.Errorf("providerEnvVar(%q) = %q, want %q", tt.provider, got, tt.want)
-			}
-		})
 	}
 }

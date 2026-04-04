@@ -13,6 +13,7 @@ import (
 	"google.golang.org/adk/tool"
 
 	"github.com/dimetron/pi-go/internal/config"
+	"github.com/dimetron/pi-go/internal/provider"
 	"github.com/dimetron/pi-go/internal/tools"
 )
 
@@ -99,6 +100,7 @@ type Runtime struct {
 	SkillDirs           []string
 	PromptTemplates     []PromptTemplate
 	ThemeDirs           []string
+	ProviderRegistry    *provider.Registry
 	SlashCommands       []SlashCommand
 	BeforeToolCallbacks []llmagent.BeforeToolCallback
 	AfterToolCallbacks  []llmagent.AfterToolCallback
@@ -136,6 +138,10 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	promptTemplates, err := LoadPromptTemplates(resources.PromptDirs...)
 	if err != nil {
 		return nil, fmt.Errorf("loading prompt templates: %w", err)
+	}
+	providerRegistry, err := BuildProviderRegistry(cfg.WorkDir, cfg.Config)
+	if err != nil {
+		return nil, fmt.Errorf("building provider registry: %w", err)
 	}
 
 	before := BuildBeforeToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
@@ -196,6 +202,7 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		SkillDirs:           skillDirs,
 		PromptTemplates:     promptTemplates,
 		ThemeDirs:           resources.ThemeDirs,
+		ProviderRegistry:    providerRegistry,
 		SlashCommands:       normalizeSlashCommands(slashCommands),
 		BeforeToolCallbacks: before,
 		AfterToolCallbacks:  after,

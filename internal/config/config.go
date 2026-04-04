@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dimetron/pi-go/internal/provider"
 )
 
 // HookConfig defines a shell command hook for tool call events.
@@ -28,18 +30,20 @@ var ErrNoDefaultRole = errors.New("no default model role configured")
 
 // Config holds all pi-go configuration.
 type Config struct {
-	Roles           map[string]RoleConfig `json:"roles,omitempty"`
-	DefaultModel    string                `json:"defaultModel,omitempty"` // deprecated: use roles
-	DefaultProvider string                `json:"defaultProvider"`
-	ThinkingLevel   string                `json:"thinkingLevel"`
-	Theme           string                `json:"theme"`
-	ExtraHeaders    map[string]string     `json:"extraHeaders,omitempty"`
-	InsecureSkipTLS bool                  `json:"insecureSkipTLS,omitempty"`
-	Tools           map[string]any        `json:"tools,omitempty"`
-	MCP             *MCPConfig            `json:"mcp,omitempty"` // optional building blocks for custom integrations; ignored by default startup
-	Hooks           []HookConfig          `json:"hooks,omitempty"`
-	MaxDailyTokens  int64                 `json:"maxDailyTokens,omitempty"` // 0 = unlimited
-	Compactor       *CompactorConfig      `json:"compactor,omitempty"`
+	Roles           map[string]RoleConfig      `json:"roles,omitempty"`
+	DefaultModel    string                     `json:"defaultModel,omitempty"` // deprecated: use roles
+	DefaultProvider string                     `json:"defaultProvider"`
+	ThinkingLevel   string                     `json:"thinkingLevel"`
+	Theme           string                     `json:"theme"`
+	ExtraHeaders    map[string]string          `json:"extraHeaders,omitempty"`
+	InsecureSkipTLS bool                       `json:"insecureSkipTLS,omitempty"`
+	Tools           map[string]any             `json:"tools,omitempty"`
+	MCP             *MCPConfig                 `json:"mcp,omitempty"` // optional building blocks for custom integrations; ignored by default startup
+	Hooks           []HookConfig               `json:"hooks,omitempty"`
+	MaxDailyTokens  int64                      `json:"maxDailyTokens,omitempty"` // 0 = unlimited
+	Compactor       *CompactorConfig           `json:"compactor,omitempty"`
+	Providers       []provider.Definition      `json:"providers,omitempty"`
+	Models          []provider.ModelDefinition `json:"models,omitempty"`
 }
 
 // CompactorConfig holds user-overridable compaction settings.
@@ -78,40 +82,97 @@ var modelPrefixes = map[string]string{
 	"claude": "anthropic",
 	"gpt":    "openai",
 	"gpt-5":  "openai",
+	"o1":     "openai",
+	"o3":     "openai",
+	"o4":     "openai",
 	"gemini": "gemini",
 }
 
 // ResolveRole returns the model name and provider for a given role.
 // Falls back: requested role → "default" role → error.
 func (c *Config) ResolveRole(role string) (model string, prov string, err error) {
-	if len(c.Roles) == 0 {
-		return "", "", ErrNoDefaultRole
-	}
+	return c.ResolveRoleWithRegistry(role, nil)
+}
 
+func (c *Config) resolveRoleConfig(role string) (RoleConfig, error) {
+	if len(c.Roles) == 0 {
+		return RoleConfig{}, ErrNoDefaultRole
+	}
 	rc, ok := c.Roles[role]
 	if !ok {
 		rc, ok = c.Roles["default"]
 		if !ok {
-			return "", "", ErrNoDefaultRole
+			return RoleConfig{}, ErrNoDefaultRole
+		}
+	}
+	if rc.Model == "" {
+		return RoleConfig{}, fmt.Errorf("role %q has no model configured", role)
+	}
+	return rc, nil
+}
+
+// ResolveRoleInfoWithRegistry resolves a role using an optional provider registry.
+func (c *Config) ResolveRoleInfoWithRegistry(role string, reg *provider.Registry) (provider.Info, error) {
+	rc, err := c.resolveRoleConfig(role)
+	if err != nil {
+		return provider.Info{}, err
+	}
+
+	if reg != nil {
+		info, resolveErr := reg.Resolve(rc.Model, rc.Provider)
+		if resolveErr == nil {
+			return info, nil
+		}
+		if rc.Provider != "" {
+			return provider.Info{Provider: rc.Provider, Family: rc.Provider, Model: rc.Model, Ollama: rc.Provider == "ollama"}, nil
+		}
+		if autoDetectProvider(rc.Model) == "" {
+			return provider.Info{}, resolveErr
 		}
 	}
 
-	if rc.Model == "" {
-		return "", "", fmt.Errorf("role %q has no model configured", role)
-	}
-
-	prov = rc.Provider
+	prov := rc.Provider
 	if prov == "" {
 		prov = autoDetectProvider(rc.Model)
 		if prov == "" {
 			prov = c.DefaultProvider
 		}
 	}
+	return provider.Info{Provider: prov, Family: prov, Model: rc.Model, Ollama: prov == "ollama"}, nil
+}
 
-	return rc.Model, prov, nil
+// ResolveRoleWithRegistry resolves a role using an optional provider registry.
+func (c *Config) ResolveRoleWithRegistry(role string, reg *provider.Registry) (model string, prov string, err error) {
+	info, err := c.ResolveRoleInfoWithRegistry(role, reg)
+	if err != nil {
+		return "", "", err
+	}
+	return info.Model, info.Provider, nil
 }
 
 // autoDetectProvider detects the provider from model name prefix.
+func looksLikeLegacyRawModel(modelName string) bool {
+	lower := strings.ToLower(strings.TrimSpace(modelName))
+	switch {
+	case strings.HasPrefix(lower, "claude"):
+		return true
+	case strings.HasPrefix(lower, "gpt-") && len(lower) > 4 && lower[4] >= '0' && lower[4] <= '9':
+		return true
+	case strings.HasPrefix(lower, "o1") || strings.HasPrefix(lower, "o3") || strings.HasPrefix(lower, "o4"):
+		return true
+	case strings.HasPrefix(lower, "gemini"):
+		return true
+	case strings.HasPrefix(lower, "ollama/"):
+		return true
+	case strings.HasSuffix(lower, ":cloud") || strings.HasSuffix(lower, ":local"):
+		return true
+	case strings.HasPrefix(lower, "qwen"), strings.HasPrefix(lower, "minimax"), strings.HasPrefix(lower, "deepseek"), strings.HasPrefix(lower, "llama"), strings.HasPrefix(lower, "mistral"), strings.HasPrefix(lower, "phi"), strings.HasPrefix(lower, "codellama"), strings.HasPrefix(lower, "gemma"):
+		return true
+	default:
+		return false
+	}
+}
+
 func autoDetectProvider(modelName string) string {
 	// Ollama suffixes → native Ollama provider.
 	if strings.HasSuffix(modelName, ":cloud") || strings.HasSuffix(modelName, ":local") {
@@ -175,7 +236,72 @@ func loadFile(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, cfg)
+	existingProviders := append([]provider.Definition(nil), cfg.Providers...)
+	existingModels := append([]provider.ModelDefinition(nil), cfg.Models...)
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return err
+	}
+	cfg.Providers = mergeProviderDefinitions(existingProviders, cfg.Providers)
+	cfg.Models = mergeModelDefinitions(existingModels, cfg.Models)
+	return nil
+}
+
+func mergeProviderDefinitions(base, override []provider.Definition) []provider.Definition {
+	if len(base) == 0 {
+		return override
+	}
+	merged := make([]provider.Definition, 0, len(base)+len(override))
+	index := make(map[string]int, len(base)+len(override))
+	for _, def := range base {
+		name := strings.TrimSpace(def.Name)
+		if name == "" {
+			continue
+		}
+		index[name] = len(merged)
+		merged = append(merged, def)
+	}
+	for _, def := range override {
+		name := strings.TrimSpace(def.Name)
+		if name == "" {
+			continue
+		}
+		if idx, ok := index[name]; ok {
+			merged[idx] = def
+			continue
+		}
+		index[name] = len(merged)
+		merged = append(merged, def)
+	}
+	return merged
+}
+
+func mergeModelDefinitions(base, override []provider.ModelDefinition) []provider.ModelDefinition {
+	if len(base) == 0 {
+		return override
+	}
+	merged := make([]provider.ModelDefinition, 0, len(base)+len(override))
+	index := make(map[string]int, len(base)+len(override))
+	for _, mdl := range base {
+		name := strings.TrimSpace(mdl.Name)
+		if name == "" {
+			continue
+		}
+		index[name] = len(merged)
+		merged = append(merged, mdl)
+	}
+	for _, mdl := range override {
+		name := strings.TrimSpace(mdl.Name)
+		if name == "" {
+			continue
+		}
+		if idx, ok := index[name]; ok {
+			merged[idx] = mdl
+			continue
+		}
+		index[name] = len(merged)
+		merged = append(merged, mdl)
+	}
+	return merged
 }
 
 // APIKeys returns detected API keys from environment variables.

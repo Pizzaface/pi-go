@@ -13,7 +13,7 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 
 ## Features
 
-- **Multi-provider LLM** — Claude (Anthropic), GPT/O-series (OpenAI), Gemini (Google), and Ollama for local models
+- **Multi-provider LLM** — Claude (Anthropic), GPT/O-series (OpenAI), Gemini (Google), Ollama for local models, plus data-driven compatible provider/model registration through config or discoverable `models/*.json` resources
 - **Sandboxed tools** — File read/write/edit, shell execution, grep, find, tree, and git operations, all restricted to the project directory via `os.Root`
 - **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), focused slash commands, built-in themes, and discoverable custom theme resources
 - **Session persistence** — JSONL append-only event logs with branching, compaction, and resume
@@ -37,7 +37,7 @@ internal/
 ├── guardrail/      Optional token-guardrail helpers kept in-tree for custom wiring
 ├── lsp/            Optional LSP JSON-RPC client, language registry, manager, hooks
 ├── provider/       LLM providers implementing genai model interface
-├── rpc/            Unix socket JSON-RPC 2.0 server
+├── jsonrpc/        Unix socket JSON-RPC 2.0 server
 ├── session/        JSONL persistence, branching, compaction
 ├── tools/          Sandboxed tools (read, write, edit, bash, grep, find, git) plus optional LSP helpers
 └── tui/            Bubble Tea v2 UI and slash commands
@@ -62,7 +62,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed documentation.
 ## Requirements
 
 - Go 1.25+
-- At least one LLM provider API key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) or a running Ollama instance
+- At least one LLM provider API key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` or `GEMINI_API_KEY`) or a running Ollama instance
 
 ## Build
 
@@ -81,10 +81,10 @@ make clean      # remove binary
 ./pi
 
 # Select a model by prefix
-./pi --model claude:sonnet
-./pi --model openai:gpt-4o
-./pi --model gemini:gemini-2.5-pro
-./pi --model ollama:qwen3.5:latest
+./pi --model claude-sonnet-4-6
+./pi --model gpt-4o
+./pi --model gemini-2.5-pro
+./pi --model ollama/qwen3.5:latest
 ./pi --model minimax-m2.5:cloud #automatically detect ollama if :cloud
 
 # Use model roles
@@ -146,12 +146,66 @@ Pi looks for configuration in `~/.pi-go/config.json` (global) and `.pi-go/config
 - **Hooks** — Shell commands triggered on tool events (e.g., post-write formatting)
 - **Themes** — Terminal color schemes via `theme` config field
 - **Extension manifests** — place `extension.json` files under `~/.pi-go/extensions/<name>/` or `.pi-go/extensions/<name>/`
-- **Shareable resources** — install packages into `~/.pi-go/packages/<name>/` or `.pi-go/packages/<name>/` with `extensions/`, `skills/`, `prompts/`, and `themes/` subdirectories
+- **Shareable resources** — install packages into `~/.pi-go/packages/<name>/` or `.pi-go/packages/<name>/` with `extensions/`, `skills/`, `prompts/`, `themes/`, and `models/` subdirectories
 - **Opt-in helper settings** — Internal helper packages may define extra config fields, but the default core path ignores policy/workflow-specific helpers unless custom startup code wires them in
 
 ## Extensions and resources
 
-See [docs/extensions.md](docs/extensions.md) for extension discovery, resource directories, project-vs-global loading order, prompt templates, package lifecycle, and narrow TUI command integration.
+See [docs/extensions.md](docs/extensions.md) for extension discovery, resource directories, project-vs-global loading order, prompt templates, provider/model registry resources, package lifecycle, and narrow TUI command integration.
+
+## Provider and model customization
+
+Provider/model registration is now data-driven instead of hardcoded into startup.
+
+You can customize compatible providers in either:
+
+- `~/.pi-go/config.json` or `.pi-go/config.json` via `providers` / `models`
+- discoverable `models/*.json` resources under:
+  - `~/.pi-go/packages/*/models/`
+  - `~/.pi-go/models/`
+  - `.pi-go/packages/*/models/`
+  - `.pi-go/models/`
+
+`providers` declare a provider `name`, transport `family` (`anthropic`, `openai`, `gemini`, or `ollama`), env/base-URL settings, optional default headers, and model match rules. `models` declare exact aliases that map a friendly name to a provider and target model.
+
+Example:
+
+```json
+{
+  "providers": [
+    {
+      "name": "openrouter",
+      "family": "openai",
+      "api_key_env": ["OPENROUTER_API_KEY"],
+      "base_url_env": "OPENROUTER_BASE_URL",
+      "default_base_url": "https://openrouter.ai/api/v1",
+      "ping_endpoint": "/models",
+      "default_headers": {
+        "HTTP-Referer": "https://example.com/my-pi-go"
+      },
+      "match": [
+        { "prefix": "openrouter/", "strip_prefix": true }
+      ]
+    }
+  ],
+  "models": [
+    {
+      "name": "router-sonnet",
+      "provider": "openrouter",
+      "target": "anthropic/claude-sonnet-4"
+    }
+  ]
+}
+```
+
+That lets you use either:
+
+```bash
+./pi --model router-sonnet
+./pi --model openrouter/meta-llama/llama-4-maverick
+```
+
+This path is intentionally limited to providers that are wire-compatible with the built-in transport families. If a backend needs a custom SDK or auth flow, keep that as a new core family or a separate integration instead of forcing a generic plugin layer.
 
 ## License
 

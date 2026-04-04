@@ -18,10 +18,12 @@ func TestDiscoverResourceDirs_IncludesPackagesAndProjectOverrides(t *testing.T) 
 	mustMkdirAll(t, filepath.Join(globalPkg, "skills"))
 	mustMkdirAll(t, filepath.Join(globalPkg, "prompts"))
 	mustMkdirAll(t, filepath.Join(globalPkg, "themes"))
+	mustMkdirAll(t, filepath.Join(globalPkg, "models"))
 	mustMkdirAll(t, filepath.Join(projectPkg, "extensions"))
 	mustMkdirAll(t, filepath.Join(projectPkg, "skills"))
 	mustMkdirAll(t, filepath.Join(projectPkg, "prompts"))
 	mustMkdirAll(t, filepath.Join(projectPkg, "themes"))
+	mustMkdirAll(t, filepath.Join(projectPkg, "models"))
 
 	dirs := DiscoverResourceDirs(project)
 
@@ -30,12 +32,25 @@ func TestDiscoverResourceDirs_IncludesPackagesAndProjectOverrides(t *testing.T) 
 	assertContainsPath(t, dirs.SkillDirs, filepath.Join(project, ".claude", "skills"))
 	assertContainsPath(t, dirs.PromptDirs, filepath.Join(project, ".pi-go", "prompts"))
 	assertContainsPath(t, dirs.ThemeDirs, filepath.Join(home, ".pi-go", "themes"))
+	assertContainsPath(t, dirs.ModelDirs, filepath.Join(project, ".pi-go", "models"))
 
 	globalLoose := indexOf(dirs.ExtensionDirs, filepath.Join(home, ".pi-go", "extensions"))
 	projectLoose := indexOf(dirs.ExtensionDirs, filepath.Join(project, ".pi-go", "extensions"))
 	if globalLoose == -1 || projectLoose == -1 || globalLoose >= projectLoose {
 		t.Fatalf("expected project extension dir after global for override order, got %v", dirs.ExtensionDirs)
 	}
+}
+
+func TestDiscoverResourceDirs_UsesProjectRootFromNestedDir(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	nested := filepath.Join(project, "sub", "dir")
+	t.Setenv("HOME", home)
+	mustMkdirAll(t, nested)
+	mustMkdirAll(t, filepath.Join(project, ".pi-go", "models"))
+
+	dirs := DiscoverResourceDirs(nested)
+	assertContainsPath(t, dirs.ModelDirs, filepath.Join(project, ".pi-go", "models"))
 }
 
 func TestLoadPromptTemplates_ProjectOverridesGlobal(t *testing.T) {
@@ -86,6 +101,19 @@ func TestLoadPromptTemplates_DefaultNameFromFilename(t *testing.T) {
 	}
 	if templates[0].Name != "triage" {
 		t.Fatalf("expected filename-derived name, got %+v", templates[0])
+	}
+}
+
+func TestLoadPromptTemplates_AllowsHorizontalRuleWithoutFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "plain.md"), "hello\n---\nworld")
+
+	templates, err := LoadPromptTemplates(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := templates[0].Prompt; got != "hello\n---\nworld" {
+		t.Fatalf("unexpected prompt body %q", got)
 	}
 }
 
