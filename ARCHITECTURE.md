@@ -23,7 +23,6 @@ pi-go/
     ├── provider/                    # LLM providers (Anthropic, OpenAI, Gemini)
     ├── rpc/                         # Unix socket JSON-RPC server
     ├── session/                     # JSONL persistence, branching, compaction
-    ├── sop/                         # Standard Operating Procedures (PDD planning)
     ├── subagent/                    # Subagent orchestration (pool, spawner, worktree, orchestrator)
     ├── tools/                       # Sandboxed tools (read, write, edit, bash, grep, find, ls, tree, git, lsp, agent)
     └── tui/                         # Bubble Tea v2 interactive UI
@@ -82,8 +81,6 @@ graph TD
     memory --> subagent
     memory --> config
 
-    sop["sop"] --> agent
-
     audit --> tools
 
     logger --> cli
@@ -102,7 +99,6 @@ graph TD
     style audit fill:#3a5c5c,color:#fff
     style logger fill:#5c5c5c,color:#fff
     style memory fill:#1a5c3a,color:#fff
-    style sop fill:#3a3a5c,color:#fff
 ```
 
 ## Request Flow
@@ -397,7 +393,6 @@ graph TD
 ~/.pi-go/config.json          # Global config
 .pi-go/config.json             # Project config (overrides global)
 .pi-go/AGENTS.md               # Project-specific agent instructions
-.pi-go/sops/                   # Custom SOPs
 ~/.pi-go/skills/*.SKILL.md     # Global skills
 .pi-go/skills/*.SKILL.md       # Project skills (override global)
 ~/.pi-go/sessions/             # Session storage
@@ -406,6 +401,8 @@ graph TD
 ~/.pi-go/.env                  # API keys (written by /login)
 ~/.pi-go/usage.json            # Daily token usage
 ```
+
+Planning and SOP directories are no longer part of core configuration. Any spec-driven or SOP-driven workflow is expected to come from extensions, prompts, or external packages.
 
 **Configuration schema** (`config.json`):
 ```json
@@ -501,7 +498,7 @@ graph TD
     style BubbleTea fill:#1a2a1a,color:#fff
 ```
 
-**Slash commands**: `/help`, `/clear`, `/model`, `/session`, `/context`, `/branch`, `/compact`, `/commit`, `/agents`, `/history`, `/plan`, `/run`, `/login`, `/skills`, `/theme`, `/rtk`, `/ping`, `/restart`, `/exit`, `/quit`
+**Slash commands**: `/help`, `/clear`, `/model`, `/session`, `/context`, `/branch`, `/compact`, `/commit`, `/agents`, `/history`, `/login`, `/skills`, `/theme`, `/rtk`, `/ping`, `/restart`, `/exit`, `/quit`
 
 **Keyboard**: Enter (submit), Ctrl+C/Esc (quit), Up/Down (history), PgUp/PgDown (scroll), Enter/Esc (commit confirm/cancel)
 
@@ -640,35 +637,9 @@ graph TD
 - **File location**: `~/.pi-go/log/YYYY-MM-DD/session-HH-MM-SS.log`
 - **Session metadata**: Session ID, model name, mode recorded at start
 
-## Standard Operating Procedures (SOPs)
+## Planning and workflow guidance
 
-```mermaid
-graph TD
-    subgraph PDD["Prompt-Driven Development"]
-        phase1["Phase 1: Skeleton"]
-        phase2["Phase 2: Requirements"] --> questions["Q&A with user"]
-        phase3["Phase 3: Research"] --> artifacts["research/*.md"]
-        phase4["Phase 4: Design"] --> design["design.md"]
-        phase5["Phase 5: Outline"] --> outline["outline.md"]
-        phase6["Phase 6: Plan"] --> plan["plan.md"]
-        phase7["Phase 7: PROMPT.md"] --> prompt["PROMPT.md"]
-    end
-
-    style PDD fill:#1a3a3a,color:#fff
-```
-
-**Features:**
-- **LoadPDD()**: Resolution order: project → global → embedded default
-- **File paths**: `.pi-go/sops/pdd.md` or `~/.pi-go/sops/pdd.md`
-- **Vertical slicing**: Plans use vertical slices, not horizontal layers
-
-**Artifacts produced:**
-- `requirements.md` — clarified scope and constraints
-- `research/` — codebase exploration findings
-- `design.md` — architecture and component design
-- `outline.md` — high-level structure
-- `plan.md` — executable implementation checklist
-- `PROMPT.md` — compressed briefing for autonomous execution
+Planning workflows are no longer built into core. pi-go's core provides a generic chat TUI, tools, subagents, skills, extensions, and model roles; any spec-driven or SOP-driven workflow should be layered on through prompts, skills, extensions, or external packages rather than native `/plan` or `/run` command paths.
 
 ## Memory System
 

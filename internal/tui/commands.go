@@ -57,10 +57,6 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		m.handleHistoryCommand(parts[1:])
 	case "/commit":
 		return m.handleCommitCommand()
-	case "/plan":
-		return m.handlePlanCommand(parts[1:])
-	case "/run":
-		return m.handleRunCommand(parts[1:])
 	case "/login":
 		return m.handleLoginCommand(parts[1:])
 	case "/skills":
@@ -494,11 +490,9 @@ func (m *model) formatHelp() string {
 	b.WriteString("  `/history [query]`     — Command history\n")
 	b.WriteString("  `/exit`, `/quit`       — Exit\n")
 
-	b.WriteString("\n**Git & Planning:**\n")
+	b.WriteString("\n**Git:**\n")
 	b.WriteString("  `/commit`              — Generate commit from staged changes\n")
 	b.WriteString("  `/branch <name>`       — Create/switch/list branches\n")
-	b.WriteString("  `/plan <idea>`         — Start PDD planning session\n")
-	b.WriteString("  `/run <spec>`          — Execute a spec with task agent\n")
 
 	b.WriteString("\n**Display:**\n")
 	b.WriteString("  `/theme [name]`        — List or switch themes\n")

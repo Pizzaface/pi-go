@@ -31,22 +31,14 @@ type StatusRenderInput struct {
 	ProviderName string
 	ModelName    string
 	Running      bool
-	Mode         string                 // "chat" or "plan"
+	Mode         string                 // e.g. "chat"
 	Eyes         string                 // mood eyes e.g. "◕ ◕"
 	Messages     []message              // for context estimate
 	TokenTracker TokenTracker           // may be nil
 	Orchestrator *subagent.Orchestrator // may be nil
 	DiffAdded    int
 	DiffRemoved  int
-	RunCycle     *runCycleInfo   // may be nil
 	LoadingItems map[string]bool // item -> done; nil means not loading
-}
-
-// runCycleInfo carries /run state for the status bar.
-type runCycleInfo struct {
-	SpecName   string
-	Cycle      int
-	MaxRetries int
 }
 
 // contextBarWidth is the number of characters used for the visual context bar.
@@ -101,7 +93,7 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 
 	var parts []string
 
-	// Mode indicator: [chat] or [plan].
+	// Mode indicator.
 	mode := in.Mode
 	if mode == "" {
 		mode = "chat"
@@ -236,13 +228,6 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 			}
 			parts = append(parts, agentStyle.Render(label))
 		}
-	}
-
-	// /run cycle indicator.
-	if in.RunCycle != nil {
-		runStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214"))
-		parts = append(parts, runStyle.Render(fmt.Sprintf("run[%s]: cycle %d/%d",
-			in.RunCycle.SpecName, in.RunCycle.Cycle, in.RunCycle.MaxRetries)))
 	}
 
 	return bar.Render(strings.Join(parts, sep))

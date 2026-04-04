@@ -517,33 +517,7 @@ func TestHandleSlashCommandHelpContainsBranch(t *testing.T) {
 	}
 }
 
-func TestSlashCommands_PlanRegistered(t *testing.T) {
-	found := false
-	for _, cmd := range slashCommands {
-		if cmd == "/plan" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected /plan in slashCommands list")
-	}
-}
-
-func TestSlashCommands_RunRegistered(t *testing.T) {
-	found := false
-	for _, cmd := range slashCommands {
-		if cmd == "/run" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected /run in slashCommands list")
-	}
-}
-
-func TestHelpText_IncludesPlanAndRun(t *testing.T) {
+func TestHelpText_DoesNotIncludePlanOrRun(t *testing.T) {
 	m := &model{
 		inputModel: InputModel{Text: "/help"},
 		chatModel:  ChatModel{Messages: make([]message, 0)},
@@ -553,31 +527,11 @@ func TestHelpText_IncludesPlanAndRun(t *testing.T) {
 	mm := newM.(*model)
 
 	content := mm.chatModel.Messages[0].content
-	if !strings.Contains(content, "/plan") {
-		t.Errorf("expected /help to mention /plan, got %q", content)
+	if strings.Contains(content, "/plan") {
+		t.Errorf("expected /help to omit /plan, got %q", content)
 	}
-	if !strings.Contains(content, "/run") {
-		t.Errorf("expected /help to mention /run, got %q", content)
-	}
-	if !strings.Contains(content, "PDD planning session") {
-		t.Errorf("expected /help to describe /plan, got %q", content)
-	}
-	if !strings.Contains(content, "spec") {
-		t.Errorf("expected /help to mention spec for /run, got %q", content)
-	}
-}
-
-func TestCompleteSlashCommand_Plan(t *testing.T) {
-	result := completeSlashCommand("/pl")
-	if result != "/plan" {
-		t.Errorf("expected /plan completion, got %q", result)
-	}
-}
-
-func TestCompleteSlashCommand_Run(t *testing.T) {
-	result := completeSlashCommand("/ru")
-	if result != "/run" {
-		t.Errorf("expected /run completion, got %q", result)
+	if strings.Contains(content, "/run") {
+		t.Errorf("expected /help to omit /run, got %q", content)
 	}
 }
 
@@ -646,8 +600,8 @@ func TestShowCommandList(t *testing.T) {
 	if !strings.Contains(content, "Show help") {
 		t.Error("expected description for /help")
 	}
-	if !strings.Contains(content, "PDD planning session") {
-		t.Error("expected description for /plan")
+	if strings.Contains(content, "PDD planning session") {
+		t.Error("did not expect /plan description")
 	}
 }
 
@@ -673,11 +627,11 @@ func TestTabOnSlash_ShowsCommandList(t *testing.T) {
 		t.Fatal("expected command list message")
 	}
 	content := m.chatModel.Messages[0].content
-	if !strings.Contains(content, "/plan") {
-		t.Error("command list should include /plan")
+	if strings.Contains(content, "/plan") {
+		t.Error("command list should not include /plan")
 	}
-	if !strings.Contains(content, "/run") {
-		t.Error("command list should include /run")
+	if strings.Contains(content, "/run") {
+		t.Error("command list should not include /run")
 	}
 }
 
@@ -736,11 +690,11 @@ func TestHandleHistoryCommand_WithEntries(t *testing.T) {
 func TestHandleHistoryCommand_WithFilter(t *testing.T) {
 	m := &model{
 		chatModel:  ChatModel{Messages: make([]message, 0)},
-		inputModel: InputModel{History: []HistoryEntry{{Text: "/help"}, {Text: "/model"}, {Text: "/ping"}, {Text: "/plan"}}},
+		inputModel: InputModel{History: []HistoryEntry{{Text: "/help"}, {Text: "/model"}, {Text: "/ping"}, {Text: "/clear"}}},
 	}
 	m.handleHistoryCommand([]string{"p"})
 	content := m.chatModel.Messages[0].content
-	if !strings.Contains(content, "/ping") || !strings.Contains(content, "/plan") {
+	if !strings.Contains(content, "/ping") || !strings.Contains(content, "/help") {
 		t.Errorf("expected filtered entries with 'p', got %q", content)
 	}
 	if strings.Contains(content, "/model") {
@@ -1293,7 +1247,7 @@ func TestRenderWelcome(t *testing.T) {
 		"coding agent",
 		"help",
 		"commit",
-		"plan",
+		"agents",
 		"Tab",
 	}
 	for _, want := range checks {
