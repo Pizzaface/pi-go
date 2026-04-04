@@ -15,13 +15,13 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 
 - **Multi-provider LLM** — Claude (Anthropic), GPT/O-series (OpenAI), Gemini (Google), and Ollama for local models
 - **Sandboxed tools** — File read/write/edit, shell execution, grep, find, tree, and git operations, all restricted to the project directory via `os.Root`
-- **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), focused slash commands, and theming
+- **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), focused slash commands, built-in themes, and discoverable custom theme resources
 - **Session persistence** — JSONL append-only event logs with branching, compaction, and resume
 - **Model roles** — Named configurations (default, smol, slow, plan) selectable via CLI flags
 - **Optional LSP integration** — In-tree JSON-RPC client and LSP tools for Go, TypeScript/JS, Python, Rust that can be wired in by extensions or custom startup code
 - **Core Git visibility** — Repository overview, file diffs, and hunk parsing remain available as tools without prescribing commit workflows
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
-- **Extension runtime** — Manifest-discovered extensions are the primary customization surface, contributing prompt fragments, hooks, MCP toolsets, skills, and narrow TUI slash commands
+- **Extension runtime** — Manifest-discovered extensions and shareable resource packages are the primary customization surface, contributing prompt fragments, hooks, MCP toolsets, skills, prompt templates, themes, and narrow TUI slash commands
 - **Minimal core startup** — Default startup wires core tools, sessions, and the extension runtime without assuming optional subsystems or policy/workflow layers such as LSP, persistent memory, token guardrails, or built-in commit/audit helpers
 
 ## Architecture
@@ -102,6 +102,13 @@ make clean      # remove binary
 ./pi --mode print "explain this codebase"
 ./pi --mode json "list all TODO comments"
 ./pi --mode rpc --socket /tmp/pi-go.sock   # start RPC server
+
+# Resource package lifecycle
+./pi package install ~/Downloads/my-pi-package
+./pi package install --project https://github.com/acme/pi-package.git
+./pi package list
+./pi package update my-pi-package
+./pi package remove my-pi-package
 ```
 
 ### Slash commands
@@ -139,11 +146,12 @@ Pi looks for configuration in `~/.pi-go/config.json` (global) and `.pi-go/config
 - **Hooks** — Shell commands triggered on tool events (e.g., post-write formatting)
 - **Themes** — Terminal color schemes via `theme` config field
 - **Extension manifests** — place `extension.json` files under `~/.pi-go/extensions/<name>/` or `.pi-go/extensions/<name>/`
+- **Shareable resources** — install packages into `~/.pi-go/packages/<name>/` or `.pi-go/packages/<name>/` with `extensions/`, `skills/`, `prompts/`, and `themes/` subdirectories
 - **Opt-in helper settings** — Internal helper packages may define extra config fields, but the default core path ignores policy/workflow-specific helpers unless custom startup code wires them in
 
-## Extensions
+## Extensions and resources
 
-See [docs/extensions.md](docs/extensions.md) for extension discovery, manifest format, tool/hook lifecycle contributions, and narrow TUI command integration.
+See [docs/extensions.md](docs/extensions.md) for extension discovery, resource directories, project-vs-global loading order, prompt templates, package lifecycle, and narrow TUI command integration.
 
 ## License
 

@@ -11,6 +11,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
+	"github.com/dimetron/pi-go/internal/extension"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -167,6 +168,9 @@ func Run(ctx context.Context, cfg Config) error {
 
 	// Initialize theme manager.
 	tm := NewThemeManager()
+	if err := tm.LoadThemeDirs(extension.DiscoverResourceDirs(cfg.WorkDir).ThemeDirs...); err != nil {
+		return err
+	}
 	if cfg.ThemeName != "" && cfg.ThemeName != "default" {
 		_ = tm.SetTheme(cfg.ThemeName) // ignore error, falls back to tokyo-night
 	}

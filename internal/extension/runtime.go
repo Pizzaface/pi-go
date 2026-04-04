@@ -30,10 +30,8 @@ type SlashCommand struct {
 
 // Render returns the prompt text for the command using a minimal args placeholder.
 func (c SlashCommand) Render(args []string) string {
-	prompt := c.Prompt
-	joined := strings.TrimSpace(strings.Join(args, " "))
-	prompt = strings.ReplaceAll(prompt, "{{args}}", joined)
-	return strings.TrimSpace(prompt)
+	tpl := PromptTemplate{Name: c.Name, Description: c.Description, Prompt: c.Prompt}
+	return tpl.Render(args)
 }
 
 // TUIConfig defines narrow, Bubble Tea-aligned TUI contribution points.
@@ -99,6 +97,8 @@ type Runtime struct {
 	Toolsets            []tool.Toolset
 	Skills              []Skill
 	SkillDirs           []string
+	PromptTemplates     []PromptTemplate
+	ThemeDirs           []string
 	SlashCommands       []SlashCommand
 	BeforeToolCallbacks []llmagent.BeforeToolCallback
 	AfterToolCallbacks  []llmagent.AfterToolCallback
@@ -128,14 +128,19 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		coreTools = append(coreTools, restartTool)
 	}
 
-	manifests, err := LoadManifests(defaultExtensionDirs(cfg.WorkDir)...)
+	resources := DiscoverResourceDirs(cfg.WorkDir)
+	manifests, err := LoadManifests(resources.ExtensionDirs...)
 	if err != nil {
 		return nil, fmt.Errorf("loading extension manifests: %w", err)
+	}
+	promptTemplates, err := LoadPromptTemplates(resources.PromptDirs...)
+	if err != nil {
+		return nil, fmt.Errorf("loading prompt templates: %w", err)
 	}
 
 	before := BuildBeforeToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
 	after := BuildAfterToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
-	skillDirs := defaultSkillDirs(cfg.WorkDir)
+	skillDirs := append([]string{}, resources.SkillDirs...)
 	instruction := strings.TrimSpace(cfg.BaseInstruction)
 
 	var lifecycle []HookConfig
@@ -179,12 +184,18 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		}
 	}
 
+	for _, tpl := range promptTemplates {
+		slashCommands = append(slashCommands, tpl.SlashCommand())
+	}
+
 	rt := &Runtime{
 		Extensions:          manifests,
 		Tools:               coreTools,
 		Toolsets:            toolsets,
 		Skills:              skills,
 		SkillDirs:           skillDirs,
+		PromptTemplates:     promptTemplates,
+		ThemeDirs:           resources.ThemeDirs,
 		SlashCommands:       normalizeSlashCommands(slashCommands),
 		BeforeToolCallbacks: before,
 		AfterToolCallbacks:  after,
@@ -257,32 +268,6 @@ func LoadManifests(dirs ...string) ([]Manifest, error) {
 	}
 	sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
 	return manifests, nil
-}
-
-func defaultExtensionDirs(workDir string) []string {
-	var dirs []string
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".pi-go", "extensions"))
-	}
-	if workDir != "" {
-		dirs = append(dirs, filepath.Join(workDir, ".pi-go", "extensions"))
-	}
-	return dirs
-}
-
-func defaultSkillDirs(workDir string) []string {
-	var dirs []string
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".pi-go", "skills"))
-	}
-	if workDir != "" {
-		dirs = append(dirs,
-			filepath.Join(workDir, ".pi-go", "skills"),
-			filepath.Join(workDir, ".claude", "skills"),
-			filepath.Join(workDir, ".cursor", "skills"),
-		)
-	}
-	return dirs
 }
 
 func normalizeSlashCommands(cmds []SlashCommand) []SlashCommand {
