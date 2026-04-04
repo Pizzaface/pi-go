@@ -18,7 +18,6 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 - **Interactive TUI** — Bubble Tea v2 terminal UI with Markdown rendering (Glamour), slash commands, and theming
 - **Session persistence** — JSONL append-only event logs with branching, compaction, and resume
 - **Model roles** — Named configurations (default, smol, slow, plan, commit) selectable via CLI flags
-- **Subagents** — Process-based multi-agent system with types: explore, plan, designer, reviewer, task, quick_task
 - **LSP integration** — JSON-RPC client for Go, TypeScript/JS, Python, Rust with auto-format and diagnostics hooks
 - **AI Git tools** — Repository overview, file diffs, hunk parsing, and LLM-generated conventional commits (`/commit`)
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
@@ -39,7 +38,6 @@ internal/
 ├── provider/       LLM providers implementing genai model interface
 ├── rpc/            Unix socket JSON-RPC 2.0 server
 ├── session/        JSONL persistence, branching, compaction
-├── subagent/       Process spawner, orchestrator, concurrency pool
 ├── tools/          Sandboxed tools (read, write, edit, bash, grep, find, git, lsp)
 └── tui/            Bubble Tea v2 UI, slash commands, commit workflow
 ```
@@ -110,7 +108,6 @@ make clean      # remove binary
 | `/branch`        | Create a conversation branch              |
 | `/commit`        | Generate and apply a git commit           |
 | `/compact`       | Compact session history                   |
-| `/agents`        | Show running subagents                    |
 | `/history`       | Show command history                      |
 | `/skills`        | List skill commands and available skills  |
 | `/skill-create`  | Create a new skill                        |

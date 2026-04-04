@@ -26,7 +26,6 @@ import (
 	"github.com/dimetron/pi-go/internal/memory"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/subagent"
 	"github.com/dimetron/pi-go/internal/tools"
 	"github.com/dimetron/pi-go/internal/tui"
 
@@ -226,30 +225,6 @@ func runNonInteractive(
 		return fmt.Errorf("creating core tools: %w", err)
 	}
 
-	repoRoot := detectGitRoot(cwd)
-	discovery, err := subagent.DiscoverAgents(cwd, subagent.ScopeBoth)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pi-go: warning: agent discovery failed: %v\n", err)
-	}
-	var agentConfigs []subagent.AgentConfig
-	if discovery != nil {
-		agentConfigs = discovery.All
-	}
-	orch := subagent.NewOrchestrator(&cfg, repoRoot, agentConfigs)
-	defer orch.Shutdown()
-
-	agentEventCh := make(chan tui.AgentSubEvent, 128)
-	agentEventCB := func(agentID, eventType, content string) {
-		select {
-		case agentEventCh <- tui.AgentSubEvent{AgentID: agentID, Kind: eventType, Content: content}:
-		default:
-		}
-	}
-	agentTools, err := tools.AgentTools(orch, agentEventCB)
-	if err != nil {
-		return fmt.Errorf("creating agent tools: %w", err)
-	}
-	coreTools = append(coreTools, agentTools...)
 
 	// Initialize memory system.
 	var memStore memory.Store
@@ -282,7 +257,7 @@ func runNonInteractive(
 			fmt.Fprintf(os.Stderr, "pi-go: warning: memory system disabled: %v\n", memErr)
 		} else {
 			memStore = memory.NewSQLiteStore(memDB)
-			compressor := memory.NewSubagentCompressor(orch)
+			compressor := memory.NewNoopCompressor()
 			memWorker = memory.NewWorker(memStore, compressor, memCfg.MaxPending)
 			memWorker.Start(parentCtx)
 		}

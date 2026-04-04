@@ -212,9 +212,6 @@ func (m *model) Init() tea.Cmd {
 	if m.cfg.RestartCh != nil {
 		cmds = append(cmds, waitForRestart(m.cfg.RestartCh))
 	}
-	if m.cfg.AgentEventCh != nil {
-		cmds = append(cmds, waitForSubEvent(m.cfg.AgentEventCh))
-	}
 	return tea.Batch(cmds...)
 }
 
@@ -282,8 +279,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentToolResultMsg:
 		return m.handleAgentToolResult(msg)
 
-	case agentSubEventMsg:
-		return m.handleAgentSubEvent(msg)
 
 	case agentDoneMsg:
 		return m.handleAgentDone(msg)
@@ -689,7 +684,6 @@ func (m *model) statusRenderInput() StatusRenderInput {
 		Eyes:         m.eyes(),
 		Messages:     m.chatModel.Messages,
 		TokenTracker: m.cfg.TokenTracker,
-		Orchestrator: m.cfg.Orchestrator,
 		DiffAdded:    m.diffAdded,
 		DiffRemoved:  m.diffRemoved,
 		LoadingItems: m.loadingItems,
@@ -804,12 +798,10 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.Agent = r.Agent
 		m.cfg.SessionID = r.SessionID
 		m.cfg.SessionService = r.SessionService
-		m.cfg.Orchestrator = r.Orchestrator
 		m.cfg.Logger = r.Logger
 		m.cfg.Skills = r.Skills
 		m.cfg.SkillDirs = r.SkillDirs
 		m.cfg.GenerateCommitMsg = r.GenerateCommitMsg
-		m.cfg.AgentEventCh = r.AgentEventCh
 		m.cfg.TokenTracker = r.TokenTracker
 		m.cfg.CompactMetrics = r.CompactMetrics
 		m.cfg.RestartCh = r.RestartCh
@@ -825,9 +817,6 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if r.RestartCh != nil {
 			cmds = append(cmds, waitForRestart(r.RestartCh))
-		}
-		if r.AgentEventCh != nil {
-			cmds = append(cmds, waitForSubEvent(r.AgentEventCh))
 		}
 		return m, tea.Batch(cmds...)
 	}

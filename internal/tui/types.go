@@ -9,8 +9,6 @@ import (
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/logger"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/subagent"
-
 	llmmodel "google.golang.org/adk/model"
 )
 
@@ -25,7 +23,6 @@ type Config struct {
 	Roles          map[string]config.RoleConfig
 	SessionService *pisession.FileService
 	WorkDir        string
-	Orchestrator   *subagent.Orchestrator
 	// GenerateCommitMsg is called by /commit to generate a conventional commit message from diffs.
 	// If nil, /commit is disabled.
 	GenerateCommitMsg func(ctx context.Context, diffs string) (string, error)
@@ -40,8 +37,6 @@ type Config struct {
 	SkillDirs []string
 	// RestartCh receives a signal when the agent calls the restart tool.
 	RestartCh chan struct{}
-	// AgentEventCh receives subagent events from the agent tool for live display.
-	AgentEventCh <-chan AgentSubEvent
 	// TokenTracker tracks daily token usage and enforces limits. May be nil.
 	TokenTracker TokenTracker
 	// CompactMetrics tracks output compaction statistics. May be nil.
@@ -69,12 +64,10 @@ type InitResult struct {
 	Agent             *agent.Agent
 	SessionID         string
 	SessionService    *pisession.FileService
-	Orchestrator      *subagent.Orchestrator
 	Logger            *logger.Logger
 	Skills            []extension.Skill
 	SkillDirs         []string
 	GenerateCommitMsg func(context.Context, string) (string, error)
-	AgentEventCh      <-chan AgentSubEvent
 	TokenTracker      TokenTracker
 	CompactMetrics    CompactStatsProvider
 	RestartCh         chan struct{}
@@ -95,17 +88,6 @@ type TokenTracker interface {
 	Remaining() int64     // -1 if unlimited
 	PercentUsed() float64 // 0-100+
 	TotalUsed() int64     // total tokens consumed today
-}
-
-// AgentSubEvent carries a subagent event from the agent tool to the TUI.
-type AgentSubEvent struct {
-	AgentID    string
-	Kind       string // "tool_call", "tool_result", "text_delta", etc.
-	Content    string
-	PipelineID string // groups agents in same call
-	Mode       string // "single", "parallel", "chain"
-	Step       int    // 1-based position in pipeline
-	Total      int    // total agents in pipeline
 }
 
 // Screen provides thread-safe access to the current TUI screen content.

@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/extension"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/subagent"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -51,8 +48,6 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		m.handleBranchCommand(parts[1:])
 	case "/compact":
 		m.handleCompactCommand()
-	case "/agents":
-		m.handleAgentsCommand()
 	case "/history":
 		m.handleHistoryCommand(parts[1:])
 	case "/commit":
@@ -211,85 +206,6 @@ func (m *model) handleCompactCommand() {
 	})
 }
 
-// countAgentsByStatus counts agents in each status category.
-func countAgentsByStatus(agents []subagent.AgentStatus) (running, done, failed int) {
-	for _, a := range agents {
-		switch a.Status {
-		case "running":
-			running++
-		case "completed":
-			done++
-		case "failed":
-			failed++
-		}
-	}
-	return
-}
-
-// agentStatusIcon returns a display icon for an agent status.
-func agentStatusIcon(status string) string {
-	switch status {
-	case "running":
-		return "▶ "
-	case "completed":
-		return "✓ "
-	case "failed":
-		return "✗ "
-	case "canceled":
-		return "◼ "
-	default:
-		return "  "
-	}
-}
-
-// formatAgentsList formats a list of agents for display.
-func formatAgentsList(agents []subagent.AgentStatus) string {
-	if len(agents) == 0 {
-		return "No subagents have been spawned yet."
-	}
-
-	running, done, failed := countAgentsByStatus(agents)
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "**Subagents** — %d total, %d running, %d done", len(agents), running, done)
-	if failed > 0 {
-		fmt.Fprintf(&b, ", %d failed", failed)
-	}
-	b.WriteString("\n\n")
-
-	for _, a := range agents {
-		icon := agentStatusIcon(a.Status)
-
-		prompt := a.Prompt
-		if len(prompt) > 70 {
-			prompt = prompt[:67] + "..."
-		}
-
-		dur := a.Duration
-		if dur == "" {
-			dur = time.Since(a.StartedAt).Truncate(time.Second).String()
-		}
-
-		fmt.Fprintf(&b, "%s `%s` **%s** [%s] %s (%s)\n", icon, a.AgentID[:8], a.Type, a.Status, prompt, dur)
-	}
-	return b.String()
-}
-
-// handleAgentsCommand shows the status of running and recent subagents.
-func (m *model) handleAgentsCommand() {
-	if m.cfg.Orchestrator == nil {
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: "Subagent system not available.",
-		})
-		return
-	}
-
-	m.chatModel.Messages = append(m.chatModel.Messages, message{
-		role:    "assistant",
-		content: formatAgentsList(m.cfg.Orchestrator.List()),
-	})
-}
 
 // formatModelInfo returns a formatted string showing the current model and all configured roles.
 func (m *model) formatModelInfo() string {
@@ -415,26 +331,6 @@ func (m *model) formatContextUsage() string {
 		}
 	}
 
-	// Subagents.
-	if m.cfg.Orchestrator != nil {
-		agents := m.cfg.Orchestrator.List()
-		if len(agents) > 0 {
-			running, done, failed := 0, 0, 0
-			for _, a := range agents {
-				switch a.Status {
-				case "running":
-					running++
-				case "failed":
-					failed++
-				default:
-					done++
-				}
-			}
-			b.WriteString("\n*Subagents*\n")
-			fmt.Fprintf(&b, "- **Total**: %d (running: %d, done: %d, failed: %d)\n",
-				len(agents), running, done, failed)
-		}
-	}
 
 	// Compaction stats.
 	if cm := m.cfg.CompactMetrics; cm != nil {
@@ -498,7 +394,7 @@ func (m *model) formatHelp() string {
 	b.WriteString("  `/theme [name]`        — List or switch themes\n")
 
 	b.WriteString("\n**System:**\n")
-	b.WriteString("  `/agents`              — Show running subagents\n")
+
 	b.WriteString("  `/rtk`                 — Output compaction stats\n")
 	b.WriteString("  `/login <provider>`    — Configure API keys\n")
 	b.WriteString("  `/restart`             — Restart pi process\n")

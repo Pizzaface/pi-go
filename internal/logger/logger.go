@@ -23,7 +23,7 @@ type Logger struct {
 type Entry struct {
 	Time    string `json:"time"`
 	Type    string `json:"type"`              // "user", "llm_text", "tool_call", "tool_result", "error", "info"
-	Agent   string `json:"agent,omitempty"`   // agent name (for subagents)
+	Agent   string `json:"agent,omitempty"`   // agent name
 	Tool    string `json:"tool,omitempty"`    // tool name
 	Content string `json:"content,omitempty"` // text content or error message
 	Args    any    `json:"args,omitempty"`    // tool call arguments

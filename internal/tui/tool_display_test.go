@@ -27,24 +27,6 @@ func TestRenderCompactTool_RegularTool(t *testing.T) {
 	}
 }
 
-func TestRenderCompactTool_AgentTool(t *testing.T) {
-	td := ToolDisplayModel{Width: 80, CompactTools: true}
-	msg := message{
-		role:      "tool",
-		tool:      "agent",
-		agentType: "explore",
-		content:   "Found 3 files",
-	}
-	result := td.RenderToolMessage(msg)
-	if !strings.Contains(result, "agent") {
-		t.Error("expected tool name in compact agent output")
-	}
-	lines := strings.Split(strings.TrimRight(result, "\n"), "\n")
-	if len(lines) != 1 {
-		t.Errorf("expected 1 line in compact agent output, got %d", len(lines))
-	}
-}
-
 func TestRenderCompactTool_LongArgs(t *testing.T) {
 	td := ToolDisplayModel{Width: 80, CompactTools: true}
 	longArg := strings.Repeat("a", 100)

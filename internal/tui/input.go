@@ -503,7 +503,6 @@ var slashCommands = []string{
 	"/context",
 	"/branch",
 	"/compact",
-	"/agents",
 	"/history",
 	"/login",
 	"/commit",
@@ -536,8 +535,6 @@ func slashCommandDesc(cmd string) string {
 		return "Manage branches"
 	case "/compact":
 		return "Compact context"
-	case "/agents":
-		return "Show subagents"
 	case "/rtk":
 		return "Output compaction stats"
 	case "/history":

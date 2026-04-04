@@ -200,7 +200,6 @@ func TestHandleInitEvent_ProgressItem(t *testing.T) {
 }
 
 func TestHandleInitEvent_FinalResult(t *testing.T) {
-	agentEventCh := make(chan AgentSubEvent, 1)
 	restartCh := make(chan struct{}, 1)
 
 	m := &model{
@@ -213,8 +212,7 @@ func TestHandleInitEvent_FinalResult(t *testing.T) {
 		event: InitEvent{
 			Done: true,
 			Result: &InitResult{
-				AgentEventCh: agentEventCh,
-				RestartCh:    restartCh,
+				RestartCh: restartCh,
 				GitBranch:    "main",
 				DiffAdded:    10,
 				DiffRemoved:  5,
@@ -228,9 +226,6 @@ func TestHandleInitEvent_FinalResult(t *testing.T) {
 
 	if mm.loading {
 		t.Error("loading should be false after final result")
-	}
-	if mm.cfg.AgentEventCh == nil {
-		t.Error("AgentEventCh should be set")
 	}
 	if mm.cfg.RestartCh == nil {
 		t.Error("RestartCh should be set")

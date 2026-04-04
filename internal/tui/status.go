@@ -9,7 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dimetron/pi-go/internal/subagent"
 )
 
 // StatusModel manages the status bar display at the bottom of the TUI.
@@ -35,7 +34,6 @@ type StatusRenderInput struct {
 	Eyes         string                 // mood eyes e.g. "◕ ◕"
 	Messages     []message              // for context estimate
 	TokenTracker TokenTracker           // may be nil
-	Orchestrator *subagent.Orchestrator // may be nil
 	DiffAdded    int
 	DiffRemoved  int
 	LoadingItems map[string]bool // item -> done; nil means not loading
@@ -188,46 +186,6 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		parts = append(parts, bright.Render(fmt.Sprintf("tool: %s (%s)", s.ActiveTool, elapsed)))
 	} else if in.Running {
 		parts = append(parts, dim.Render("thinking..."))
-	}
-
-	// Subagent status.
-	if in.Orchestrator != nil {
-		agents := in.Orchestrator.List()
-		if len(agents) > 0 {
-			var runningNames []string
-			total := len(agents)
-			failed := 0
-			for _, a := range agents {
-				switch a.Status {
-				case "running":
-					name := a.Type
-					if len(name) > 12 {
-						name = name[:12]
-					}
-					runningNames = append(runningNames, name)
-				case "failed":
-					failed++
-				}
-			}
-			agentFg := lipgloss.Color("35") // green
-			if len(runningNames) > 0 {
-				agentFg = lipgloss.Color("214") // orange when active
-			}
-			if failed > 0 {
-				agentFg = lipgloss.Color("196") // red if any failed
-			}
-			agentStyle := lipgloss.NewStyle().Background(bg).Foreground(agentFg)
-			var label string
-			if len(runningNames) > 0 {
-				label = fmt.Sprintf("agents[%d]: %s", total, strings.Join(runningNames, ", "))
-			} else {
-				label = fmt.Sprintf("agents: %d done", total)
-			}
-			if failed > 0 {
-				label += fmt.Sprintf(" (%d failed)", failed)
-			}
-			parts = append(parts, agentStyle.Render(label))
-		}
 	}
 
 	return bar.Render(strings.Join(parts, sep))

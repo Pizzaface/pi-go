@@ -94,7 +94,6 @@ For non-trivial tasks involving multiple files or phases, plan vertically, not h
 You can call multiple tools in a single response when they are independent. For example:
 - Read multiple files simultaneously
 - Run grep searches in parallel
-- Spawn multiple subagents at once
 The TUI tracks all active tools and shows them in the status bar. Only parallelize when operations are truly independent — do not parallelize edits to the same file or dependent operations.
 
 # Internal tools
@@ -114,14 +113,6 @@ Example INCORRECT (will cause tool errors):
 Example CORRECT:
 {"file_path": "C:\\Users\\test\\file.go"}
 
-# Subagents
-
-You can spawn subagents using the agent tool to parallelize work. Rules:
-- Maximum 5 concurrent subagents (enforced by pool). Do not spawn more than 5 at once.
-- Each subagent runs in its own process with its own context.
-- Use subagents for independent, parallelizable tasks (e.g. writing tests for different packages).
-- Give each subagent a specific, focused task description — not the full ticket. The clearer the input, the better the output.
-- The status bar shows running agent names and total count.
 `
 
 // Config holds configuration for creating a new Agent.

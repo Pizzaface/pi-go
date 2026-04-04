@@ -25,17 +25,12 @@ type ToolDisplayModel struct {
 }
 
 // RenderToolMessage renders a tool message (role=="tool") into a styled string.
-// It handles both agent/subagent tools (with event streams) and regular tools
-// (with syntax-highlighted output). When CompactTools is true, renders a
-// one-line summary instead of full output.
+// When CompactTools is true, renders a one-line summary instead of full output.
 func (t *ToolDisplayModel) RenderToolMessage(msg message) string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	if t.CompactTools {
 		return t.renderCompactTool(msg, dim)
-	}
-	if msg.tool == "agent" || msg.tool == "subagent" {
-		return t.renderAgentTool(msg, dim)
 	}
 	return t.renderRegularTool(msg, dim)
 }
@@ -75,74 +70,6 @@ func (t *ToolDisplayModel) renderCompactTool(msg message, dim lipgloss.Style) st
 	}
 
 	b.WriteString("\n")
-	return b.String()
-}
-
-// renderAgentTool renders an agent/subagent tool message with type, title,
-// event stream, and result summary.
-func (t *ToolDisplayModel) renderAgentTool(msg message, dim lipgloss.Style) string {
-	agentBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true).Render("● ")
-	typeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true)
-	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-
-	var b strings.Builder
-	b.WriteString(agentBullet)
-	b.WriteString(typeStyle.Render("agent"))
-	if msg.agentType != "" {
-		b.WriteString(dim.Render("["))
-		b.WriteString(typeStyle.Render(msg.agentType))
-		b.WriteString(dim.Render("]"))
-	}
-	if msg.agentTitle != "" {
-		b.WriteString(" ")
-		b.WriteString(titleStyle.Render(msg.agentTitle))
-	}
-	b.WriteString("\n")
-
-	// Show event stream (last N events).
-	if len(msg.agentEvents) > 0 {
-		evStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-		evToolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35"))
-		maxEvents := 8
-		events := msg.agentEvents
-		if len(events) > maxEvents {
-			skipped := len(events) - maxEvents
-			events = events[len(events)-maxEvents:]
-			b.WriteString("  ")
-			b.WriteString(dim.Render(fmt.Sprintf("│ ... %d earlier events\n", skipped)))
-		}
-		for _, ev := range events {
-			b.WriteString("  ")
-			b.WriteString(dim.Render("│ "))
-			switch ev.kind {
-			case "tool_call":
-				b.WriteString(evToolStyle.Render("⚙ " + ev.content))
-			case "tool_result":
-				summary := ev.content
-				if len(summary) > 80 {
-					summary = summary[:77] + "..."
-				}
-				b.WriteString(evStyle.Render("  ✓ " + summary))
-			case "text":
-				// Skip text deltas in event stream to avoid clutter.
-			default:
-				b.WriteString(evStyle.Render(ev.kind + ": " + ev.content))
-			}
-			b.WriteString("\n")
-		}
-	}
-
-	// Show result summary when done.
-	if msg.content != "" {
-		b.WriteString("  ")
-		b.WriteString(dim.Render("│ "))
-		summary := msg.content
-		if len(summary) > 100 {
-			summary = summary[:97] + "..."
-		}
-		b.WriteString(dim.Render("→ " + summary))
-		b.WriteString("\n")
-	}
 	return b.String()
 }
 
@@ -245,23 +172,6 @@ func toolCallSummary(name string, args map[string]any) string {
 			return fmt.Sprintf("%s (depth %d)", p, int(d))
 		}
 		return p
-	case "agent":
-		typ, _ := args["type"].(string)
-		prompt, _ := args["prompt"].(string)
-		// Truncate prompt to first line, max 60 chars.
-		if idx := strings.IndexByte(prompt, '\n'); idx > 0 {
-			prompt = prompt[:idx]
-		}
-		if len(prompt) > 60 {
-			prompt = prompt[:57] + "..."
-		}
-		if typ != "" && prompt != "" {
-			return fmt.Sprintf("%s: %s", typ, prompt)
-		}
-		if typ != "" {
-			return typ
-		}
-		return prompt
 	}
 	return ""
 }

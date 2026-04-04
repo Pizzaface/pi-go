@@ -6,77 +6,76 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/dimetron/pi-go/internal/subagent"
 )
 
 // maxPromptOutput is the maximum size of tool output included in the compression prompt.
 const maxPromptOutput = 4096
 
-// SubagentCompressor uses a bundled subagent to compress raw observations.
-type SubagentCompressor struct {
-	orchestrator *subagent.Orchestrator
+// NoopCompressor is a pass-through compressor that extracts basic metadata
+// It serves as the default when no external compression service is configured.
+type NoopCompressor struct{}
+
+// NewNoopCompressor creates a compressor that does basic metadata extraction
+// without requiring an LLM.
+func NewNoopCompressor() *NoopCompressor {
+	return &NoopCompressor{}
 }
 
-// NewSubagentCompressor creates a compressor that uses the memory-compressor subagent.
-func NewSubagentCompressor(orch *subagent.Orchestrator) *SubagentCompressor {
-	return &SubagentCompressor{orchestrator: orch}
-}
+// CompressObservation extracts a structured Observation from raw tool data
+// using simple heuristics (no LLM call).
+func (c *NoopCompressor) CompressObservation(_ context.Context, raw RawObservation) (*Observation, error) {
+	title := fmt.Sprintf("%s observation", raw.ToolName)
+	text := summarizeToolIO(raw)
 
-// compressedResponse is the JSON structure expected from the compression subagent.
-type compressedResponse struct {
-	Title       string   `json:"title"`
-	Type        string   `json:"type"`
-	Text        string   `json:"text"`
-	SourceFiles []string `json:"source_files"`
-}
-
-// CompressObservation sends raw observation data to the memory-compressor subagent
-// and parses the structured response.
-func (c *SubagentCompressor) CompressObservation(ctx context.Context, raw RawObservation) (*Observation, error) {
-	prompt := buildCompressionPrompt(raw)
-
-	// Look up the memory-compressor agent config.
-	agent, err := c.orchestrator.LookupAgent("memory-compressor")
-	if err != nil {
-		return nil, fmt.Errorf("finding memory-compressor agent: %w", err)
-	}
-
-	// Spawn the compression subagent.
-	events, _, err := c.orchestrator.Spawn(ctx, subagent.SpawnInput{
-		Agent:  agent,
-		Prompt: prompt,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("spawning memory-compressor: %w", err)
-	}
-
-	// Collect text output from the event stream.
-	var result strings.Builder
-	for ev := range events {
-		switch ev.Type {
-		case "text_delta":
-			result.WriteString(ev.Content)
-		case "error":
-			return nil, fmt.Errorf("memory-compressor error: %s", ev.Error)
+	// Extract source files from input if present.
+	var sourceFiles []string
+	if raw.ToolInput != nil {
+		if path, ok := raw.ToolInput["path"].(string); ok && path != "" {
+			sourceFiles = append(sourceFiles, path)
+		}
+		if path, ok := raw.ToolInput["file_path"].(string); ok && path != "" {
+			sourceFiles = append(sourceFiles, path)
 		}
 	}
-
-	// Parse the JSON response.
-	obs, err := parseCompressedResponse(result.String(), raw)
-	if err != nil {
-		return nil, fmt.Errorf("parsing compressor response: %w", err)
+	if sourceFiles == nil {
+		sourceFiles = []string{}
 	}
 
-	return obs, nil
+	return &Observation{
+		SessionID:   raw.SessionID,
+		Project:     raw.Project,
+		Title:       title,
+		Type:        TypeChange,
+		Text:        text,
+		SourceFiles: sourceFiles,
+		ToolName:    raw.ToolName,
+		CreatedAt:   raw.Timestamp,
+	}, nil
 }
 
-// buildCompressionPrompt creates the JSON prompt for the compression subagent.
+// SummarizeSession creates a basic session summary without an LLM.
+func (c *NoopCompressor) SummarizeSession(_ context.Context, sessionID, project string, observations []*Observation) (*SessionSummary, error) {
+	var titles []string
+	for _, obs := range observations {
+		titles = append(titles, obs.Title)
+	}
+	completed := "No observations recorded."
+	if len(titles) > 0 {
+		completed = strings.Join(titles, "; ")
+	}
+	return &SessionSummary{
+		SessionID: sessionID,
+		Project:   project,
+		Completed: completed,
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+// buildCompressionPrompt creates a JSON prompt suitable for a compression service.
 func buildCompressionPrompt(raw RawObservation) string {
 	inputJSON, _ := json.Marshal(raw.ToolInput)
 	outputJSON, _ := json.Marshal(raw.ToolOutput)
 
-	// Truncate large outputs.
 	outputStr := string(outputJSON)
 	if len(outputStr) > maxPromptOutput {
 		outputStr = outputStr[:maxPromptOutput] + "...(truncated)"
@@ -91,9 +90,26 @@ func buildCompressionPrompt(raw RawObservation) string {
 	return string(b)
 }
 
-// parseCompressedResponse extracts a structured Observation from the subagent's JSON output.
+// summarizeToolIO builds a short text summary from tool input/output.
+func summarizeToolIO(raw RawObservation) string {
+	inputJSON, _ := json.Marshal(raw.ToolInput)
+	text := string(inputJSON)
+	if len(text) > maxPromptOutput {
+		text = text[:maxPromptOutput] + "...(truncated)"
+	}
+	return text
+}
+
+// compressedResponse is the JSON structure expected from an external compression service.
+type compressedResponse struct {
+	Title       string   `json:"title"`
+	Type        string   `json:"type"`
+	Text        string   `json:"text"`
+	SourceFiles []string `json:"source_files"`
+}
+
+// parseCompressedResponse extracts a structured Observation from JSON output.
 func parseCompressedResponse(text string, raw RawObservation) (*Observation, error) {
-	// Strip markdown code fences if present.
 	text = stripCodeFences(text)
 	text = strings.TrimSpace(text)
 
@@ -110,7 +126,6 @@ func parseCompressedResponse(text string, raw RawObservation) (*Observation, err
 		return nil, fmt.Errorf("compressor returned empty title")
 	}
 
-	// Validate and default the type.
 	obsType := ObservationType(resp.Type)
 	if !ValidObservationTypes[obsType] {
 		obsType = TypeChange
@@ -136,11 +151,9 @@ func parseCompressedResponse(text string, raw RawObservation) (*Observation, err
 func stripCodeFences(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
-		// Remove opening fence (with optional language tag).
 		if idx := strings.Index(s, "\n"); idx >= 0 {
 			s = s[idx+1:]
 		}
-		// Remove closing fence.
 		if idx := strings.LastIndex(s, "```"); idx >= 0 {
 			s = s[:idx]
 		}
@@ -155,45 +168,6 @@ func truncateForError(s string) string {
 		return s[:maxLen] + "..."
 	}
 	return s
-}
-
-// SummarizeSession creates a session summary from a list of observations.
-func (c *SubagentCompressor) SummarizeSession(ctx context.Context, sessionID, project string, observations []*Observation) (*SessionSummary, error) {
-	prompt := buildSummaryPrompt(observations)
-
-	agent, err := c.orchestrator.LookupAgent("memory-compressor")
-	if err != nil {
-		return nil, fmt.Errorf("finding memory-compressor agent: %w", err)
-	}
-
-	events, _, err := c.orchestrator.Spawn(ctx, subagent.SpawnInput{
-		Agent:  agent,
-		Prompt: prompt,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("spawning memory-compressor for summary: %w", err)
-	}
-
-	var result strings.Builder
-	for ev := range events {
-		switch ev.Type {
-		case "text_delta":
-			result.WriteString(ev.Content)
-		case "error":
-			return nil, fmt.Errorf("memory-compressor summary error: %s", ev.Error)
-		}
-	}
-
-	return parseSummaryResponse(result.String(), sessionID, project)
-}
-
-// summaryResponse is the JSON structure expected for session summaries.
-type summaryResponse struct {
-	Request      string `json:"request"`
-	Investigated string `json:"investigated"`
-	Learned      string `json:"learned"`
-	Completed    string `json:"completed"`
-	NextSteps    string `json:"next_steps"`
 }
 
 // buildSummaryPrompt creates a prompt for session summarization.
@@ -211,7 +185,16 @@ func buildSummaryPrompt(observations []*Observation) string {
 	return b.String()
 }
 
-// parseSummaryResponse parses the subagent's JSON summary output.
+// summaryResponse is the JSON structure expected for session summaries.
+type summaryResponse struct {
+	Request      string `json:"request"`
+	Investigated string `json:"investigated"`
+	Learned      string `json:"learned"`
+	Completed    string `json:"completed"`
+	NextSteps    string `json:"next_steps"`
+}
+
+// parseSummaryResponse parses JSON summary output.
 func parseSummaryResponse(text, sessionID, project string) (*SessionSummary, error) {
 	text = stripCodeFences(text)
 	text = strings.TrimSpace(text)

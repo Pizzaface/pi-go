@@ -22,7 +22,6 @@ import (
 	"github.com/dimetron/pi-go/internal/memory"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/subagent"
 	"github.com/dimetron/pi-go/internal/tools"
 	"github.com/dimetron/pi-go/internal/tui"
 )
@@ -31,7 +30,6 @@ import (
 type initResources struct {
 	sandbox    *tools.Sandbox
 	lspMgr     *lsp.Manager
-	orch       *subagent.Orchestrator
 	memStore   memory.Store
 	memWorker  *memory.Worker
 	sessionLog *logger.Logger
@@ -51,9 +49,6 @@ func (r *initResources) cleanup() {
 	}
 	if r.lspMgr != nil {
 		r.lspMgr.Shutdown()
-	}
-	if r.orch != nil {
-		r.orch.Shutdown()
 	}
 	if r.sandbox != nil {
 		_ = r.sandbox.Close()
@@ -162,10 +157,9 @@ func deferredInit(
 	type parallelState struct {
 		mu sync.Mutex
 
-		// Git + subagents
-		repoRoot     string
-		agentConfigs []subagent.AgentConfig
-		gitBranch    string
+		// Git
+		repoRoot  string
+		gitBranch string
 		diffAdded    int
 		diffRemoved  int
 
@@ -189,16 +183,12 @@ func deferredInit(
 	var ps parallelState
 	var wg sync.WaitGroup
 
-	// Git + subagent discovery
+	// Git discovery
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		send("git", false)
 		ps.repoRoot = detectGitRoot(cwd)
-		discovery, _ := subagent.DiscoverAgents(cwd, subagent.ScopeBoth)
-		if discovery != nil {
-			ps.agentConfigs = discovery.All
-		}
 		ps.gitBranch = detectBranch(cwd)
 		ps.diffAdded, ps.diffRemoved = computeDiffStats(cwd)
 		send("git", true)
@@ -327,29 +317,14 @@ func deferredInit(
 	res.lspMgr = ps.lspMgr
 	res.memStore = ps.memStore
 
-	// Build orchestrator (needs git results).
-	orch := subagent.NewOrchestrator(&cfg, ps.repoRoot, ps.agentConfigs)
-	res.orch = orch
-
-	// Create memory worker now that orchestrator is available.
+	// Create memory worker.
 	var memWorker *memory.Worker
 	if ps.memStore != nil {
-		compressor := memory.NewSubagentCompressor(orch)
+		compressor := memory.NewNoopCompressor()
 		memWorker = memory.NewWorker(ps.memStore, compressor, ps.memMaxPending)
 		memWorker.Start(ctx)
 		res.memWorker = memWorker
 	}
-
-	// Build agent event channel and tools.
-	agentEventCh := make(chan tui.AgentSubEvent, 128)
-	agentEventCB := func(agentID, eventType, content string) {
-		select {
-		case agentEventCh <- tui.AgentSubEvent{AgentID: agentID, Kind: eventType, Content: content}:
-		default:
-		}
-	}
-	agentTools, _ := tools.AgentTools(orch, agentEventCB)
-	coreTools = append(coreTools, agentTools...)
 
 	// Append LSP tools.
 	if ps.lspTools != nil {
@@ -503,12 +478,10 @@ func deferredInit(
 			Agent:             ag,
 			SessionID:         sessionID,
 			SessionService:    sessionSvc,
-			Orchestrator:      orch,
-			Logger:            sessionLog,
+				Logger:            sessionLog,
 			Skills:            ps.skills,
 			SkillDirs:         ps.skillDirs,
 			GenerateCommitMsg: commitMsgFn,
-			AgentEventCh:      agentEventCh,
 			TokenTracker:      tokenTracker,
 			CompactMetrics:    compactMetrics,
 			RestartCh:         restartCh,
