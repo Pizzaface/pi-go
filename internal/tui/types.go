@@ -8,21 +8,23 @@ import (
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/logger"
+	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	llmmodel "google.golang.org/adk/model"
 )
 
 // Config holds configuration for the TUI.
 type Config struct {
-	Agent          *agent.Agent
-	LLM            llmmodel.LLM // The active LLM, used by /ping.
-	SessionID      string
-	ModelName      string
-	ProviderName   string
-	ActiveRole     string
-	Roles          map[string]config.RoleConfig
-	SessionService *pisession.FileService
-	WorkDir        string
+	Agent            *agent.Agent
+	LLM              llmmodel.LLM // The active LLM, used by /ping.
+	SessionID        string
+	ModelName        string
+	ProviderName     string
+	ActiveRole       string
+	Roles            map[string]config.RoleConfig
+	ProviderRegistry *provider.Registry
+	SessionService   *pisession.FileService
+	WorkDir          string
 	// GenerateCommitMsg is called by /commit to generate a conventional commit message from diffs.
 	// If nil, /commit is disabled.
 	GenerateCommitMsg func(ctx context.Context, diffs string) (string, error)

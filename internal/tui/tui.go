@@ -816,6 +816,9 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.statusModel.GitBranch = r.GitBranch
 		m.diffAdded = r.DiffAdded
 		m.diffRemoved = r.DiffRemoved
+		if m.cfg.SessionService != nil && m.cfg.SessionID != "" {
+			_ = m.loadSessionMessages(m.cfg.SessionID)
+		}
 
 		// Update input model with loaded skills and extension commands.
 		m.inputModel.Skills = r.Skills

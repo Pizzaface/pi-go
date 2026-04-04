@@ -48,8 +48,8 @@ var Version = "dev"
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "pi [prompt]",
-		Short:   "pi-go coding agent",
-		Long:    "A Go coding agent with multi-provider LLM support, tool calling, and interactive TUI.",
+		Short:   "go-pi coding agent",
+		Long:    "A minimal Go coding agent harness with multi-provider LLM support, tool calling, and an interactive TUI.",
 		Version: Version,
 		Args:    cobra.ArbitraryArgs,
 		RunE:    runRoot,
@@ -57,7 +57,7 @@ func newRootCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&flagModel, "model", "", "LLM model to use (e.g. claude-sonnet-4-6, gpt-4o, gemini-2.5-pro)")
 	cmd.Flags().StringVar(&flagMode, "mode", "", "Output mode: interactive, print, json, rpc")
-	cmd.Flags().StringVar(&flagSocket, "socket", "/tmp/pi-go.sock", "Unix socket path for RPC mode")
+	cmd.Flags().StringVar(&flagSocket, "socket", "/tmp/go-pi.sock", "Unix socket path for RPC mode")
 	cmd.Flags().StringVar(&flagSession, "session", "", "Session ID to resume")
 	cmd.Flags().StringVar(&flagURL, "url", "", "Alternative base URL for the LLM API endpoint")
 	cmd.Flags().BoolVar(&flagContinue, "continue", false, "Continue last session")
@@ -175,7 +175,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// Interactive mode: show TUI immediately, initialize in background.
 	if mode == "interactive" {
-		return runInteractive(cmd.Context(), cfg, llm, info, activeRole, cwd, sandboxRoot)
+		return runInteractive(cmd.Context(), cfg, llm, info, reg, activeRole, cwd, sandboxRoot)
 	}
 
 	// Non-interactive modes: synchronous initialization.
@@ -266,7 +266,7 @@ func runNonInteractive(
 			return fmt.Errorf("no previous session found to continue")
 		}
 		sessionID = lastID
-		fmt.Fprintf(os.Stderr, "pi-go: continuing session %s\n", sessionID)
+		fmt.Fprintf(os.Stderr, "go-pi: continuing session %s\n", sessionID)
 	}
 	if sessionID == "" {
 		sessionID, err = ag.CreateSession(ctx)
@@ -280,7 +280,7 @@ func runNonInteractive(
 
 	sessionLog, err := logger.New()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "pi-go: warning: could not create session log: %v\n", err)
+		fmt.Fprintf(os.Stderr, "go-pi: warning: could not create session log: %v\n", err)
 	}
 	defer func() { _ = sessionLog.Close() }()
 	sessionLog.SessionStart(sessionID, llm.Name(), mode)
@@ -294,13 +294,13 @@ func runNonInteractive(
 		return srv.Run(ctx)
 	case "json":
 		if prompt == "" {
-			fmt.Fprintf(os.Stderr, "pi-go: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
+			fmt.Fprintf(os.Stderr, "go-pi: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
 			return nil
 		}
 		return runJSON(ctx, ag, sessionID, prompt, sessionLog)
 	default:
 		if prompt == "" {
-			fmt.Fprintf(os.Stderr, "pi-go: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
+			fmt.Fprintf(os.Stderr, "go-pi: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
 			return nil
 		}
 		return runPrint(ctx, ag, sessionID, prompt, sessionLog)

@@ -305,6 +305,30 @@ func (r *Registry) HasModel(name string) bool {
 	return ok
 }
 
+func (r *Registry) Providers() []Definition {
+	if r == nil {
+		return nil
+	}
+	out := make([]Definition, 0, len(r.providers))
+	for _, def := range r.providers {
+		out = append(out, def)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func (r *Registry) Models() []ModelDefinition {
+	if r == nil {
+		return nil
+	}
+	out := make([]ModelDefinition, 0, len(r.models))
+	for _, mdl := range r.models {
+		out = append(out, mdl)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 func (r *Registry) RequiresAPIKey(providerName string) bool {
 	def, ok := r.provider(providerName)
 	if !ok {
