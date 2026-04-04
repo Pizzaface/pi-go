@@ -1047,80 +1047,6 @@ func TestLoadDotEnvExistingVarNotOverridden(t *testing.T) {
 	}
 }
 
-func TestBuildCommitMsgFuncNoDefaultRole(t *testing.T) {
-	// Config with no roles: buildCommitMsgFunc should return nil (no model available).
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	cfgDir := filepath.Join(tmpDir, ".pi-go")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{"roles":{}}`), 0o644)
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-	// Intentionally clear all roles so default cannot be resolved.
-	cfg.Roles = map[string]config.RoleConfig{}
-
-	fn := buildCommitMsgFunc(context.Background(), cfg)
-	// When no role can be resolved, fn should be nil.
-	if fn != nil {
-		t.Log("buildCommitMsgFunc returned non-nil even with no roles (provider may have been resolved)")
-	}
-}
-
-func TestBuildCommitMsgFuncWithDefaultRole(t *testing.T) {
-	// Config with default role that has no valid API key: should return nil or a func that errors.
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	cfgDir := filepath.Join(tmpDir, ".pi-go")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
-		"roles": {
-			"default": {"model": "gpt-4o-mini", "provider": "openai"}
-		}
-	}`), 0o644)
-
-	// Set a fake API key so provider.NewLLM doesn't immediately fail.
-	t.Setenv("OPENAI_API_KEY", "test-key-for-commit")
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-
-	fn := buildCommitMsgFunc(context.Background(), cfg)
-	// With a valid config + API key, fn should be non-nil (even if the LLM call fails).
-	if fn == nil {
-		t.Log("buildCommitMsgFunc returned nil (provider or LLM init may have failed with fake key)")
-	}
-}
-
-func TestBuildCommitMsgFuncCommitRoleFallback(t *testing.T) {
-	// Config with a "commit" role: buildCommitMsgFunc should use it.
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	cfgDir := filepath.Join(tmpDir, ".pi-go")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
-		"roles": {
-			"default": {"model": "gpt-4o", "provider": "openai"},
-			"commit": {"model": "gpt-4o-mini", "provider": "openai"}
-		}
-	}`), 0o644)
-
-	t.Setenv("OPENAI_API_KEY", "test-key-for-commit-role")
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-
-	fn := buildCommitMsgFunc(context.Background(), cfg)
-	// Just verify the function is created without panic.
-	_ = fn
-}
-
 // TestRunPrintAgentError verifies that runPrint propagates an agent error
 // when the context is not canceled.
 func TestRunPrintAgentError(t *testing.T) {
@@ -1193,56 +1119,6 @@ func TestRunJSONThinkingDelta(t *testing.T) {
 	if !hasTextDelta {
 		t.Error("expected at least one text_delta event in JSON output")
 	}
-}
-
-// TestBuildCommitMsgFuncOllama exercises the info.Ollama branch in
-// buildCommitMsgFunc. When the model resolves to an Ollama provider and
-// Ollama is not reachable, the function should return nil gracefully.
-func TestBuildCommitMsgFuncOllama(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	cfgDir := filepath.Join(tmpDir, ".pi-go")
-	os.MkdirAll(cfgDir, 0o755)
-	// Use an Ollama model (qwen2.5 resolves to ollama provider).
-	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
-		"roles": {
-			"default": {"model": "qwen2.5:latest", "provider": "ollama"}
-		}
-	}`), 0o644)
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-
-	// buildCommitMsgFunc will attempt CheckOllama which will fail (no server),
-	// causing it to return nil. That is the expected behavior we want to cover.
-	fn := buildCommitMsgFunc(context.Background(), cfg)
-	// fn may be nil (Ollama unreachable) or non-nil (Ollama running locally).
-	// Both are valid — we just verify no panic and the Ollama branch was exercised.
-	_ = fn
-}
-
-// TestBuildCommitMsgFuncOllamaWithBaseURL exercises the baseURL fallback for
-// Ollama models inside buildCommitMsgFunc (info.Ollama == true, baseURL == "").
-func TestBuildCommitMsgFuncOllamaWithBaseURL(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	cfgDir := filepath.Join(tmpDir, ".pi-go")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
-		"roles": {
-			"commit": {"model": "qwen2.5:latest", "provider": "ollama"}
-		}
-	}`), 0o644)
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-
-	fn := buildCommitMsgFunc(context.Background(), cfg)
-	_ = fn // nil is acceptable when Ollama is unreachable
 }
 
 func TestProviderEnvVarAllCases(t *testing.T) {

@@ -17,7 +17,7 @@ func TestComplete_CommandCompletion(t *testing.T) {
 		first    string
 	}{
 		{"help matches", "/he", 1, "/help"},
-		{"commit matches", "/co", 3, "/commit"},
+		{"core c-commands", "/co", 2, "/compact"},
 		{"all commands", "/", 0, ""},
 		{"no match", "/xyz", 0, ""},
 		{"exact match", "/help", 1, "/help"},

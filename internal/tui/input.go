@@ -505,14 +505,12 @@ var slashCommands = []string{
 	"/compact",
 	"/history",
 	"/login",
-	"/commit",
 	"/skills",
 	"/skill-create",
 	"/skill-load",
 	"/skill-list",
 	"/theme",
 	"/ping",
-	"/rtk",
 	"/restart",
 	"/exit",
 	"/quit",
@@ -535,14 +533,10 @@ func slashCommandDesc(cmd string) string {
 		return "Manage branches"
 	case "/compact":
 		return "Compact context"
-	case "/rtk":
-		return "Output compaction stats"
 	case "/history":
 		return "Command history"
 	case "/login":
 		return "Configure API keys (codex, openai, anthropic, gemini)"
-	case "/commit":
-		return "Create commit from staged changes"
 	case "/theme":
 		return "Switch theme or list themes"
 	case "/skills":

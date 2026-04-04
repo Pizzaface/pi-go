@@ -149,7 +149,7 @@ func TestDeferredInitDoesNotReportLSPSubsystem(t *testing.T) {
 	res := &initResources{}
 
 	go func() {
-		deferredInit(context.Background(), config.Config{}, &cliMockLLM{name: "test-llm", response: "ok"}, nil, cwd, cwd, ch, res)
+		deferredInit(context.Background(), config.Config{}, &cliMockLLM{name: "test-llm", response: "ok"}, cwd, cwd, ch, res)
 		close(ch)
 	}()
 
@@ -194,7 +194,7 @@ func TestDeferredInitDoesNotReportMCPSubsystem(t *testing.T) {
 	}
 
 	go func() {
-		deferredInit(context.Background(), cfg, &cliMockLLM{name: "test-llm", response: "ok"}, nil, cwd, cwd, ch, res)
+		deferredInit(context.Background(), cfg, &cliMockLLM{name: "test-llm", response: "ok"}, cwd, cwd, ch, res)
 		close(ch)
 	}()
 
