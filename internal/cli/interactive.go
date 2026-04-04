@@ -103,32 +103,25 @@ func deferredInit(
 	}
 	res.sandbox = sandbox
 
-	coreTools, err := tools.CoreTools(sandbox)
-	if err != nil {
-		fail(fmt.Errorf("creating core tools: %w", err))
-		return
-	}
-
 	screen := &tui.Screen{}
-	screenTool, err := tools.NewScreenTool(screen)
-	if err != nil {
-		fail(fmt.Errorf("creating screen tool: %w", err))
-		return
-	}
-	coreTools = append(coreTools, screenTool)
-
 	restartCh := make(chan struct{}, 1)
-	restartTool, err := tools.NewRestartTool(func() {
-		select {
-		case restartCh <- struct{}{}:
-		default:
-		}
+	runtime, err := extension.BuildRuntime(ctx, extension.RuntimeConfig{
+		Config:          cfg,
+		WorkDir:         cwd,
+		Sandbox:         sandbox,
+		BaseInstruction: baseInstruction(),
+		ScreenProvider:  screen,
+		RestartFunc: func() {
+			select {
+			case restartCh <- struct{}{}:
+			default:
+			}
+		},
 	})
 	if err != nil {
-		fail(fmt.Errorf("creating restart tool: %w", err))
+		fail(fmt.Errorf("building extension runtime: %w", err))
 		return
 	}
-	coreTools = append(coreTools, restartTool)
 	send("tools", true)
 
 	// --- Phase 2: Parallel subsystems ---
@@ -140,10 +133,6 @@ func deferredInit(
 		gitBranch   string
 		diffAdded   int
 		diffRemoved int
-
-		// Skills
-		skills    []extension.Skill
-		skillDirs []string
 	}
 	var ps parallelState
 	var wg sync.WaitGroup
@@ -159,46 +148,13 @@ func deferredInit(
 		send("git", true)
 	}()
 
-	// Skills
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		send("skills", false)
-		dirs := []string{}
-		if homeDir, hErr := os.UserHomeDir(); hErr == nil {
-			dirs = append(dirs, filepath.Join(homeDir, ".pi-go", "skills"))
-		}
-		dirs = append(dirs,
-			filepath.Join(".pi-go", "skills"),
-			filepath.Join(".claude", "skills"),
-			filepath.Join(".cursor", "skills"),
-		)
-		sk, _ := extension.LoadSkills(dirs...)
-		ps.mu.Lock()
-		ps.skills = sk
-		ps.skillDirs = dirs
-		ps.mu.Unlock()
-		send("skills", true)
-	}()
+	send("skills", false)
+	send("skills", true)
 
 	wg.Wait()
 
 	// --- Phase 3: Sequential finalization ---
 	send("agent", false)
-
-	// Build system instruction.
-	var instruction string
-	if flagSystem != "" {
-		instruction = flagSystem
-	} else {
-		instruction = agent.LoadInstruction(agent.SystemInstruction)
-	}
-	if len(ps.skills) > 0 {
-		instruction += "\n\n# Available Skills\n\n"
-		for _, s := range ps.skills {
-			instruction += fmt.Sprintf("- /%s: %s\n", s.Name, s.Description)
-		}
-	}
 
 	// Build callbacks.
 	compactorCfg := tools.DefaultCompactorConfig()
@@ -216,12 +172,9 @@ func deferredInit(
 			compactorCfg.MaxLines = cfg.Compactor.MaxLines
 		}
 	}
-	compactorCB := tools.BuildCompactorCallback(compactorCfg, tools.NewCompactMetrics())
-
-	hooks := convertHooks(cfg.Hooks)
-	beforeCBs := extension.BuildBeforeToolCallbacks(hooks)
-	afterCBs := extension.BuildAfterToolCallbacks(hooks)
-	afterCBs = append(afterCBs, compactorCB)
+	compactorMetrics := tools.NewCompactMetrics()
+	compactorCB := tools.BuildCompactorCallback(compactorCfg, compactorMetrics)
+	afterCBs := append(runtime.AfterToolCallbacks, compactorCB)
 
 	// Session service.
 	homeDir, err := os.UserHomeDir()
@@ -239,10 +192,11 @@ func deferredInit(
 	// Create agent.
 	ag, err := agent.New(agent.Config{
 		Model:               llm,
-		Tools:               coreTools,
-		Instruction:         instruction,
+		Tools:               runtime.Tools,
+		Toolsets:            runtime.Toolsets,
+		Instruction:         runtime.Instruction,
 		SessionService:      sessionSvc,
-		BeforeToolCallbacks: beforeCBs,
+		BeforeToolCallbacks: runtime.BeforeToolCallbacks,
 		AfterToolCallbacks:  afterCBs,
 	})
 	if err != nil {
@@ -260,6 +214,11 @@ func deferredInit(
 		}
 	}
 
+	if err := runtime.RunLifecycleHooks(ctx, extension.LifecycleEventSessionStart, map[string]any{"session_id": sessionID, "mode": "interactive"}); err != nil {
+		fail(fmt.Errorf("running extension session_start hooks: %w", err))
+		return
+	}
+
 	// Session logger.
 	sessionLog, logErr := logger.New()
 	if logErr == nil {
@@ -273,17 +232,19 @@ func deferredInit(
 	ch <- tui.InitEvent{
 		Done: true,
 		Result: &tui.InitResult{
-			Agent:          ag,
-			SessionID:      sessionID,
-			SessionService: sessionSvc,
-			Logger:         sessionLog,
-			Skills:         ps.skills,
-			SkillDirs:      ps.skillDirs,
-			RestartCh:      restartCh,
-			Screen:         screen,
-			GitBranch:      ps.gitBranch,
-			DiffAdded:      ps.diffAdded,
-			DiffRemoved:    ps.diffRemoved,
+			Agent:             ag,
+			SessionID:         sessionID,
+			SessionService:    sessionSvc,
+			Logger:            sessionLog,
+			Skills:            runtime.Skills,
+			SkillDirs:         runtime.SkillDirs,
+			ExtensionCommands: runtime.SlashCommands,
+			CompactMetrics:    compactorMetrics,
+			RestartCh:         restartCh,
+			Screen:            screen,
+			GitBranch:         ps.gitBranch,
+			DiffAdded:         ps.diffAdded,
+			DiffRemoved:       ps.diffRemoved,
 		},
 	}
 }

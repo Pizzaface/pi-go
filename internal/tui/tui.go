@@ -171,11 +171,14 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = tm.SetTheme(cfg.ThemeName) // ignore error, falls back to tokyo-night
 	}
 
+	im := NewInputModel(history, cfg.Skills, cfg.SkillDirs, cfg.WorkDir)
+	im.ExtensionCommands = cfg.ExtensionCommands
+
 	m := model{
 		cfg:          cfg,
 		ctx:          ctx,
 		cancel:       cancel,
-		inputModel:   NewInputModel(history, cfg.Skills, cfg.SkillDirs, cfg.WorkDir),
+		inputModel:   im,
 		chatModel:    NewChatModel(renderer),
 		statusModel:  StatusModel{},
 		themeManager: tm,
@@ -278,7 +281,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentToolResultMsg:
 		return m.handleAgentToolResult(msg)
-
 
 	case agentDoneMsg:
 		return m.handleAgentDone(msg)
@@ -804,15 +806,17 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.GenerateCommitMsg = r.GenerateCommitMsg
 		m.cfg.TokenTracker = r.TokenTracker
 		m.cfg.CompactMetrics = r.CompactMetrics
+		m.cfg.ExtensionCommands = r.ExtensionCommands
 		m.cfg.RestartCh = r.RestartCh
 		m.cfg.Screen = r.Screen
 		m.statusModel.GitBranch = r.GitBranch
 		m.diffAdded = r.DiffAdded
 		m.diffRemoved = r.DiffRemoved
 
-		// Update input model with loaded skills.
+		// Update input model with loaded skills and extension commands.
 		m.inputModel.Skills = r.Skills
 		m.inputModel.SkillDirs = r.SkillDirs
+		m.inputModel.ExtensionCommands = r.ExtensionCommands
 
 		var cmds []tea.Cmd
 		if r.RestartCh != nil {

@@ -35,6 +35,8 @@ type Config struct {
 	Skills []extension.Skill
 	// SkillDirs are the directories to re-scan for skills on each completion.
 	SkillDirs []string
+	// ExtensionCommands are narrow slash-command contributions from extensions.
+	ExtensionCommands []extension.SlashCommand
 	// RestartCh receives a signal when the agent calls the restart tool.
 	RestartCh chan struct{}
 	// TokenTracker tracks daily token usage and enforces limits. May be nil.
@@ -67,6 +69,7 @@ type InitResult struct {
 	Logger            *logger.Logger
 	Skills            []extension.Skill
 	SkillDirs         []string
+	ExtensionCommands []extension.SlashCommand
 	GenerateCommitMsg func(context.Context, string) (string, error)
 	TokenTracker      TokenTracker
 	CompactMetrics    CompactStatsProvider

@@ -320,28 +320,50 @@ graph LR
 
 ```mermaid
 graph TD
-    subgraph Extensions
-        hooks["Hooks<br/>Shell commands<br/>before/after tool calls"]
-        skills["Skills<br/>*.SKILL.md files<br/>Reusable instructions"]
-        mcp["MCP Building Blocks<br/>Optional subprocess transport<br/>for custom integrations"]
+    subgraph Runtime["Extension Runtime"]
+        discovery["Manifest discovery<br/>~/.pi-go/extensions<br/>.pi-go/extensions"]
+        prompts["Prompt fragments<br/>prompt / prompt_file"]
+        hooks["Tool hooks<br/>before_tool / after_tool"]
+        lifecycle["Lifecycle hooks<br/>startup / session_start"]
+        skills["Skills<br/>skills_dir"]
+        mcp["Tool registration<br/>mcp_servers"]
+        tui["Narrow TUI points<br/>slash commands only"]
     end
 
-    config["config.json"] --> hooks
-    skilldir["~/.pi-go/skills/<br/>.pi-go/skills/"] --> skills
-    config -. optional custom wiring .-> mcp
+    discovery --> prompts
+    discovery --> hooks
+    discovery --> lifecycle
+    discovery --> skills
+    discovery --> mcp
+    discovery --> tui
 
-    hooks --> agent["Agent Callbacks"]
+    prompts --> agent["Agent instruction"]
+    hooks --> agent
+    lifecycle --> agent
     skills --> agent
-    mcp -. opt-in .-> agent
+    mcp --> agent
+    tui --> tui_shell["Bubble Tea shell"]
 
-    style Extensions fill:#1a1a2a,color:#fff
+    style Runtime fill:#1a1a2a,color:#fff
 ```
 
-**Hooks**: Execute shell commands before/after tool execution. Tool name + args/results passed as JSON on stdin.
+The extension runtime is now the **primary customization surface** for go-pi.
 
-**Skills**: Markdown instruction files with YAML frontmatter. Loaded from global and project directories.
+**Discovery**: The runtime loads `extension.json` manifests from global and project extension directories. Project extensions override global extensions by name.
 
-**MCP**: In-tree helpers remain available for launching external tool servers as subprocesses and bridging them into ADK toolsets, but default core startup does not wire them automatically.
+**Prompt contributions**: Extensions can append system-instruction fragments with `prompt` or `prompt_file`.
+
+**Tool hooks**: `before_tool` and `after_tool` shell hooks are merged into the agent callback chain.
+
+**Lifecycle hooks**: `startup` and `session_start` hooks let extensions participate in bootstrap without expanding the core.
+
+**Skills**: Extensions can point at a `skills_dir` containing `SKILL.md` folders.
+
+**Tool registration**: Extension-owned tools should come in through `mcp_servers`, which are bridged into ADK toolsets by the runtime.
+
+**TUI extension points**: The TUI deliberately stays narrow. Extensions may contribute slash commands that map to prompt templates, but they do not register custom widgets or replace the Bubble Tea model.
+
+See [docs/extensions.md](docs/extensions.md) for the authoring guide.
 
 ## Configuration
 
@@ -351,6 +373,8 @@ graph TD
 .pi-go/AGENTS.md               # Project-specific agent instructions
 ~/.pi-go/skills/*.SKILL.md     # Global skills
 .pi-go/skills/*.SKILL.md       # Project skills (override global)
+~/.pi-go/extensions/*/extension.json  # Global extension manifests
+.pi-go/extensions/*/extension.json    # Project extension manifests
 ~/.pi-go/sessions/             # Session storage
 ~/.pi-go/log/                  # Session logs
 ~/.pi-go/.env                  # API keys (written by /login)
@@ -377,25 +401,20 @@ The TUI uses a **deferred initialization** pattern to show the UI immediately wh
 sequenceDiagram
     participant TUI as TUI (Bubble Tea)
     participant Init as Deferred Init Goroutine
-    participant Tools as Core Tools
+    participant Runtime as Extension Runtime
     participant Git as Git
-    participant Skills as Skills Loader
     participant Agent as Agent Builder
     participant LSP as Optional LSP Package
-    participant MCP as Optional MCP Wiring
 
     TUI->>Init: Start background init
-    Init->>Tools: Phase 1: Create sandbox + core tools
+    Init->>Runtime: Phase 1: Create sandbox + build extension runtime
     par Parallel Initialization
-        Init->>Git: Detect repo, discover agents
-        Init->>Skills: Load .SKILL.md files
+        Init->>Git: Detect repo and diff stats
+        Init->>Runtime: Discover manifests, skills, hooks, and MCP toolsets
     end
-    Init->>Agent: Phase 3: Build orchestrator + agent
+    Init->>Agent: Phase 3: Build orchestrator + agent from runtime output
     opt Custom startup or extension wires LSP
         Agent->>LSP: Register manager, tools, callback
-    end
-    opt Custom startup or extension wires MCP
-        Agent->>MCP: Register optional toolsets
     end
     Init->>TUI: InitEvent{Result: InitResult}
     TUI->>User: Ready to accept input
@@ -403,9 +422,9 @@ sequenceDiagram
 
 **Key patterns:**
 - TUI starts immediately with spinner showing initialization progress
-- Heavy I/O operations run in parallel for the minimal path (git, skills)
-- Agent is created last after all default-core dependencies are ready
-- LSP and MCP are available for opt-in wiring, but are not part of deferred init by default
+- Heavy I/O operations run in parallel for the minimal path (git + extension discovery)
+- Agent is created last after the extension runtime has assembled tools, hooks, skills, prompt fragments, and TUI commands
+- LSP remains opt-in; extension-owned MCP toolsets are assembled by the extension runtime when manifests declare them
 - Progress sent via `InitEvent` channel
 
 ## Retry & Error Handling

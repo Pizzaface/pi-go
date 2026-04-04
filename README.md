@@ -21,8 +21,8 @@ A terminal-based coding agent built on [Google ADK Go](https://google.github.io/
 - **Optional LSP integration** — In-tree JSON-RPC client and LSP tools for Go, TypeScript/JS, Python, Rust that can be wired in by extensions or custom startup code
 - **Core Git visibility** — Repository overview, file diffs, and hunk parsing remain available as tools without prescribing commit workflows
 - **RPC server** — Unix socket JSON-RPC 2.0 for IDE/editor integration
-- **Extensions** — Hooks (shell callbacks) and skills (`.SKILL.md` instructions) in the default experience, with optional MCP and helper packages available in-tree for custom integrations
-- **Minimal core startup** — Default startup wires core tools, sessions, and skills/hooks without assuming optional subsystems or policy/workflow layers such as LSP, MCP, persistent memory, token guardrails, or built-in commit/audit helpers
+- **Extension runtime** — Manifest-discovered extensions are the primary customization surface, contributing prompt fragments, hooks, MCP toolsets, skills, and narrow TUI slash commands
+- **Minimal core startup** — Default startup wires core tools, sessions, and the extension runtime without assuming optional subsystems or policy/workflow layers such as LSP, persistent memory, token guardrails, or built-in commit/audit helpers
 
 ## Architecture
 
@@ -138,8 +138,12 @@ Pi looks for configuration in `~/.pi-go/config.json` (global) and `.pi-go/config
 - **Model roles** — Map role names to specific model strings
 - **Hooks** — Shell commands triggered on tool events (e.g., post-write formatting)
 - **Themes** — Terminal color schemes via `theme` config field
-- **Optional integration settings** — Additional fields such as `mcp` may be consumed by custom startup code or extensions, but the default core startup does not launch MCP servers automatically
+- **Extension manifests** — place `extension.json` files under `~/.pi-go/extensions/<name>/` or `.pi-go/extensions/<name>/`
 - **Opt-in helper settings** — Internal helper packages may define extra config fields, but the default core path ignores policy/workflow-specific helpers unless custom startup code wires them in
+
+## Extensions
+
+See [docs/extensions.md](docs/extensions.md) for extension discovery, manifest format, tool/hook lifecycle contributions, and narrow TUI command integration.
 
 ## License
 
