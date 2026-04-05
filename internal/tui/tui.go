@@ -22,6 +22,10 @@ type model struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// Per-agent-run cancellation. This must be separate from the root TUI
+	// context so canceling one request does not poison future sends.
+	runCancel context.CancelFunc
+
 	// UI state.
 	width  int
 	height int

@@ -483,6 +483,33 @@ func makeTextKey(text string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: rune(text[0]), Text: text})
 }
 
+func TestCancelAgent_DoesNotCancelRootContext(t *testing.T) {
+	m := newTestModel(t)
+	runCtx, runCancel := context.WithCancel(m.ctx)
+	m.running = true
+	m.runCancel = runCancel
+	m.agentCh = make(chan agentMsg)
+
+	m.cancelAgent()
+
+	select {
+	case <-runCtx.Done():
+		// expected
+	default:
+		t.Fatal("expected run context to be canceled")
+	}
+
+	select {
+	case <-m.ctx.Done():
+		t.Fatal("expected root TUI context to remain active")
+	default:
+	}
+
+	if m.runCancel != nil {
+		t.Fatal("expected runCancel to be cleared")
+	}
+}
+
 func TestHandleKey_CtrlC_Quit(t *testing.T) {
 	m := newTestModel(t)
 	// First press: shows warning, doesn't quit yet

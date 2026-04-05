@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	stdlog "log"
@@ -50,7 +51,10 @@ func waitForAgent(ch chan agentMsg) tea.Cmd {
 
 // cancelAgent stops a running agent and drains its channel.
 func (m *model) cancelAgent() {
-	m.cancel()
+	if m.runCancel != nil {
+		m.runCancel()
+		m.runCancel = nil
+	}
 	m.running = false
 	m.statusModel.ActiveTool = ""
 	m.statusModel.ActiveTools = nil
@@ -98,14 +102,20 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 		m.face.SetMood(MoodThinking)
 	}
 
+	parentCtx := m.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	runCtx, runCancel := context.WithCancel(parentCtx)
+	m.runCancel = runCancel
 	m.agentCh = make(chan agentMsg, 64)
-	go m.runAgentLoop(promptText)
+	go m.runAgentLoop(runCtx, promptText)
 
 	return m, waitForAgent(m.agentCh)
 }
 
 // runAgentLoop runs the agent and sends events to the channel.
-func (m *model) runAgentLoop(prompt string) {
+func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 	defer close(m.agentCh)
 	defer func() {
 		if r := recover(); r != nil {
@@ -123,7 +133,7 @@ func (m *model) runAgentLoop(prompt string) {
 
 	log := m.cfg.Logger
 
-	for ev, err := range m.cfg.Agent.RunStreaming(m.ctx, m.cfg.SessionID, prompt) {
+	for ev, err := range m.cfg.Agent.RunStreaming(runCtx, m.cfg.SessionID, prompt) {
 		if err != nil {
 			if log != nil {
 				log.Error(err.Error())
@@ -292,6 +302,7 @@ func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	m.chatModel.Streaming = ""
 	m.chatModel.Thinking = ""
+	m.runCancel = nil
 	m.agentCh = nil
 	m.refreshDiffStats()
 	return m, nil
