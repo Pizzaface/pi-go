@@ -179,6 +179,18 @@ Examples:
 
 The application validates, scopes, and applies these requests.
 
+### Command and tool conflict policy
+
+Dynamic command and tool registration should not use silent last-write-wins behavior.
+
+For v1:
+- duplicate command names from different extensions are rejected with a clear load/runtime error
+- duplicate tool names from different extensions are rejected unless the app explicitly supports an override path later
+- an extension may update or unregister only resources it originally registered
+- existing declarative manifest precedence continues to apply only during static discovery, before dynamic runtime registration begins
+
+This keeps Stage 2 behavior deterministic and easier to debug.
+
 ### 4. Event bus
 
 Expose a structured event bus so extensions can subscribe to events such as:
@@ -197,6 +209,8 @@ Extensions should subscribe only to the events they need.
 Keep ownership of Bubble Tea state inside `internal/tui/`.
 
 The TUI bridge translates approved extension intents into model updates. This prevents extensions from poking arbitrary internal state while still allowing rich contribution surfaces.
+
+Communication with hosted extensions must always be asynchronous from the TUI's perspective: the bridge should use `tea.Cmd` / `tea.Msg` style dispatch (or equivalent channels) and must never block Bubble Tea `Update()` on extension I/O.
 
 ## BuildRuntime Migration Path
 
@@ -259,6 +273,49 @@ Benefits:
 Trade-off:
 - protocol design, lifecycle management, and rendering callbacks are more complex
 
+## Manifest and Launch Contract
+
+The existing manifest-driven system remains the source of truth for discovering hosted extensions.
+
+### Manifest additions
+
+To support hosted extensions, extend `extension.json` with explicit runtime metadata, for example:
+
+```json
+{
+  "name": "demo",
+  "runtime": {
+    "type": "hosted_stdio_jsonrpc",
+    "command": "node",
+    "args": ["./dist/extension.js"],
+    "env": {
+      "DEMO_MODE": "1"
+    }
+  }
+}
+```
+
+Minimum fields:
+- `runtime.type` — `compiled_in` or `hosted_stdio_jsonrpc`
+- `runtime.command` — executable to launch for hosted extensions
+- `runtime.args` — optional argument list
+- `runtime.env` — optional environment overrides
+
+### Resolution rules
+
+- If an extension is known to the binary through compiled-in registration, it uses `compiled_in`.
+- If a manifest declares `runtime.type = hosted_stdio_jsonrpc`, the extension manager launches it as a hosted child process.
+- Existing manifest-only extensions with prompts/hooks/MCP/skills but no runtime block continue to work as pure declarative extensions.
+
+### Relationship to existing shell-command hooks
+
+Current shell-command hooks remain a separate declarative mechanism. They are **not** replaced by hosted extensions in v1.
+
+- `hooks` and `lifecycle` entries continue to run as configured shell commands.
+- Hosted extensions are used for long-lived runtime behavior, richer interaction, and bidirectional event/capability exchange.
+
+This keeps migration incremental instead of forcing all existing extension behaviors through the hosted runtime immediately.
+
 ## Hosted Protocol Sketch
 
 Hosted extensions use **JSON-RPC 2.0 over stdio**.
@@ -302,8 +359,9 @@ The extension responds with:
 1. Discover extension manifests from existing paths
 2. Validate manifest metadata and declared capabilities
 3. Resolve runtime mode for each extension
-4. Start hosted extensions with handshake and capability negotiation
-5. Register approved commands, tools, subscriptions, and render surfaces
+4. Launch hosted extensions from manifest runtime metadata
+5. Perform handshake and capability negotiation
+6. Register approved commands, tools, subscriptions, and render surfaces
 
 ### Event handling
 
@@ -433,6 +491,7 @@ Use fail-open behavior for:
 - **Policy/interception failure**: fail closed when the extension was acting as a safety gate
 - **Timeouts**: enforce bounded deadlines for extension callbacks, especially rendering and interception
 - **Reload/unload**: detach commands, tools, renderers, and widgets cleanly
+- **Resource limits**: CPU/memory limits for hosted child processes are acknowledged as important but out of scope for v1; defer hard resource controls to later productization work
 
 ## Mode Behavior
 
@@ -474,13 +533,14 @@ Extensions must be able to tell at load time which capability families are avail
 - restricted interception hooks
 - session-scoped extension state
 - non-interactive capability masking
+- basic command/tool conflict resolution policy
 
 ### Stage 3 — TUI parity
 - dialogs/status/widgets
 - custom message renderers
 - tool call/result renderers
 - modal/overlay surface
-- extension conflict resolution
+- TUI surface conflict resolution
 
 ### Stage 4 — productization
 - packaging/distribution story
