@@ -648,6 +648,9 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Delegate all other keys to InputModel.
 	cmd := m.inputModel.HandleKey(msg)
+	if key.Text == "/" && m.inputModel.Text == "/" && m.slashOverlay == nil {
+		m.openSlashCommandOverlay()
+	}
 	return m, cmd
 }
 

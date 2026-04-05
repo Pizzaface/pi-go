@@ -754,6 +754,22 @@ func TestHandleKey_PgUpPgDown(t *testing.T) {
 	}
 }
 
+func TestHandleKey_TypingSlashOpensOverlay(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.CyclingIdx = -1
+
+	m.handleKey(makeTextKey("/"))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open when typing slash")
+	}
+	if m.inputModel.CyclingIdx != -1 {
+		t.Fatalf("expected cycling to remain disabled, got %d", m.inputModel.CyclingIdx)
+	}
+	if m.inputModel.Text != "/" {
+		t.Errorf("expected text to stay '/', got %q", m.inputModel.Text)
+	}
+}
+
 func TestHandleKey_Tab_OnExactSlashOpensOverlay(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.Text = "/"
