@@ -13,10 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/provider"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
+
+	"github.com/dimetron/pi-go/internal/config"
+	"github.com/dimetron/pi-go/internal/provider"
 )
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,27 @@ func (m *pingMockLLM) GenerateContent(_ context.Context, _ *model.LLMRequest, _ 
 				return
 			}
 		}
+	}
+}
+
+type pingStreamingReplayLLM struct{ name string }
+
+func (m *pingStreamingReplayLLM) Name() string { return m.name }
+
+func (m *pingStreamingReplayLLM) GenerateContent(_ context.Context, _ *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		if !stream {
+			// Force modelPing to fall back to the streaming accumulator.
+			yield(&model.LLMResponse{Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{}}}, nil)
+			return
+		}
+		if !yield(&model.LLMResponse{Partial: true, Content: genai.NewContentFromText("Hello ", genai.RoleModel)}, nil) {
+			return
+		}
+		if !yield(&model.LLMResponse{Partial: true, Content: genai.NewContentFromText("world", genai.RoleModel)}, nil) {
+			return
+		}
+		yield(&model.LLMResponse{TurnComplete: true, Content: genai.NewContentFromText("Hello world", genai.RoleModel)}, nil)
 	}
 }
 
@@ -178,6 +200,18 @@ func TestModelPingThinkingRole(t *testing.T) {
 	}
 	if reply == "" {
 		t.Error("expected non-empty reply from modelPing with thinking+text response")
+	}
+}
+
+func TestModelPingStreamingFinalReplayDoesNotDuplicate(t *testing.T) {
+	llm := &pingStreamingReplayLLM{name: "mock-streaming-replay"}
+
+	reply, err := modelPing(context.Background(), llm, "Prompt", false)
+	if err != nil {
+		t.Fatalf("modelPing returned unexpected error: %v", err)
+	}
+	if reply != "Hello world" {
+		t.Fatalf("modelPing reply = %q, want %q", reply, "Hello world")
 	}
 }
 

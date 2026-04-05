@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
@@ -56,4 +58,80 @@ func NewGemini(ctx context.Context, providerName, modelName, apiKey, baseURL str
 	}
 
 	return llm, nil
+}
+
+// listGeminiModels fetches available models from the Gemini API and returns
+// them as []ModelEntry.
+func listGeminiModels(ctx context.Context, apiKey, baseURL string, opts *LLMOptions) ([]ModelEntry, error) {
+	cfg := &genai.ClientConfig{
+		Backend: genai.BackendGeminiAPI,
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("GOOGLE_API_KEY")
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("GEMINI_API_KEY")
+	}
+	if apiKey != "" {
+		cfg.APIKey = apiKey
+	}
+	httpOpts := genai.HTTPOptions{}
+	if baseURL != "" {
+		httpOpts.BaseURL = baseURL
+	}
+	if opts != nil && len(opts.ExtraHeaders) > 0 {
+		httpOpts.Headers = make(http.Header)
+		for k, v := range opts.ExtraHeaders {
+			httpOpts.Headers.Set(k, v)
+		}
+	}
+	if baseURL != "" || (opts != nil && len(opts.ExtraHeaders) > 0) {
+		cfg.HTTPOptions = httpOpts
+	}
+	if opts != nil && (opts.InsecureSkipTLS || opts.DebugTracer != nil) {
+		cfg.HTTPClient = BuildHTTPClient(opts, 0)
+	}
+
+	client, err := genai.NewClient(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating gemini client: %w", err)
+	}
+
+	var entries []ModelEntry
+	page, err := client.Models.List(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing gemini models: %w", err)
+	}
+	for {
+		for _, m := range page.Items {
+			if m == nil {
+				continue
+			}
+			display := m.DisplayName
+			if display == "" {
+				display = m.Name
+			}
+			// Strip "models/" prefix that Gemini returns (e.g. "models/gemini-2.0-flash").
+			id := m.Name
+			if cut, ok := strings.CutPrefix(id, "models/"); ok {
+				id = cut
+			}
+			entries = append(entries, ModelEntry{
+				ID:              id,
+				DisplayName:     display,
+				Provider:        "gemini",
+				MaxInputTokens:  int64(m.InputTokenLimit),
+				MaxOutputTokens: int64(m.OutputTokenLimit),
+			})
+		}
+		page, err = page.Next(ctx)
+		if err == genai.ErrPageDone {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("listing gemini models: %w", err)
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+	return entries, nil
 }

@@ -57,15 +57,22 @@ func RenderSidebar(in SidebarRenderInput) string {
 	}
 
 	// --- Context section ---
+	// Prefer actual provider-reported context usage when available.
 	lines = append(lines, heading.Render("  Context"))
-	if tt := in.TokenTracker; tt != nil && tt.Limit() > 0 {
-		total := tt.TotalUsed()
-		limit := tt.Limit()
-		pct := tt.PercentUsed()
-		lines = append(lines, dim.Render(fmt.Sprintf("  %s / %s",
-			formatTokenCount(total), formatTokenCount(limit))))
-		lines = append(lines, "  "+renderContextBar(pct, lipgloss.NoColor{}))
+	if tt := in.TokenTracker; tt != nil && tt.ContextUsed() > 0 {
+		ctxUsed := tt.ContextUsed()
+		ctxLimit := tt.ContextLimit()
+		if ctxLimit > 0 {
+			pct := float64(ctxUsed) / float64(ctxLimit) * 100
+			lines = append(lines, dim.Render(fmt.Sprintf("  %s / %s",
+				formatTokenCount(ctxUsed), formatTokenCount(ctxLimit))))
+			lines = append(lines, "  "+renderContextBar(pct, lipgloss.NoColor{}))
+		} else {
+			lines = append(lines, dim.Render(fmt.Sprintf("  %s tokens",
+				formatTokenCount(ctxUsed))))
+		}
 	} else {
+		// Fallback: rough character-based estimate before first provider response.
 		ctxChars := 0
 		for _, msg := range in.Messages {
 			ctxChars += len(msg.content) + len(msg.tool) + len(msg.toolIn)

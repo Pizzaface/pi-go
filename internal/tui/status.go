@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-
 )
 
 // StatusModel manages the status bar display at the bottom of the TUI.
@@ -30,10 +29,10 @@ type StatusRenderInput struct {
 	ProviderName string
 	ModelName    string
 	Running      bool
-	Mode         string                 // e.g. "chat"
-	Eyes         string                 // mood eyes e.g. "◕ ◕"
-	Messages     []message              // for context estimate
-	TokenTracker TokenTracker           // may be nil
+	Mode         string       // e.g. "chat"
+	Eyes         string       // mood eyes e.g. "◕ ◕"
+	Messages     []message    // for context estimate
+	TokenTracker TokenTracker // may be nil
 	DiffAdded    int
 	DiffRemoved  int
 	LoadingItems map[string]bool // item -> done; nil means not loading
@@ -126,10 +125,16 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		return bar.Render(strings.Join(parts, sep))
 	}
 
-	// Context % bar (visual bar with color coding).
-	if tt := in.TokenTracker; tt != nil && tt.Limit() > 0 {
-		pct := tt.PercentUsed()
-		parts = append(parts, renderContextBar(pct, bg))
+	// Context % bar — prefer actual provider-reported context usage.
+	if tt := in.TokenTracker; tt != nil && tt.ContextUsed() > 0 {
+		ctxUsed := tt.ContextUsed()
+		ctxLimit := tt.ContextLimit()
+		if ctxLimit > 0 {
+			pct := float64(ctxUsed) / float64(ctxLimit) * 100
+			parts = append(parts, renderContextBar(pct, bg))
+		} else {
+			parts = append(parts, dim.Render(fmt.Sprintf("ctx: %s", formatTokenCount(ctxUsed))))
+		}
 	} else {
 		// Fallback: rough context size estimate (~4 chars per token).
 		ctxChars := 0
@@ -139,13 +144,13 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		ctxTokens := ctxChars / 4
 		switch {
 		case ctxTokens >= 1000:
-			parts = append(parts, dim.Render(fmt.Sprintf("ctx: %.1fk", float64(ctxTokens)/1000)))
+			parts = append(parts, dim.Render(fmt.Sprintf("ctx: ~%.1fk", float64(ctxTokens)/1000)))
 		default:
-			parts = append(parts, dim.Render(fmt.Sprintf("ctx: %d", ctxTokens)))
+			parts = append(parts, dim.Render(fmt.Sprintf("ctx: ~%d", ctxTokens)))
 		}
 	}
 
-	// Token usage (numeric).
+	// Token usage (numeric): daily aggregate from provider.
 	if tt := in.TokenTracker; tt != nil {
 		total := tt.TotalUsed()
 		limit := tt.Limit()

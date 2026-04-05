@@ -125,6 +125,34 @@ func TestWrapModel_MultipleResponses(t *testing.T) {
 	}
 }
 
+func TestWrapModel_TracksContextUsed(t *testing.T) {
+	tracker := NewWithPath(0, "")
+	tracker.SetContextLimit(200_000)
+
+	llm := &mockLLM{name: "test", inputTokens: 5000, outputTokens: 200}
+	wrapped := WrapModel(llm, tracker)
+
+	// First call.
+	for range wrapped.GenerateContent(context.Background(), nil, false) {
+	}
+	if tracker.ContextUsed() != 5000 {
+		t.Errorf("expected ContextUsed 5000, got %d", tracker.ContextUsed())
+	}
+
+	// Second call with larger context (simulates growing conversation).
+	llm2 := &mockLLM{name: "test", inputTokens: 12000, outputTokens: 300}
+	wrapped2 := WrapModel(llm2, tracker)
+	for range wrapped2.GenerateContent(context.Background(), nil, false) {
+	}
+	if tracker.ContextUsed() != 12000 {
+		t.Errorf("expected ContextUsed 12000, got %d", tracker.ContextUsed())
+	}
+
+	if tracker.ContextLimit() != 200_000 {
+		t.Errorf("expected ContextLimit 200000, got %d", tracker.ContextLimit())
+	}
+}
+
 func TestWrapModel_NoUsageMetadata(t *testing.T) {
 	tracker := NewWithPath(0, "")
 

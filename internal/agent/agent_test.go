@@ -780,6 +780,39 @@ func TestRebuildWithInstruction(t *testing.T) {
 	}
 }
 
+func TestRebuildWithModel(t *testing.T) {
+	llm := &mockLLM{name: "original-model", response: "Hello!"}
+
+	a, err := New(Config{Model: llm, Instruction: "Test instruction."})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	newLLM := &mockLLM{name: "new-model", response: "Hi!"}
+	err = a.RebuildWithModel(newLLM)
+	if err != nil {
+		t.Fatalf("RebuildWithModel() error: %v", err)
+	}
+
+	if a.config.Model.Name() != "new-model" {
+		t.Errorf("config.Model.Name() = %q, want %q", a.config.Model.Name(), "new-model")
+	}
+}
+
+func TestRebuildWithModelNilError(t *testing.T) {
+	llm := &mockLLM{name: "test-model", response: "Hello!"}
+
+	a, err := New(Config{Model: llm})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	err = a.RebuildWithModel(nil)
+	if err == nil {
+		t.Error("RebuildWithModel() should return error for nil model")
+	}
+}
+
 func TestRebuildWithInstructionEmptyError(t *testing.T) {
 	llm := &mockLLM{name: "test-model", response: "Hello!"}
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/dimetron/pi-go/internal/provider"
 )
 
 // -----------------------------------------------------------------------
@@ -278,6 +279,43 @@ func TestHandleKey_RunningAgentEnter(t *testing.T) {
 		t.Error("should not return command for Enter while running")
 	}
 	_ = mm
+}
+
+func TestHandleKey_ModelPickerShiftHTogglesHidden(t *testing.T) {
+	entries := buildPickerEntries([]provider.ModelEntry{{ID: "model-a", Provider: "prov"}, {ID: "model-b", Provider: "prov"}})
+	m := &model{
+		modelPicker: &modelPickerState{
+			entries:  entries,
+			all:      entries,
+			selected: 1, // model-a
+			height:   10,
+			hidden:   map[string]bool{},
+		},
+	}
+
+	newM, _ := m.handleKey(tea.KeyPressMsg(tea.Key{Text: "H", Code: 'h', ShiftedCode: 'H', Mod: tea.ModShift}))
+	mm := newM.(*model)
+
+	if !mm.modelPicker.hidden["model-a"] {
+		t.Fatal("expected Shift+H to hide selected model")
+	}
+}
+
+func TestHandleKey_ModelPickerShiftSTogglesShowHidden(t *testing.T) {
+	entries := buildPickerEntries([]provider.ModelEntry{{ID: "model-a", Provider: "prov"}})
+	m := &model{
+		modelPicker: &modelPickerState{
+			entries: entries,
+			all:     entries,
+			height:  10,
+		},
+	}
+
+	newM, _ := m.handleKey(tea.KeyPressMsg(tea.Key{Text: "S", Code: 's', ShiftedCode: 'S', Mod: tea.ModShift}))
+	mm := newM.(*model)
+	if !mm.modelPicker.showHidden {
+		t.Fatal("expected Shift+S to enable showHidden")
+	}
 }
 
 func TestHandleKey_RunningAgentCtrlC(t *testing.T) {

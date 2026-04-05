@@ -4,13 +4,14 @@ import (
 	"context"
 	"sync"
 
+	llmmodel "google.golang.org/adk/model"
+
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	llmmodel "google.golang.org/adk/model"
 )
 
 // Config holds configuration for the TUI.
@@ -44,6 +45,10 @@ type Config struct {
 	RestartCh chan struct{}
 	// TokenTracker tracks daily token usage and enforces limits. May be nil.
 	TokenTracker TokenTracker
+	// WrapLLM wraps an LLM with the active token/usage tracker.
+	// Used by model-switching to ensure the new LLM is also tracked.
+	// May be nil (no wrapping).
+	WrapLLM func(llmmodel.LLM) llmmodel.LLM
 	// CompactMetrics tracks output compaction statistics. May be nil.
 	CompactMetrics CompactStatsProvider
 	// ThemeName is the configured theme name from config. Empty or "default" uses tokyo-night.
@@ -75,6 +80,7 @@ type InitResult struct {
 	ExtensionCommands []extension.SlashCommand
 	GenerateCommitMsg func(context.Context, string) (string, error)
 	TokenTracker      TokenTracker
+	WrapLLM           func(llmmodel.LLM) llmmodel.LLM
 	CompactMetrics    CompactStatsProvider
 	RestartCh         chan struct{}
 	Screen            *Screen
@@ -88,12 +94,22 @@ type CompactStatsProvider interface {
 	FormatStats() string
 }
 
-// TokenTracker provides read access to daily token usage for the status bar.
+// TokenTracker provides read access to daily token usage and context window
+// usage for the status bar, sidebar, and /context command.
 type TokenTracker interface {
 	Limit() int64
 	Remaining() int64     // -1 if unlimited
 	PercentUsed() float64 // 0-100+
 	TotalUsed() int64     // total tokens consumed today
+
+	// ContextUsed returns the most recent prompt token count from the
+	// provider, representing the current context window size. Returns 0
+	// before the first provider response.
+	ContextUsed() int64
+
+	// ContextLimit returns the max context window size in tokens.
+	// Returns 0 if unknown.
+	ContextLimit() int64
 }
 
 // Screen provides thread-safe access to the current TUI screen content.

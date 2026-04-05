@@ -336,6 +336,50 @@ func TestUsage_TotalTokens(t *testing.T) {
 	}
 }
 
+func TestContextUsed_TracksLatestPromptTokens(t *testing.T) {
+	tr := NewWithPath(0, "")
+
+	// Initially 0.
+	if tr.ContextUsed() != 0 {
+		t.Errorf("expected 0 before any Add, got %d", tr.ContextUsed())
+	}
+
+	// After first response.
+	_ = tr.Add(5000, 200)
+	if tr.ContextUsed() != 5000 {
+		t.Errorf("expected 5000 after first Add, got %d", tr.ContextUsed())
+	}
+
+	// After second response — context grows.
+	_ = tr.Add(8000, 300)
+	if tr.ContextUsed() != 8000 {
+		t.Errorf("expected 8000 after second Add, got %d", tr.ContextUsed())
+	}
+}
+
+func TestContextUsed_IgnoresZeroInput(t *testing.T) {
+	tr := NewWithPath(0, "")
+	_ = tr.Add(5000, 200)
+
+	// Add with 0 input tokens should not reset context.
+	_ = tr.Add(0, 100)
+	if tr.ContextUsed() != 5000 {
+		t.Errorf("expected 5000 (unchanged), got %d", tr.ContextUsed())
+	}
+}
+
+func TestContextLimit(t *testing.T) {
+	tr := NewWithPath(0, "")
+	if tr.ContextLimit() != 0 {
+		t.Errorf("expected 0 by default, got %d", tr.ContextLimit())
+	}
+
+	tr.SetContextLimit(200_000)
+	if tr.ContextLimit() != 200_000 {
+		t.Errorf("expected 200000, got %d", tr.ContextLimit())
+	}
+}
+
 func TestFormatUsage_OverLimit(t *testing.T) {
 	u := Usage{
 		Date:         "2026-03-17",

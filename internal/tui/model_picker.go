@@ -18,7 +18,7 @@ import (
 // modelPickerEntry is a single row in the model picker.
 // It is either a provider section header or a selectable model.
 type modelPickerEntry struct {
-	providerHeader string              // non-empty for section headers
+	providerHeader string               // non-empty for section headers
 	model          *provider.ModelEntry // non-nil for selectable models
 }
 
@@ -100,6 +100,9 @@ func fetchModels(ctx context.Context, reg *provider.Registry) tea.Cmd {
 // applyFilter rebuilds the visible entries list from the full list,
 // respecting both the text filter and the hidden-models set.
 func (p *modelPickerState) applyFilter() {
+	prevSelectedID := p.selectedModelID()
+	prevSelected := p.selected
+
 	lower := strings.ToLower(p.filter)
 	hasFilter := p.filter != ""
 	hasHidden := len(p.hidden) > 0
@@ -107,8 +110,12 @@ func (p *modelPickerState) applyFilter() {
 	// Fast path: no filter and no hidden models (or showing hidden).
 	if !hasFilter && (!hasHidden || p.showHidden) {
 		p.entries = p.all
-		p.selected = p.clampToModel(p.selected)
-		p.scrollOff = 0
+		if prevSelectedID != "" && p.selectModelByID(prevSelectedID) {
+			p.ensureSelectionVisible()
+			return
+		}
+		p.selected = p.clampToModel(prevSelected)
+		p.ensureSelectionVisible()
 		return
 	}
 
@@ -149,8 +156,12 @@ func (p *modelPickerState) applyFilter() {
 		filtered = append(filtered, e)
 	}
 	p.entries = filtered
-	p.selected = p.clampToModel(p.selected)
-	p.scrollOff = 0
+	if prevSelectedID != "" && p.selectModelByID(prevSelectedID) {
+		p.ensureSelectionVisible()
+		return
+	}
+	p.selected = p.clampToModel(prevSelected)
+	p.ensureSelectionVisible()
 }
 
 // toggleHidden hides or unhides the currently selected model.
@@ -247,6 +258,54 @@ func (p *modelPickerState) selectedModel() *provider.ModelEntry {
 	return nil
 }
 
+func (p *modelPickerState) selectedModelID() string {
+	if sel := p.selectedModel(); sel != nil {
+		return sel.ID
+	}
+	return ""
+}
+
+func (p *modelPickerState) selectModelByID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for i, e := range p.entries {
+		if e.model != nil && e.model.ID == id {
+			p.selected = i
+			return true
+		}
+	}
+	return false
+}
+
+func (p *modelPickerState) ensureSelectionVisible() {
+	if len(p.entries) == 0 {
+		p.selected = 0
+		p.scrollOff = 0
+		return
+	}
+	p.selected = p.clampToModel(p.selected)
+	maxScroll := len(p.entries) - p.height
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if p.scrollOff > maxScroll {
+		p.scrollOff = maxScroll
+	}
+	if p.scrollOff < 0 {
+		p.scrollOff = 0
+	}
+	if p.selected < p.scrollOff {
+		p.scrollOff = p.selected
+	}
+	if p.selected >= p.scrollOff+p.height {
+		p.scrollOff = p.selected - p.height + 1
+	}
+	if p.scrollOff > maxScroll {
+		p.scrollOff = maxScroll
+	}
+}
+
 // selectCurrent positions the cursor on the entry matching currentModel.
 func (p *modelPickerState) selectCurrent() {
 	for i, e := range p.entries {
@@ -259,11 +318,13 @@ func (p *modelPickerState) selectCurrent() {
 					p.scrollOff = 0
 				}
 			}
+			p.ensureSelectionVisible()
 			return
 		}
 	}
 	// Fallback: first model row.
 	p.selected = p.clampToModel(0)
+	p.ensureSelectionVisible()
 }
 
 // renderModelPicker renders the model picker popup.
@@ -303,9 +364,10 @@ func (m *model) renderModelPicker() string {
 	if pk.err != nil {
 		title = fmt.Sprintf("Error: %v", pk.err)
 	}
-	hints := "↑↓ navigate · type to filter · Enter select · H hide · S show hidden · Esc close"
+	hints := "↑↓ navigate · type to filter · Enter select · Esc close"
+	shortcuts := "Shift+H hide · Shift+S show hidden"
 	if pk.showHidden {
-		hints = "↑↓ navigate · type to filter · Enter select · H unhide · S hide filtered · Esc close"
+		shortcuts = "Shift+H unhide · Shift+S hide hidden"
 	}
 	header := lipgloss.NewStyle().
 		Background(bg).
@@ -313,7 +375,7 @@ func (m *model) renderModelPicker() string {
 		Bold(true).
 		Width(popupWidth).
 		Align(lipgloss.Center).
-		Render(title + "\n" + hints)
+		Render(title + "\n" + hints + "\n" + shortcuts)
 	b.WriteString(header)
 	b.WriteString("\n")
 

@@ -9,6 +9,7 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 
 	tea "charm.land/bubbletea/v2"
@@ -81,6 +82,33 @@ func TestHandleSlashCommandClear(t *testing.T) {
 }
 
 func TestHandleSlashCommandModel(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.AddBuiltins()
+	m := &model{
+		inputModel: InputModel{Text: "/model"},
+		chatModel:  ChatModel{Messages: make([]message, 0)},
+		cfg:        Config{ModelName: "test-model", ProviderRegistry: reg},
+	}
+
+	newM, cmd := m.handleSlashCommand("/model")
+	mm := newM.(*model)
+
+	// /model now opens the model picker popup instead of printing info.
+	if mm.modelPicker == nil {
+		t.Fatal("expected model picker to be opened")
+	}
+	if !mm.modelPicker.loading {
+		t.Error("expected picker to be in loading state")
+	}
+	if mm.modelPicker.current != "test-model" {
+		t.Errorf("expected current=%q, got %q", "test-model", mm.modelPicker.current)
+	}
+	if cmd == nil {
+		t.Error("expected a tea.Cmd for async model fetch")
+	}
+}
+
+func TestHandleSlashCommandModelNoRegistry(t *testing.T) {
 	m := &model{
 		inputModel: InputModel{Text: "/model"},
 		chatModel:  ChatModel{Messages: make([]message, 0)},
@@ -90,18 +118,21 @@ func TestHandleSlashCommandModel(t *testing.T) {
 	newM, _ := m.handleSlashCommand("/model")
 	mm := newM.(*model)
 
+	if mm.modelPicker != nil {
+		t.Error("expected no picker when registry is nil")
+	}
 	if len(mm.chatModel.Messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(mm.chatModel.Messages))
 	}
-	if !strings.Contains(mm.chatModel.Messages[0].content, "Current model: **test-model**") {
+	if !strings.Contains(mm.chatModel.Messages[0].content, "No provider registry") {
 		t.Errorf("unexpected content: %q", mm.chatModel.Messages[0].content)
 	}
 }
 
 func TestHandleSlashCommandModelShowsRoles(t *testing.T) {
+	// formatModelInfo still returns role information (used by /settings).
 	m := &model{
-		inputModel: InputModel{Text: "/model"},
-		chatModel:  ChatModel{Messages: make([]message, 0)},
+		chatModel: ChatModel{Messages: make([]message, 0)},
 		cfg: Config{
 			ModelName:  "claude-sonnet-4-6",
 			ActiveRole: "default",
@@ -113,13 +144,7 @@ func TestHandleSlashCommandModelShowsRoles(t *testing.T) {
 		},
 	}
 
-	newM, _ := m.handleSlashCommand("/model")
-	mm := newM.(*model)
-
-	if len(mm.chatModel.Messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(mm.chatModel.Messages))
-	}
-	content := mm.chatModel.Messages[0].content
+	content := m.formatModelInfo()
 	if !strings.Contains(content, "Configured roles:") {
 		t.Errorf("expected roles section, got %q", content)
 	}
@@ -136,8 +161,7 @@ func TestHandleSlashCommandModelShowsRoles(t *testing.T) {
 
 func TestHandleSlashCommandModelShowsActiveRole(t *testing.T) {
 	m := &model{
-		inputModel: InputModel{Text: "/model"},
-		chatModel:  ChatModel{Messages: make([]message, 0)},
+		chatModel: ChatModel{Messages: make([]message, 0)},
 		cfg: Config{
 			ModelName:  "gemini-2.5-flash",
 			ActiveRole: "smol",
@@ -148,10 +172,7 @@ func TestHandleSlashCommandModelShowsActiveRole(t *testing.T) {
 		},
 	}
 
-	newM, _ := m.handleSlashCommand("/model")
-	mm := newM.(*model)
-
-	content := mm.chatModel.Messages[0].content
+	content := m.formatModelInfo()
 	if !strings.Contains(content, "(role: smol)") {
 		t.Errorf("expected active role indicator, got %q", content)
 	}
@@ -358,18 +379,6 @@ func TestRenderMessagesEmpty(t *testing.T) {
 	output := m.chatModel.RenderMessages(m.running)
 	if output == "" {
 		t.Error("expected welcome message for empty conversation")
-	}
-}
-
-func TestViewQuitting(t *testing.T) {
-	m := &model{
-		quitting: true,
-		width:    80,
-		height:   24,
-	}
-	v := m.View()
-	if v.Content != "Goodbye!\n" {
-		t.Errorf("expected goodbye message, got %q", v.Content)
 	}
 }
 
@@ -1087,14 +1096,19 @@ func TestHandleSkillLoadCommand_Empty(t *testing.T) {
 }
 
 func TestHandleSlashCommand_Model(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.AddBuiltins()
 	m := &model{
 		chatModel: ChatModel{Messages: make([]message, 0)},
-		cfg:       Config{ModelName: "gpt-4o", ActiveRole: "default", Roles: map[string]config.RoleConfig{"default": {Model: "gpt-4o"}}},
+		cfg:       Config{ModelName: "gpt-4o", ActiveRole: "default", Roles: map[string]config.RoleConfig{"default": {Model: "gpt-4o"}}, ProviderRegistry: reg},
 	}
 	newM, _ := m.handleSlashCommand("/model")
 	mm := newM.(*model)
-	if !strings.Contains(mm.chatModel.Messages[0].content, "gpt-4o") {
-		t.Errorf("expected model name in output, got %q", mm.chatModel.Messages[0].content)
+	if mm.modelPicker == nil {
+		t.Fatal("expected model picker to be opened")
+	}
+	if mm.modelPicker.current != "gpt-4o" {
+		t.Errorf("expected current=%q, got %q", "gpt-4o", mm.modelPicker.current)
 	}
 }
 

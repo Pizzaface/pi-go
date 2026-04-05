@@ -79,8 +79,7 @@ func (m *ollamaModel) GenerateContent(ctx context.Context, req *model.LLMRequest
 		if stream {
 			ollamaRunStreaming(ctx, m.client, chatReq, yield)
 		} else {
-			streamOff := false
-			chatReq.Stream = &streamOff
+			chatReq.Stream = new(false)
 			ollamaRunNonStreaming(ctx, m.client, chatReq, yield)
 		}
 	}
@@ -414,6 +413,23 @@ func ollamaRunNonStreaming(ctx context.Context, client *ollamaapi.Client, chatRe
 		UsageMetadata: usage,
 		Content:       &genai.Content{Role: string(genai.RoleModel), Parts: parts},
 	}, nil)
+}
+
+// listOllamaModels wraps OllamaListModels and returns []ModelEntry.
+func listOllamaModels(ctx context.Context, baseURL string) ([]ModelEntry, error) {
+	names, err := OllamaListModels(ctx, baseURL)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]ModelEntry, len(names))
+	for i, n := range names {
+		entries[i] = ModelEntry{
+			ID:          n,
+			DisplayName: n,
+			Provider:    "ollama",
+		}
+	}
+	return entries, nil
 }
 
 // OllamaListModels lists available models from the Ollama server.

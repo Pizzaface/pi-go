@@ -78,10 +78,14 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			im.dismissMention()
 			return nil
 		}
-		// Cycling: place command, dismiss menu.
+		// Cycling: apply selected command, dismiss menu.
 		if im.CyclingIdx >= 0 {
+			allCmds := im.AllCommandNames()
+			if im.CyclingIdx < len(allCmds) {
+				im.Text = allCmds[im.CyclingIdx]
+				im.CursorPos = len(im.Text)
+			}
 			im.CyclingIdx = -1
-			im.CursorPos = len(im.Text)
 			return nil
 		}
 		// Completion: apply selection.
@@ -126,8 +130,6 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 				} else {
 					im.CyclingIdx--
 				}
-				im.Text = allCmds[im.CyclingIdx]
-				im.CursorPos = len(im.Text)
 			}
 		}
 
@@ -144,8 +146,6 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			allCmds := im.AllCommandNames()
 			if len(allCmds) > 0 {
 				im.CyclingIdx = (im.CyclingIdx + 1) % len(allCmds)
-				im.Text = allCmds[im.CyclingIdx]
-				im.CursorPos = len(im.Text)
 			}
 		} else {
 			im.CompletionResult = Complete(im.Text, im.Skills, im.WorkDir)
@@ -210,8 +210,6 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 				} else {
 					im.CyclingIdx--
 				}
-				im.Text = allCmds[im.CyclingIdx]
-				im.CursorPos = len(im.Text)
 			}
 		} else if len(im.History) > 0 {
 			if im.HistoryIdx < 0 {
@@ -227,8 +225,6 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			allCmds := im.AllCommandNames()
 			if len(allCmds) > 0 {
 				im.CyclingIdx = (im.CyclingIdx + 1) % len(allCmds)
-				im.Text = allCmds[im.CyclingIdx]
-				im.CursorPos = len(im.Text)
 			}
 		} else if im.HistoryIdx >= 0 {
 			im.HistoryIdx++
@@ -255,11 +251,6 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 				im.Text = "/"
 				im.CursorPos = 1
 				im.CyclingIdx = 0
-				allCmds := im.AllCommandNames()
-				if len(allCmds) > 0 {
-					im.Text = allCmds[0]
-					im.CursorPos = len(im.Text)
-				}
 				return nil
 			}
 			im.Text = im.Text[:im.CursorPos] + key.Text + im.Text[im.CursorPos:]
@@ -360,12 +351,22 @@ func (im *InputModel) View(running bool) string {
 
 	// Command cycling menu.
 	if im.CyclingIdx >= 0 {
-		inputLine := prefix + before + cursor + after
+		// Ghost the selected command suffix on the input line.
+		allCmds := im.AllCommandNames()
+		ghostSuffix := ""
+		if im.CyclingIdx < len(allCmds) {
+			selected := allCmds[im.CyclingIdx]
+			if strings.HasPrefix(selected, im.Text) {
+				ghostSuffix = selected[len(im.Text):]
+			} else {
+				ghostSuffix = selected
+			}
+		}
+		ghostStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		inputLine := prefix + before + cursor + after + ghostStyle.Render(ghostSuffix)
 		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 		sel := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 		descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-
-		allCmds := im.AllCommandNames()
 		var menu strings.Builder
 		for i, cmd := range allCmds {
 			desc := slashCommandDesc(cmd)

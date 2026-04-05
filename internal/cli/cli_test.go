@@ -40,6 +40,26 @@ func (m *cliMockLLM) GenerateContent(_ context.Context, _ *model.LLMRequest, _ b
 	}
 }
 
+type cliStreamingReplayLLM struct{ name string }
+
+func (m *cliStreamingReplayLLM) Name() string { return m.name }
+
+func (m *cliStreamingReplayLLM) GenerateContent(_ context.Context, _ *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		if !stream {
+			yield(&model.LLMResponse{Content: genai.NewContentFromText("Hello world", genai.RoleModel)}, nil)
+			return
+		}
+		if !yield(&model.LLMResponse{Partial: true, Content: genai.NewContentFromText("Hello ", genai.RoleModel)}, nil) {
+			return
+		}
+		if !yield(&model.LLMResponse{Partial: true, Content: genai.NewContentFromText("world", genai.RoleModel)}, nil) {
+			return
+		}
+		yield(&model.LLMResponse{TurnComplete: true, Content: genai.NewContentFromText("Hello world", genai.RoleModel)}, nil)
+	}
+}
+
 // cliErrorLLM returns an error from GenerateContent to exercise error paths.
 type cliErrorLLM struct {
 	name string
@@ -454,6 +474,49 @@ func TestRunPrintToolStatusToStderr(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "✓ tool: read done") {
 		t.Errorf("stderr should contain tool done status, got: %q", stderr)
+	}
+}
+
+func TestRunPrintStreamingFinalReplayDoesNotDuplicate(t *testing.T) {
+	llm := &cliStreamingReplayLLM{name: "test-print-streaming-replay"}
+	ag, sessionID := newTestAgent(t, llm)
+
+	stdout := captureStdout(t, func() {
+		err := runPrint(context.Background(), ag, sessionID, "Say hello", nil)
+		if err != nil {
+			t.Fatalf("runPrint error: %v", err)
+		}
+	})
+
+	if strings.Count(stdout, "Hello world") != 1 {
+		t.Fatalf("expected exactly one rendered reply, got %q", stdout)
+	}
+}
+
+func TestRunJSONStreamingFinalReplayDoesNotDuplicate(t *testing.T) {
+	llm := &cliStreamingReplayLLM{name: "test-json-streaming-replay"}
+	ag, sessionID := newTestAgent(t, llm)
+
+	stdout := captureStdout(t, func() {
+		err := runJSON(context.Background(), ag, sessionID, "Say hello", nil)
+		if err != nil {
+			t.Fatalf("runJSON error: %v", err)
+		}
+	})
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	textDeltas := 0
+	for _, line := range lines {
+		var ev jsonEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("failed to parse JSONL line: %v", err)
+		}
+		if ev.Type == "text_delta" {
+			textDeltas++
+		}
+	}
+	if textDeltas != 2 {
+		t.Fatalf("expected 2 streamed text_delta events, got %d in %q", textDeltas, stdout)
 	}
 }
 

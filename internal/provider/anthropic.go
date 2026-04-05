@@ -7,6 +7,7 @@ import (
 	"iter"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -274,8 +275,7 @@ func antThinkingConfig(level string) *anthropic.ThinkingConfigParamUnion {
 	default:
 		return nil
 	}
-	cfg := anthropic.ThinkingConfigParamOfEnabled(budget)
-	return &cfg
+	return new(anthropic.ThinkingConfigParamOfEnabled(budget))
 }
 
 // antToolUseAcc accumulates a single Anthropic tool_use block during streaming.
@@ -452,4 +452,51 @@ func antRunNonStreaming(ctx context.Context, client *anthropic.Client, params an
 		UsageMetadata: usage,
 		Content:       &genai.Content{Role: string(genai.RoleModel), Parts: parts},
 	}, nil)
+}
+
+// listAnthropicModels fetches available models from the Anthropic API using the
+// Beta Models endpoint and returns them as []ModelEntry.
+func listAnthropicModels(ctx context.Context, apiKey, baseURL string, llmOpts *LLMOptions) ([]ModelEntry, error) {
+	if apiKey == "" && baseURL == "" {
+		return nil, fmt.Errorf("anthropic API key is required to list models")
+	}
+	var opts []anthropicopt.RequestOption
+	if apiKey != "" {
+		opts = append(opts, anthropicopt.WithAPIKey(apiKey))
+	}
+	if baseURL != "" {
+		opts = append(opts, anthropicopt.WithBaseURL(baseURL))
+	}
+	if llmOpts != nil {
+		for k, v := range llmOpts.ExtraHeaders {
+			opts = append(opts, anthropicopt.WithHeader(k, v))
+		}
+		if transport := BuildTransport(llmOpts); transport != nil {
+			opts = append(opts, anthropicopt.WithHTTPClient(&http.Client{Transport: transport}))
+		}
+	}
+	client := anthropic.NewClient(opts...)
+
+	pager := client.Beta.Models.ListAutoPaging(ctx, anthropic.BetaModelListParams{})
+	var entries []ModelEntry
+	for pager.Next() {
+		m := pager.Current()
+		display := m.DisplayName
+		if display == "" {
+			display = m.ID
+		}
+		entries = append(entries, ModelEntry{
+			ID:              m.ID,
+			DisplayName:     display,
+			Provider:        "anthropic",
+			Created:         m.CreatedAt,
+			MaxInputTokens:  m.MaxInputTokens,
+			MaxOutputTokens: m.MaxTokens,
+		})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, fmt.Errorf("listing anthropic models: %w", err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+	return entries, nil
 }

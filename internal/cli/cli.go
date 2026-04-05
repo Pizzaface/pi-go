@@ -343,6 +343,7 @@ func detectMode() string {
 func runPrint(ctx context.Context, ag *agent.Agent, sessionID, prompt string, log *logger.Logger) error {
 	log.UserMessage(prompt)
 	retryCfg := agent.DefaultRetryConfig()
+	sawStreamedText := false
 	for ev, err := range agent.WithRetry(retryCfg, func() iter.Seq2[*session.Event, error] {
 		return ag.RunStreaming(ctx, sessionID, prompt)
 	}) {
@@ -363,14 +364,22 @@ func runPrint(ctx context.Context, ag *agent.Agent, sessionID, prompt string, lo
 				continue
 			}
 			if part.Text != "" {
-				fmt.Print(part.Text)
-				log.LLMText(ev.Author, part.Text)
+				if ev.Partial {
+					sawStreamedText = true
+					fmt.Print(part.Text)
+					log.LLMText(ev.Author, part.Text)
+				} else if !sawStreamedText {
+					fmt.Print(part.Text)
+					log.LLMText(ev.Author, part.Text)
+				}
 			}
 			if part.FunctionCall != nil {
+				sawStreamedText = false
 				fmt.Fprintf(os.Stderr, "⚙ tool: %s\n", part.FunctionCall.Name)
 				log.ToolCall(ev.Author, part.FunctionCall.Name, part.FunctionCall.Args)
 			}
 			if part.FunctionResponse != nil {
+				sawStreamedText = false
 				fmt.Fprintf(os.Stderr, "✓ tool: %s done\n", part.FunctionResponse.Name)
 				log.ToolResult(ev.Author, part.FunctionResponse.Name, fmt.Sprintf("%v", part.FunctionResponse.Response))
 			}
@@ -398,6 +407,7 @@ func runJSON(ctx context.Context, ag *agent.Agent, sessionID, prompt string, log
 	log.UserMessage(prompt)
 	enc := json.NewEncoder(os.Stdout)
 	started := false
+	sawStreamedText := false
 
 	retryCfg := agent.DefaultRetryConfig()
 	for ev, err := range agent.WithRetry(retryCfg, func() iter.Seq2[*session.Event, error] {
@@ -435,14 +445,25 @@ func runJSON(ctx context.Context, ag *agent.Agent, sessionID, prompt string, log
 				continue
 			}
 			if part.Text != "" {
-				_ = enc.Encode(jsonEvent{
-					Type:  "text_delta",
-					Agent: ev.Author,
-					Delta: part.Text,
-				})
-				log.LLMText(ev.Author, part.Text)
+				if ev.Partial {
+					sawStreamedText = true
+					_ = enc.Encode(jsonEvent{
+						Type:  "text_delta",
+						Agent: ev.Author,
+						Delta: part.Text,
+					})
+					log.LLMText(ev.Author, part.Text)
+				} else if !sawStreamedText {
+					_ = enc.Encode(jsonEvent{
+						Type:  "text_delta",
+						Agent: ev.Author,
+						Delta: part.Text,
+					})
+					log.LLMText(ev.Author, part.Text)
+				}
 			}
 			if part.FunctionCall != nil {
+				sawStreamedText = false
 				_ = enc.Encode(jsonEvent{
 					Type:      "tool_call",
 					Agent:     ev.Author,
@@ -452,6 +473,7 @@ func runJSON(ctx context.Context, ag *agent.Agent, sessionID, prompt string, log
 				log.ToolCall(ev.Author, part.FunctionCall.Name, part.FunctionCall.Args)
 			}
 			if part.FunctionResponse != nil {
+				sawStreamedText = false
 				_ = enc.Encode(jsonEvent{
 					Type:     "tool_result",
 					Agent:    ev.Author,

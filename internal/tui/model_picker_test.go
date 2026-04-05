@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -368,6 +369,38 @@ func TestModelPickerHiddenWithTextFilter(t *testing.T) {
 	}
 	if modelCount != 1 {
 		t.Errorf("expected 1 visible model, got %d", modelCount)
+	}
+}
+
+func TestModelPickerApplyFilterPreservesSelectionAndScroll(t *testing.T) {
+	models := make([]provider.ModelEntry, 0, 15)
+	for i := 1; i <= 15; i++ {
+		models = append(models, provider.ModelEntry{ID: fmt.Sprintf("model-%02d", i), Provider: "prov"})
+	}
+	all := buildPickerEntries(models)
+
+	pk := &modelPickerState{
+		entries: all,
+		all:     all,
+		height:  5,
+	}
+
+	// Select model-10 and position viewport away from the top.
+	if !pk.selectModelByID("model-10") {
+		t.Fatal("failed to select model-10")
+	}
+	pk.scrollOff = 7
+
+	pk.applyFilter()
+
+	if got := pk.selectedModelID(); got != "model-10" {
+		t.Fatalf("selected model changed after applyFilter: got %q", got)
+	}
+	if pk.scrollOff == 0 {
+		t.Fatalf("expected scrollOff to stay near selection, got %d", pk.scrollOff)
+	}
+	if pk.selected < pk.scrollOff || pk.selected >= pk.scrollOff+pk.height {
+		t.Fatalf("selection not visible after applyFilter: selected=%d scrollOff=%d height=%d", pk.selected, pk.scrollOff, pk.height)
 	}
 }
 

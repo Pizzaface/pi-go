@@ -157,7 +157,7 @@ func matchingFiles(prefix string, workDir string) []CompletionCandidate {
 		return nil
 	}
 
-	lowerPrefix := strings.ToLower(prefix)
+	normalizedPrefix := strings.ToLower(filepath.ToSlash(prefix))
 	var candidates []CompletionCandidate
 
 	_ = filepath.WalkDir(workDir, func(path string, d os.DirEntry, err error) error {
@@ -181,10 +181,11 @@ func matchingFiles(prefix string, workDir string) []CompletionCandidate {
 			return nil
 		}
 
-		lowerRel := strings.ToLower(rel)
-		if strings.HasPrefix(lowerRel, lowerPrefix) || (lowerPrefix != "" && fuzzyMatchPath(lowerRel, lowerPrefix)) {
+		normalizedRel := filepath.ToSlash(rel)
+		lowerRel := strings.ToLower(normalizedRel)
+		if strings.HasPrefix(lowerRel, normalizedPrefix) || (normalizedPrefix != "" && fuzzyMatchPath(lowerRel, normalizedPrefix)) {
 			candidates = append(candidates, CompletionCandidate{
-				Text:        rel,
+				Text:        normalizedRel,
 				Description: "file",
 				Type:        CompletionTypeFile,
 			})

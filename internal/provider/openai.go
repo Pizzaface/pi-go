@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -429,4 +431,47 @@ func oaiRunNonStreaming(ctx context.Context, client *openai.Client, params opena
 		UsageMetadata: usage,
 		Content:       &genai.Content{Role: string(genai.RoleModel), Parts: parts},
 	}, nil)
+}
+
+// listOpenAIModels fetches available models from the OpenAI-compatible API
+// and returns them as []ModelEntry.
+func listOpenAIModels(ctx context.Context, apiKey, baseURL string, llmOpts *LLMOptions) ([]ModelEntry, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("OpenAI API key is required to list models")
+	}
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		baseURL = normalizeOpenAIBaseURL(baseURL)
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+	if llmOpts != nil {
+		for k, v := range llmOpts.ExtraHeaders {
+			opts = append(opts, option.WithHeader(k, v))
+		}
+		if transport := BuildTransport(llmOpts); transport != nil {
+			opts = append(opts, option.WithHTTPClient(&http.Client{Transport: transport}))
+		}
+	}
+	client := openai.NewClient(opts...)
+
+	pager := client.Models.ListAutoPaging(ctx)
+	var entries []ModelEntry
+	for pager.Next() {
+		m := pager.Current()
+		created := time.Time{}
+		if m.Created > 0 {
+			created = time.Unix(m.Created, 0)
+		}
+		entries = append(entries, ModelEntry{
+			ID:          m.ID,
+			DisplayName: m.ID, // OpenAI API does not provide a separate display name
+			Provider:    "openai",
+			Created:     created,
+		})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, fmt.Errorf("listing openai models: %w", err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+	return entries, nil
 }

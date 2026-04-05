@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -347,6 +348,40 @@ func (r *Registry) RequiresAPIKey(providerName string) bool {
 	default:
 		return len(def.APIKeyEnv) > 0
 	}
+}
+
+// ListModels fetches available models for the named provider, resolving the
+// API key, base URL, and default headers from the registry. The returned
+// entries can be presented directly in a TUI list.
+func (r *Registry) ListModels(ctx context.Context, providerName string, opts *LLMOptions) ([]ModelEntry, error) {
+	def, ok := r.provider(providerName)
+	if !ok {
+		return nil, fmt.Errorf("unknown provider %q", providerName)
+	}
+	info := Info{
+		Provider: def.Name,
+		Family:   def.Family,
+		Ollama:   def.Family == "ollama",
+	}
+	apiKey := r.APIKey(providerName)
+	baseURL := r.BaseURL(providerName)
+
+	// Merge default headers with any caller-supplied options.
+	merged := &LLMOptions{}
+	if opts != nil {
+		*merged = *opts
+	}
+	if dh := r.DefaultHeaders(providerName); len(dh) > 0 {
+		if merged.ExtraHeaders == nil {
+			merged.ExtraHeaders = make(map[string]string, len(dh))
+		}
+		for k, v := range dh {
+			if _, exists := merged.ExtraHeaders[k]; !exists {
+				merged.ExtraHeaders[k] = v
+			}
+		}
+	}
+	return ListModels(ctx, info, apiKey, baseURL, merged)
 }
 
 func LoadRegistryDocuments(dirs ...string) ([]RegistryDocument, error) {

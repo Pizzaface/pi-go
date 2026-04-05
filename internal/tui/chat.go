@@ -165,7 +165,45 @@ func (c *ChatModel) RenderMarkdown(text string) string {
 	if err != nil {
 		return text
 	}
-	return strings.TrimRight(rendered, "\n")
+	rendered = strings.Trim(rendered, "\n")
+	return trimRenderedMarkdownIndent(rendered)
+}
+
+func trimRenderedMarkdownIndent(rendered string) string {
+	lines := strings.Split(rendered, "\n")
+	for i, line := range lines {
+		lines[i] = trimMarkdownLineIndent(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func trimMarkdownLineIndent(line string) string {
+	if line == "" {
+		return line
+	}
+
+	i := 0
+	for i < len(line) && line[i] == '\x1b' {
+		j := i + 1
+		if j >= len(line) || line[j] != '[' {
+			break
+		}
+		j++
+		for j < len(line) && ((line[j] >= '0' && line[j] <= '9') || line[j] == ';') {
+			j++
+		}
+		if j >= len(line) || line[j] != 'm' {
+			break
+		}
+		i = j + 1
+	}
+
+	trimmed := 0
+	for trimmed < 2 && i < len(line) && line[i] == ' ' {
+		i++
+		trimmed++
+	}
+	return line[:i-trimmed] + line[i:]
 }
 
 // RenderMessages renders all messages into a string for display.

@@ -362,9 +362,13 @@ func TestHandleLoginSSOResult_EmptyKey(t *testing.T) {
 }
 
 func TestHandleLoginSSOResult_SaveError(t *testing.T) {
-	// Use an invalid HOME to trigger SaveKey error.
+	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.pi-go.
+	homeFile := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(homeFile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", "/dev/null/nonexistent")
+	os.Setenv("HOME", homeFile)
 	defer os.Setenv("HOME", origHome)
 
 	m := &model{
@@ -408,8 +412,12 @@ func TestHandleLoginSave_UnknownProvider(t *testing.T) {
 }
 
 func TestHandleLoginSave_SaveError(t *testing.T) {
+	homeFile := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(homeFile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", "/dev/null/nonexistent")
+	os.Setenv("HOME", homeFile)
 	defer os.Setenv("HOME", origHome)
 
 	m := &model{
@@ -582,8 +590,7 @@ func TestLoginStartDeviceFlow_CmdExecution(t *testing.T) {
 	mb := withMockBrowser(t)
 
 	// Mock device code and token endpoints.
-	attempt := 0
-	srv := newMockDeviceServer(t, &attempt)
+	srv := newMockDeviceServer(t, new(0))
 	defer srv.Close()
 
 	m := &model{}
@@ -645,8 +652,7 @@ func TestLoginStartDeviceFlow_CmdExecution(t *testing.T) {
 
 func TestLoginStart_DeviceFlowSuccess(t *testing.T) {
 	withMockBrowser(t)
-	attempt := 0
-	srv := newMockDeviceServer(t, &attempt)
+	srv := newMockDeviceServer(t, new(0))
 	defer srv.Close()
 
 	m := &model{}

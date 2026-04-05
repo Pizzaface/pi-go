@@ -76,6 +76,9 @@ type model struct {
 	// Branch popup state (shown on status bar click).
 	branchPopup *branchPopupState
 
+	// Model picker popup state (shown by /model).
+	modelPicker *modelPickerState
+
 	// Quit.
 	quitting bool
 	initErr  error // fatal init error → propagated from Run()
@@ -340,6 +343,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commitDoneMsg:
 		return m.handleCommitDone(msg)
 
+	case modelsFetchedMsg:
+		if m.modelPicker != nil {
+			m.modelPicker.loading = false
+			if msg.err != nil {
+				m.modelPicker.err = msg.err
+			} else {
+				m.modelPicker.all = msg.entries
+				m.modelPicker.applyFilter() // respects hidden set + any pre-existing filter
+				m.modelPicker.selectCurrent()
+			}
+		}
+		return m, nil
+
 	case pingDoneMsg:
 		content := msg.output
 		if msg.err != nil {
@@ -455,6 +471,51 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle model picker popup.
+	if m.modelPicker != nil {
+		switch {
+		case key.Code == tea.KeyEsc:
+			m.modelPicker = nil
+			return m, nil
+		case key.Code == tea.KeyEnter:
+			return m.handleModelSelect()
+		case key.Code == tea.KeyUp:
+			m.modelPicker.moveUp()
+			return m, nil
+		case key.Code == tea.KeyDown:
+			m.modelPicker.moveDown()
+			return m, nil
+		case key.Code == tea.KeyBackspace:
+			if len(m.modelPicker.filter) > 0 {
+				m.modelPicker.filter = m.modelPicker.filter[:len(m.modelPicker.filter)-1]
+				m.modelPicker.applyFilter()
+			}
+			return m, nil
+		case key.String() == "H":
+			// H — toggle hide/unhide the selected model.
+			if id := m.modelPicker.toggleHidden(); id != "" {
+				saveHiddenModels(m.modelPicker.hidden)
+				m.modelPicker.applyFilter()
+			}
+			return m, nil
+		case key.String() == "S":
+			// S — toggle show-hidden mode.
+			m.modelPicker.showHidden = !m.modelPicker.showHidden
+			m.modelPicker.applyFilter()
+			return m, nil
+		default:
+			// Printable runes → type-to-filter.
+			if key.Text != "" && key.Mod == 0 {
+				m.modelPicker.filter += key.Text
+				m.modelPicker.applyFilter()
+				return m, nil
+			}
+			// Non-printable keys dismiss the picker.
+			m.modelPicker = nil
+			return m, nil
+		}
+	}
+
 	// Esc / Ctrl+C: dismiss completion, cancel agent, or quit.
 	switch {
 	case key.Code == tea.KeyEsc:
@@ -540,7 +601,8 @@ func (m *model) View() tea.View {
 
 	// Layout: sidebar on the right, chat+status+input on the left.
 	// When the debug panel is active it replaces the sidebar with a wider pane.
-	showSidebar := m.width > 80 && !m.debugPanel
+	// When the model picker is open, the sidebar is suppressed for full-width display.
+	showSidebar := m.width > 80 && !m.debugPanel && m.modelPicker == nil
 	sidebarWidth := 0
 	if showSidebar {
 		sidebarWidth = SidebarWidth
@@ -563,6 +625,11 @@ func (m *model) View() tea.View {
 		// popup lines: 1 header + visible branches + 2 border + 1 footer + 2 newlines
 		popupLines := m.branchPopup.height + 6
 		availableHeight -= popupLines
+	}
+	// Reserve space for the model picker popup when open.
+	if m.modelPicker != nil {
+		pickerLines := m.modelPicker.height + 6
+		availableHeight -= pickerLines
 	}
 	if availableHeight < 1 {
 		availableHeight = 1
@@ -602,6 +669,13 @@ func (m *model) View() tea.View {
 	if m.branchPopup != nil {
 		popupView := m.renderBranchPopup()
 		b.WriteString(popupView)
+		b.WriteString("\n")
+	}
+
+	// Render model picker popup if open.
+	if m.modelPicker != nil {
+		pickerView := m.renderModelPicker()
+		b.WriteString(pickerView)
 		b.WriteString("\n")
 	}
 
@@ -712,7 +786,9 @@ func (m *model) debugTraceWidth() int {
 
 func (m *model) layoutMainWidth() int {
 	mainWidth := m.width
-	if m.debugPanel {
+	if m.modelPicker != nil {
+		// Full width when the model picker is open — sidebar is suppressed.
+	} else if m.debugPanel {
 		mainWidth -= m.debugTraceWidth()
 	} else if m.width > 80 {
 		mainWidth -= SidebarWidth
@@ -911,6 +987,7 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.SkillDirs = r.SkillDirs
 		m.cfg.GenerateCommitMsg = r.GenerateCommitMsg
 		m.cfg.TokenTracker = r.TokenTracker
+		m.cfg.WrapLLM = r.WrapLLM
 		m.cfg.CompactMetrics = r.CompactMetrics
 		m.cfg.ExtensionCommands = r.ExtensionCommands
 		m.cfg.RestartCh = r.RestartCh

@@ -15,7 +15,10 @@ import (
 // agentMsg wraps messages coming from the agent goroutine via a channel.
 type agentMsg interface{ agentMsg() }
 
-type agentTextMsg struct{ text string }
+type agentTextMsg struct {
+	text    string
+	partial bool
+}
 type agentThinkingMsg struct{ text string }
 type agentToolCallMsg struct {
 	name string
@@ -169,7 +172,7 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 				if log != nil {
 					log.LLMText(ev.Author, part.Text)
 				}
-				m.agentCh <- agentTextMsg{text: part.Text}
+				m.agentCh <- agentTextMsg{text: part.Text, partial: ev.Partial}
 			}
 			if part.FunctionCall != nil {
 				if log != nil {
@@ -234,7 +237,13 @@ func (m *model) handleAgentText(msg agentTextMsg) (tea.Model, tea.Cmd) {
 			m.chatModel.Messages[len(m.chatModel.Messages)-1] = message{role: "assistant", content: ""}
 		}
 	}
-	m.chatModel.Streaming += msg.text
+
+	if msg.partial {
+		m.chatModel.Streaming += msg.text
+	} else {
+		m.chatModel.Streaming = msg.text
+	}
+
 	for i := len(m.chatModel.Messages) - 1; i >= 0; i-- {
 		if m.chatModel.Messages[i].role == "assistant" {
 			m.chatModel.Messages[i].content = m.chatModel.Streaming
@@ -246,7 +255,7 @@ func (m *model) handleAgentText(msg agentTextMsg) (tea.Model, tea.Cmd) {
 		m.chatModel.TraceLog[len(m.chatModel.TraceLog)-1].detail = m.chatModel.Streaming
 	} else {
 		m.chatModel.TraceLog = append(m.chatModel.TraceLog, traceEntry{
-			time: time.Now(), kind: "llm", summary: "LLM response", detail: msg.text,
+			time: time.Now(), kind: "llm", summary: "LLM response", detail: m.chatModel.Streaming,
 		})
 	}
 	return m, waitForAgent(m.agentCh)

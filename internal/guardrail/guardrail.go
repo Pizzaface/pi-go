@@ -27,11 +27,17 @@ func (u *Usage) TotalTokens() int64 {
 }
 
 // Tracker tracks daily token usage and enforces a configurable limit.
+// It also tracks the latest provider-reported prompt token count, which
+// represents the actual context window usage for the current conversation.
 type Tracker struct {
 	mu       sync.Mutex
 	usage    Usage
 	limit    int64  // max total tokens per day (0 = unlimited)
 	filePath string // persistence path
+
+	// Context window tracking (updated on every provider response).
+	lastInputTokens int64 // most recent PromptTokenCount from provider
+	contextLimit    int64 // max context window size in tokens (0 = unknown)
 }
 
 // New creates a tracker with the given daily token limit.
@@ -62,6 +68,8 @@ func NewWithPath(maxDailyTokens int64, path string) *Tracker {
 
 // Add records token usage from an LLM response.
 // Returns an error if the daily limit would be exceeded.
+// The inputTokens value (PromptTokenCount from the provider) is also stored
+// as the latest context window usage.
 func (t *Tracker) Add(inputTokens, outputTokens int32) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -82,6 +90,13 @@ func (t *Tracker) Add(inputTokens, outputTokens int32) error {
 	t.usage.InputTokens += int64(inputTokens)
 	t.usage.OutputTokens += int64(outputTokens)
 	t.usage.Requests++
+
+	// Track the latest prompt token count — this is the current context size
+	// as reported by the provider.
+	if inputTokens > 0 {
+		t.lastInputTokens = int64(inputTokens)
+	}
+
 	t.save()
 	return nil
 }
@@ -160,6 +175,30 @@ func (t *Tracker) PercentUsed() float64 {
 		return 0
 	}
 	return float64(t.usage.TotalTokens()) / float64(t.limit) * 100
+}
+
+// ContextUsed returns the most recent prompt token count from the provider,
+// representing the current context window size. Returns 0 before the first
+// provider response.
+func (t *Tracker) ContextUsed() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.lastInputTokens
+}
+
+// ContextLimit returns the max context window size in tokens.
+// Returns 0 if unknown.
+func (t *Tracker) ContextLimit() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.contextLimit
+}
+
+// SetContextLimit sets the max context window size in tokens.
+func (t *Tracker) SetContextLimit(limit int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.contextLimit = limit
 }
 
 // ensureToday resets the counter if the date has changed. Must hold mu.

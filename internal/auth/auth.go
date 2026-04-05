@@ -432,14 +432,21 @@ func requestDeviceToken(ctx context.Context, prov Provider, deviceCode string) (
 	return &tok, nil
 }
 
+func resolveHomeDir() (string, error) {
+	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+		return home, nil
+	}
+	return os.UserHomeDir()
+}
+
 // SaveKey saves an API key to ~/.pi-go/.env.
 func SaveKey(envVar, apiKey string) error {
-	home, err := os.UserHomeDir()
+	home, err := resolveHomeDir()
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
-	envPath := filepath.Join(home, ".pi-go", ".env")
+	envPath := filepath.Join(home, ".pi", ".env")
 
 	existing := ""
 	if data, err := os.ReadFile(envPath); err == nil {

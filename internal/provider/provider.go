@@ -122,11 +122,90 @@ func CheckOllama(baseURL string) error {
 	return nil
 }
 
+// ModelEntry describes a single model available from a provider.
+// It carries enough information for a TUI to render a selectable list.
+type ModelEntry struct {
+	ID              string    // canonical model identifier (e.g. "claude-sonnet-4-20250514")
+	DisplayName     string    // human-friendly name; may equal ID when the API doesn't provide one
+	Provider        string    // provider name (e.g. "anthropic", "openai")
+	Created         time.Time // creation / release timestamp; zero if unknown
+	MaxInputTokens  int64     // max context window size in tokens; 0 = unknown
+	MaxOutputTokens int64     // max output tokens the model can generate; 0 = unknown
+}
+
 // LLMOptions holds optional configuration for LLM provider creation.
 type LLMOptions struct {
 	ExtraHeaders    map[string]string
 	InsecureSkipTLS bool
 	DebugTracer     *DebugTracer
+}
+
+// ListModels fetches available models from the provider described by info.
+// It uses the same family-based dispatch as NewLLM. The returned slice is
+// sorted by ID so that callers get deterministic output suitable for a
+// scrollable TUI list.
+func ListModels(ctx context.Context, info Info, apiKey, baseURL string, opts *LLMOptions) ([]ModelEntry, error) {
+	if opts == nil {
+		opts = &LLMOptions{}
+	}
+	family := info.Family
+	if family == "" {
+		family = info.Provider
+	}
+	switch family {
+	case "ollama":
+		return listOllamaModels(ctx, baseURL)
+	case "gemini":
+		return listGeminiModels(ctx, apiKey, baseURL, opts)
+	case "openai":
+		return listOpenAIModels(ctx, apiKey, baseURL, opts)
+	case "anthropic":
+		return listAnthropicModels(ctx, apiKey, baseURL, opts)
+	default:
+		return nil, fmt.Errorf("listing models: unsupported provider family %q", family)
+	}
+}
+
+// KnownContextWindow returns the max input token limit for well-known models.
+// Returns 0 if the model is not in the built-in table.
+// This avoids an API call at startup; the value is updated with the real limit
+// when the user opens the model picker or switches models.
+func KnownContextWindow(modelName string) int64 {
+	lower := strings.ToLower(modelName)
+
+	// Anthropic models.
+	switch {
+	case strings.Contains(lower, "claude-opus-4"),
+		strings.Contains(lower, "claude-sonnet-4"),
+		strings.Contains(lower, "claude-3-7"):
+		return 200_000
+	case strings.Contains(lower, "claude-3-5"):
+		return 200_000
+	case strings.Contains(lower, "claude-3"):
+		return 200_000
+
+	// OpenAI models.
+	case strings.HasPrefix(lower, "gpt-5"):
+		return 1_000_000
+	case strings.HasPrefix(lower, "gpt-4o"):
+		return 128_000
+	case strings.HasPrefix(lower, "gpt-4-turbo"), strings.HasPrefix(lower, "gpt-4-1"):
+		return 128_000
+	case strings.HasPrefix(lower, "o4"), strings.HasPrefix(lower, "o3"), strings.HasPrefix(lower, "o1"):
+		return 200_000
+
+	// Google Gemini models.
+	case strings.Contains(lower, "gemini-2.5"):
+		return 1_048_576
+	case strings.Contains(lower, "gemini-2.0"):
+		return 1_048_576
+	case strings.Contains(lower, "gemini-1.5-pro"):
+		return 2_097_152
+	case strings.Contains(lower, "gemini-1.5"):
+		return 1_048_576
+	}
+
+	return 0
 }
 
 // NewLLM creates a model.LLM for the given provider info, API key, optional base URL, thinking level, and options.

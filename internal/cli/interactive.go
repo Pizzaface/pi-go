@@ -14,6 +14,7 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
@@ -193,9 +194,17 @@ func deferredInit(
 		return
 	}
 
+	// Create token/usage tracker and wrap the LLM so every provider
+	// response records actual token counts.
+	tracker := guardrail.New(guardrail.DefaultMaxDailyTokens)
+	if ctxLimit := provider.KnownContextWindow(llm.Name()); ctxLimit > 0 {
+		tracker.SetContextLimit(ctxLimit)
+	}
+	wrappedLLM := guardrail.WrapModel(llm, tracker)
+
 	// Create agent.
 	ag, err := agent.New(agent.Config{
-		Model:               llm,
+		Model:               wrappedLLM,
 		Tools:               runtime.Tools,
 		Toolsets:            runtime.Toolsets,
 		Instruction:         runtime.Instruction,
@@ -243,12 +252,16 @@ func deferredInit(
 			Skills:            runtime.Skills,
 			SkillDirs:         runtime.SkillDirs,
 			ExtensionCommands: runtime.SlashCommands,
-			CompactMetrics:    compactorMetrics,
-			RestartCh:         restartCh,
-			Screen:            screen,
-			GitBranch:         ps.gitBranch,
-			DiffAdded:         ps.diffAdded,
-			DiffRemoved:       ps.diffRemoved,
+			TokenTracker:      tracker,
+			WrapLLM: func(m adkmodel.LLM) adkmodel.LLM {
+				return guardrail.WrapModel(m, tracker)
+			},
+			CompactMetrics: compactorMetrics,
+			RestartCh:      restartCh,
+			Screen:         screen,
+			GitBranch:      ps.gitBranch,
+			DiffAdded:      ps.diffAdded,
+			DiffRemoved:    ps.diffRemoved,
 		},
 	}
 }

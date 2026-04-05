@@ -481,6 +481,7 @@ func modelPing(ctx context.Context, llm llmmodel.LLM, prompt string, isPingPong 
 	sEvents := 0
 	sThinkingChunks := 0
 	sTextChunks := 0
+	sawStreamingText := false
 	for resp, err := range llm.GenerateContent(ctx, req, true) {
 		sEvents++
 		if err != nil {
@@ -497,7 +498,11 @@ func modelPing(ctx context.Context, llm llmmodel.LLM, prompt string, isPingPong 
 				if part.Text != "" {
 					if role == "thinking" {
 						sThinkingChunks++
-					} else {
+					} else if resp.Partial {
+						sTextChunks++
+						sawStreamingText = true
+						sResult.WriteString(part.Text)
+					} else if !sawStreamingText {
 						sTextChunks++
 						sResult.WriteString(part.Text)
 					}

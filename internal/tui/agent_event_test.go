@@ -3,9 +3,12 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"charm.land/lipgloss/v2"
 )
 
 // --- toolCallSummary for agent ---
@@ -439,6 +442,75 @@ func TestRenderMessages_AssistantMessage(t *testing.T) {
 	}
 }
 
+func TestRenderMessages_AssistantBulletSharesFirstLineWithMessage(t *testing.T) {
+	m := &model{
+		width: 120,
+		chatModel: ChatModel{Messages: []message{
+			{role: "assistant", content: "Hi! What can I help you with?"},
+		}},
+	}
+	m.chatModel.UpdateRenderer(m.width)
+
+	output := stripANSIEscapeCodes(m.chatModel.RenderMessages(m.running))
+	lines := nonEmptyLines(output)
+	if len(lines) == 0 {
+		t.Fatal("expected rendered assistant output")
+	}
+	if !strings.Contains(lines[0], "●") || !strings.Contains(lines[0], "Hi! What can I help you with?") {
+		t.Fatalf("expected bullet and message on the same rendered line, got: %q", lines[0])
+	}
+}
+
+func TestRenderMessages_AssistantTextAlignsWithUserText(t *testing.T) {
+	m := &model{
+		width: 120,
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "Hi!"},
+			{role: "assistant", content: "Hi! How can I help?"},
+		}},
+	}
+	m.chatModel.UpdateRenderer(m.width)
+
+	output := stripANSIEscapeCodes(m.chatModel.RenderMessages(m.running))
+	lines := nonEmptyLines(output)
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 rendered lines, got %d: %q", len(lines), output)
+	}
+
+	userTextCol := visualColumn(lines[0], "Hi!")
+	assistantTextCol := visualColumn(lines[1], "Hi!")
+	if userTextCol == -1 || assistantTextCol == -1 {
+		t.Fatalf("expected both lines to contain Hi!: %q / %q", lines[0], lines[1])
+	}
+	if assistantTextCol != userTextCol {
+		t.Fatalf("expected assistant text column %d to match user text column %d; user=%q assistant=%q", assistantTextCol, userTextCol, lines[0], lines[1])
+	}
+}
+
+func visualColumn(line, text string) int {
+	idx := strings.Index(line, text)
+	if idx == -1 {
+		return -1
+	}
+	return lipgloss.Width(line[:idx])
+}
+
+func stripANSIEscapeCodes(s string) string {
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return ansi.ReplaceAllString(s, "")
+}
+
+func nonEmptyLines(s string) []string {
+	raw := strings.Split(s, "\n")
+	lines := make([]string, 0, len(raw))
+	for _, line := range raw {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 func TestRenderMessages_Empty(t *testing.T) {
 	m := &model{
 		width:     120,
@@ -498,16 +570,38 @@ func TestAgentTextMsg_AccumulatesStreaming(t *testing.T) {
 		agentCh:   make(chan agentMsg, 64),
 	}
 
-	newM, _ := m.Update(agentTextMsg{text: "Hello "})
+	newM, _ := m.Update(agentTextMsg{text: "Hello ", partial: true})
 	mm := newM.(*model)
 	if mm.chatModel.Streaming != "Hello " {
 		t.Errorf("expected streaming 'Hello ', got %q", mm.chatModel.Streaming)
 	}
 
-	newM2, _ := mm.Update(agentTextMsg{text: "world"})
+	newM2, _ := mm.Update(agentTextMsg{text: "world", partial: true})
 	mm2 := newM2.(*model)
 	if mm2.chatModel.Streaming != "Hello world" {
 		t.Errorf("expected 'Hello world', got %q", mm2.chatModel.Streaming)
+	}
+}
+
+func TestAgentTextMsg_FinalReplayDoesNotDuplicateStreaming(t *testing.T) {
+	m := &model{
+		chatModel: ChatModel{Messages: []message{{role: "assistant", content: ""}}},
+		running:   true,
+		agentCh:   make(chan agentMsg, 64),
+	}
+
+	newM, _ := m.Update(agentTextMsg{text: "Hello ", partial: true})
+	mm := newM.(*model)
+	newM, _ = mm.Update(agentTextMsg{text: "world", partial: true})
+	mm = newM.(*model)
+	newM, _ = mm.Update(agentTextMsg{text: "Hello world"})
+	mm = newM.(*model)
+
+	if mm.chatModel.Streaming != "Hello world" {
+		t.Fatalf("expected streaming %q, got %q", "Hello world", mm.chatModel.Streaming)
+	}
+	if got := mm.chatModel.Messages[len(mm.chatModel.Messages)-1].content; got != "Hello world" {
+		t.Fatalf("expected assistant content %q, got %q", "Hello world", got)
 	}
 }
 

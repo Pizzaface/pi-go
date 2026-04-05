@@ -12,6 +12,7 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
@@ -36,10 +37,7 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		m.chatModel.Messages = m.chatModel.Messages[:0]
 		m.chatModel.Scroll = 0
 	case "/model":
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: m.formatModelInfo(),
-		})
+		return m.handleModelCommand()
 	case "/session":
 		m.handleSessionCommand()
 	case "/new":
@@ -511,6 +509,93 @@ func (m *model) handleCompactCommand() {
 	})
 }
 
+// handleModelCommand opens the interactive model picker popup.
+// It starts an async fetch of available models from all configured providers.
+func (m *model) handleModelCommand() (tea.Model, tea.Cmd) {
+	if m.cfg.ProviderRegistry == nil {
+		m.appendAssistant("No provider registry available.")
+		return m, nil
+	}
+
+	m.modelPicker = &modelPickerState{
+		loading: true,
+		current: m.cfg.ModelName,
+		height:  12,
+		hidden:  loadHiddenModels(),
+	}
+
+	return m, fetchModels(m.ctx, m.cfg.ProviderRegistry)
+}
+
+// handleModelSelect applies the user's model selection from the picker popup.
+func (m *model) handleModelSelect() (tea.Model, tea.Cmd) {
+	if m.modelPicker == nil {
+		return m, nil
+	}
+	selected := m.modelPicker.selectedModel()
+	if selected == nil {
+		m.modelPicker = nil
+		return m, nil
+	}
+
+	// Resolve provider info for the selected model.
+	reg := m.cfg.ProviderRegistry
+	info, err := reg.Resolve(selected.ID, selected.Provider)
+	if err != nil {
+		m.appendAssistant(fmt.Sprintf("Failed to resolve model `%s`: %v", selected.ID, err))
+		m.modelPicker = nil
+		return m, nil
+	}
+
+	apiKey := reg.APIKey(info.Provider)
+	baseURL := reg.BaseURL(info.Provider)
+
+	llmOpts := &provider.LLMOptions{
+		ExtraHeaders: reg.DefaultHeaders(info.Provider),
+	}
+
+	newLLM, err := provider.NewLLM(m.ctx, info, apiKey, baseURL, "", llmOpts)
+	if err != nil {
+		m.appendAssistant(fmt.Sprintf("Failed to create LLM for `%s`: %v", selected.ID, err))
+		m.modelPicker = nil
+		return m, nil
+	}
+
+	// Wrap the new LLM with the token/usage tracker if available.
+	if m.cfg.WrapLLM != nil {
+		newLLM = m.cfg.WrapLLM(newLLM)
+	}
+
+	// Hot-swap the agent's model.
+	if m.cfg.Agent != nil {
+		if err := m.cfg.Agent.RebuildWithModel(newLLM); err != nil {
+			m.appendAssistant(fmt.Sprintf("Failed to swap model: %v", err))
+			m.modelPicker = nil
+			return m, nil
+		}
+	}
+
+	// Update TUI config.
+	m.cfg.LLM = newLLM
+	m.cfg.ModelName = selected.ID
+	m.cfg.ProviderName = info.Provider
+
+	// Update context window limit from the selected model's metadata.
+	if selected.MaxInputTokens > 0 {
+		if setter, ok := m.cfg.TokenTracker.(interface{ SetContextLimit(int64) }); ok {
+			setter.SetContextLimit(selected.MaxInputTokens)
+		}
+	} else if ctxLimit := provider.KnownContextWindow(selected.ID); ctxLimit > 0 {
+		if setter, ok := m.cfg.TokenTracker.(interface{ SetContextLimit(int64) }); ok {
+			setter.SetContextLimit(ctxLimit)
+		}
+	}
+
+	m.appendAssistant(fmt.Sprintf("Switched to model **%s** (%s)", selected.ID, info.Provider))
+	m.modelPicker = nil
+	return m, nil
+}
+
 // formatModelInfo returns a formatted string showing the current model and all configured roles.
 func (m *model) formatModelInfo() string {
 	var b strings.Builder
@@ -560,10 +645,14 @@ func (m *model) formatModelInfo() string {
 }
 
 // formatContextUsage builds a context usage display similar to Claude Code's /context.
+// When a TokenTracker is available and has received at least one provider
+// response, it uses the actual provider-reported token counts. Otherwise it
+// falls back to a rough character-based estimate (~4 chars per token).
 func (m *model) formatContextUsage() string {
 	var b strings.Builder
 
 	// Count chars per role (rough token estimate: ~4 chars per token).
+	// Used as fallback when no provider response has been received yet.
 	userChars, assistantChars, toolChars := 0, 0, 0
 	for _, msg := range m.chatModel.Messages {
 		size := len(msg.content) + len(msg.tool) + len(msg.toolIn)
@@ -577,10 +666,28 @@ func (m *model) formatContextUsage() string {
 		}
 	}
 	totalChars := userChars + assistantChars + toolChars
-	totalTokens := int64(totalChars / 4)
+	estTokens := int64(totalChars / 4)
 	userTokens := int64(userChars / 4)
 	assistantTokens := int64(assistantChars / 4)
 	toolTokens := int64(toolChars / 4)
+
+	// Determine whether we have actual provider-reported context usage.
+	var contextUsed int64  // current context window size from provider
+	var contextLimit int64 // max context window (0 = unknown)
+	hasProviderContext := false
+	if tt := m.cfg.TokenTracker; tt != nil {
+		contextUsed = tt.ContextUsed()
+		contextLimit = tt.ContextLimit()
+		if contextUsed > 0 {
+			hasProviderContext = true
+		}
+	}
+
+	// Choose the token count to display: actual or estimated.
+	displayTokens := estTokens
+	if hasProviderContext {
+		displayTokens = contextUsed
+	}
 
 	// Header.
 	b.WriteString("**Context Usage**\n\n")
@@ -588,20 +695,18 @@ func (m *model) formatContextUsage() string {
 	// Progress bar (20 blocks).
 	const barLen = 20
 	var usedBlocks int
-	var limitTokens int64
-	if tt := m.cfg.TokenTracker; tt != nil && tt.Limit() > 0 {
-		limitTokens = tt.Limit()
-		pct := float64(tt.TotalUsed()) / float64(limitTokens)
+	if contextLimit > 0 && displayTokens > 0 {
+		pct := float64(displayTokens) / float64(contextLimit)
 		usedBlocks = int(pct * barLen)
 		if usedBlocks > barLen {
 			usedBlocks = barLen
 		}
 	} else {
-		// No limit — show context proportion only.
-		if totalTokens > 0 {
+		// No context limit known — show rough proportion.
+		if displayTokens > 0 {
 			usedBlocks = 1
-			if totalTokens > 10000 {
-				usedBlocks = int(float64(totalTokens) / 100000 * barLen)
+			if displayTokens > 10000 {
+				usedBlocks = int(float64(displayTokens) / 100000 * barLen)
 				if usedBlocks < 1 {
 					usedBlocks = 1
 				}
@@ -618,26 +723,38 @@ func (m *model) formatContextUsage() string {
 	if m.cfg.ProviderName != "" {
 		modelLabel = m.cfg.ProviderName + " | " + modelLabel
 	}
-	if limitTokens > 0 {
-		tt := m.cfg.TokenTracker
+	if contextLimit > 0 {
+		pct := float64(displayTokens) / float64(contextLimit) * 100
 		fmt.Fprintf(&b, "`%s`  %s · %s/%s tokens (%.0f%%)\n\n",
 			bar, modelLabel,
-			formatTokenCount(tt.TotalUsed()), formatTokenCount(limitTokens), tt.PercentUsed())
+			formatTokenCount(displayTokens), formatTokenCount(contextLimit), pct)
+	} else if hasProviderContext {
+		fmt.Fprintf(&b, "`%s`  %s · ctx %s tokens\n\n",
+			bar, modelLabel, formatTokenCount(displayTokens))
 	} else {
 		fmt.Fprintf(&b, "`%s`  %s · ctx ~%s tokens\n\n",
-			bar, modelLabel, formatTokenCount(totalTokens))
+			bar, modelLabel, formatTokenCount(estTokens))
 	}
 
-	// Category breakdown.
-	b.WriteString("*Estimated usage by category*\n")
+	// Category breakdown (always estimated from message content).
+	label := "*Estimated usage by category*\n"
+	if hasProviderContext {
+		label = "*Usage by category (estimated breakdown)*\n"
+	}
+	b.WriteString(label)
 	fmt.Fprintf(&b, "- **User messages**: ~%s tokens (%d msgs)\n",
 		formatTokenCount(userTokens), countByRole(m.chatModel.Messages, "user"))
 	fmt.Fprintf(&b, "- **Assistant messages**: ~%s tokens (%d msgs)\n",
 		formatTokenCount(assistantTokens), countByRole(m.chatModel.Messages, "assistant"))
 	fmt.Fprintf(&b, "- **Tool calls**: ~%s tokens (%d calls)\n",
 		formatTokenCount(toolTokens), countByRole(m.chatModel.Messages, "tool"))
-	fmt.Fprintf(&b, "- **Total context**: ~%s tokens (%d messages)\n",
-		formatTokenCount(totalTokens), len(m.chatModel.Messages))
+	if hasProviderContext {
+		fmt.Fprintf(&b, "- **Total context**: %s tokens (%d messages)\n",
+			formatTokenCount(contextUsed), len(m.chatModel.Messages))
+	} else {
+		fmt.Fprintf(&b, "- **Total context**: ~%s tokens (%d messages)\n",
+			formatTokenCount(estTokens), len(m.chatModel.Messages))
+	}
 
 	// Daily token usage (actual, not estimated).
 	if tt := m.cfg.TokenTracker; tt != nil {
@@ -708,7 +825,7 @@ func (m *model) formatHelp() string {
 	b.WriteString("**Commands:**\n")
 	b.WriteString("  `/help`                — Show this help\n")
 	b.WriteString("  `/clear`               — Clear conversation\n")
-	b.WriteString("  `/model`               — Show current model, roles, and loaded aliases\n")
+	b.WriteString("  `/model`               — Open interactive model picker\n")
 	b.WriteString("  `/session`             — Show active session details\n")
 	b.WriteString("  `/new`                 — Start a fresh session\n")
 	b.WriteString("  `/resume [id]`         — List or switch saved sessions\n")

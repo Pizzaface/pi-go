@@ -238,6 +238,52 @@ func (a *Agent) RebuildWithInstruction(instruction string) error {
 	return nil
 }
 
+// RebuildWithModel recreates the agent's internal runner with a new LLM
+// while preserving all other configuration (tools, callbacks, instruction, sessions).
+func (a *Agent) RebuildWithModel(newModel model.LLM) error {
+	if newModel == nil {
+		return fmt.Errorf("model must not be nil")
+	}
+	cfg := a.config
+	cfg.Model = newModel
+
+	instruction := cfg.Instruction
+	if instruction == "" {
+		instruction = SystemInstruction
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		instruction += fmt.Sprintf("\nCurrent working directory: %s\n", cwd)
+	}
+
+	llmAgent, err := llmagent.New(llmagent.Config{
+		Name:                "pi",
+		Description:         "A coding agent that helps with software engineering tasks.",
+		Model:               newModel,
+		Instruction:         instruction,
+		Tools:               cfg.Tools,
+		Toolsets:            cfg.Toolsets,
+		BeforeToolCallbacks: cfg.BeforeToolCallbacks,
+		AfterToolCallbacks:  cfg.AfterToolCallbacks,
+	})
+	if err != nil {
+		return fmt.Errorf("rebuilding LLM agent with new model: %w", err)
+	}
+
+	r, err := runner.New(runner.Config{
+		AppName:        AppName,
+		Agent:          llmAgent,
+		SessionService: a.sessionService,
+	})
+	if err != nil {
+		return fmt.Errorf("rebuilding runner with new model: %w", err)
+	}
+
+	a.runner = r
+	a.config = cfg
+	return nil
+}
+
 // CreateSession creates a new session and returns its ID.
 func (a *Agent) CreateSession(ctx context.Context) (string, error) {
 	resp, err := a.sessionService.Create(ctx, &session.CreateRequest{

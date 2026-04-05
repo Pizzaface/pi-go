@@ -250,35 +250,62 @@ func TestFormatContextUsage_NoTracker(t *testing.T) {
 }
 
 type mockTokenTracker struct {
-	limit       int64
-	remaining   int64
-	percentUsed float64
-	totalUsed   int64
+	limit        int64
+	remaining    int64
+	percentUsed  float64
+	totalUsed    int64
+	contextUsed  int64
+	contextLimit int64
 }
 
 func (m *mockTokenTracker) Limit() int64         { return m.limit }
 func (m *mockTokenTracker) Remaining() int64     { return m.remaining }
 func (m *mockTokenTracker) PercentUsed() float64 { return m.percentUsed }
 func (m *mockTokenTracker) TotalUsed() int64     { return m.totalUsed }
+func (m *mockTokenTracker) ContextUsed() int64   { return m.contextUsed }
+func (m *mockTokenTracker) ContextLimit() int64  { return m.contextLimit }
 
 func TestFormatContextUsage_WithTracker(t *testing.T) {
 	m := newTestModel(t)
 	m.cfg.TokenTracker = &mockTokenTracker{
-		limit:       100000,
-		remaining:   50000,
-		percentUsed: 50.0,
-		totalUsed:   50000,
+		limit:        100000,
+		remaining:    50000,
+		percentUsed:  50.0,
+		totalUsed:    50000,
+		contextUsed:  25000,
+		contextLimit: 200000,
 	}
 	m.chatModel.Messages = append(m.chatModel.Messages,
 		message{role: "user", content: "hello"},
 		message{role: "assistant", content: "world"},
 	)
 	out := m.formatContextUsage()
-	if !contains(out, "50%") {
-		t.Error("expected percentage in output")
+	// Context should show provider-reported context window usage (25k/200k = 12.5%).
+	if !contains(out, "25.0k") {
+		t.Error("expected provider-reported context size in output")
+	}
+	if !contains(out, "200.0k") {
+		t.Error("expected context limit in output")
 	}
 	if !contains(out, "Consumed today") {
 		t.Error("expected daily usage section")
+	}
+}
+
+func TestFormatContextUsage_WithProviderContextNoLimit(t *testing.T) {
+	m := newTestModel(t)
+	m.cfg.TokenTracker = &mockTokenTracker{
+		totalUsed:   10000,
+		contextUsed: 5000,
+	}
+	m.chatModel.Messages = append(m.chatModel.Messages,
+		message{role: "user", content: "hello"},
+		message{role: "assistant", content: "world"},
+	)
+	out := m.formatContextUsage()
+	// Should show actual context without "~" prefix (not estimated).
+	if !contains(out, "ctx 5.0k tokens") {
+		t.Error("expected provider-reported context size without limit")
 	}
 }
 
@@ -576,7 +603,7 @@ func TestHandleKey_Esc_DismissCompletion(t *testing.T) {
 func TestHandleKey_Esc_DismissCycling(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.CyclingIdx = 3
-	m.inputModel.Text = "/help"
+	m.inputModel.Text = "/" // ghost mode: text stays as "/" during cycling
 	m.handleKey(makeKey(tea.KeyEsc))
 	if m.inputModel.CyclingIdx != -1 {
 		t.Error("expected cycling dismissed")
@@ -717,11 +744,17 @@ func TestHandleKey_Tab_CycleCommands(t *testing.T) {
 	if m.inputModel.CyclingIdx < 0 {
 		t.Error("expected cycling to start")
 	}
-	first := m.inputModel.Text
+	if m.inputModel.Text != "/" {
+		t.Errorf("expected text to stay '/' (ghost mode), got %q", m.inputModel.Text)
+	}
+	firstIdx := m.inputModel.CyclingIdx
 	// Second Tab cycles to next
 	m.handleKey(makeKey(tea.KeyTab))
-	if m.inputModel.Text == first && len(m.inputModel.AllCommandNames()) > 1 {
+	if m.inputModel.CyclingIdx == firstIdx && len(m.inputModel.AllCommandNames()) > 1 {
 		t.Error("expected cycling to advance")
+	}
+	if m.inputModel.Text != "/" {
+		t.Errorf("expected text to stay '/' during cycling, got %q", m.inputModel.Text)
 	}
 }
 
@@ -744,14 +777,17 @@ func TestHandleKey_Enter_SubmitSlashCommand(t *testing.T) {
 
 func TestHandleKey_Enter_CyclingDismiss(t *testing.T) {
 	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
 	m.inputModel.CyclingIdx = 2
-	m.inputModel.Text = "/model"
+	allCmds := m.inputModel.AllCommandNames()
 	m.handleKey(makeKey(tea.KeyEnter))
 	if m.inputModel.CyclingIdx != -1 {
 		t.Error("expected cycling dismissed on Enter")
 	}
-	if m.inputModel.Text != "/model" {
-		t.Error("expected input preserved")
+	// Enter during cycling should apply the selected command.
+	if len(allCmds) > 2 && m.inputModel.Text != allCmds[2] {
+		t.Errorf("expected text to be %q after Enter, got %q", allCmds[2], m.inputModel.Text)
 	}
 }
 
@@ -875,10 +911,12 @@ func TestRenderStatusBar_ModeIndicatorPlan(t *testing.T) {
 func TestRenderStatusBar_ContextBar(t *testing.T) {
 	m := newTestModel(t)
 	m.cfg.TokenTracker = &mockTokenTracker{
-		limit:       100000,
-		remaining:   60000,
-		percentUsed: 40.0,
-		totalUsed:   40000,
+		limit:        100000,
+		remaining:    60000,
+		percentUsed:  40.0,
+		totalUsed:    40000,
+		contextUsed:  40000,
+		contextLimit: 100000,
 	}
 	out := m.statusModel.Render(m.statusRenderInput())
 	// Should show the visual bar with percentage.
@@ -890,10 +928,12 @@ func TestRenderStatusBar_ContextBar(t *testing.T) {
 func TestRenderStatusBar_ContextBarHighUsage(t *testing.T) {
 	m := newTestModel(t)
 	m.cfg.TokenTracker = &mockTokenTracker{
-		limit:       100000,
-		remaining:   10000,
-		percentUsed: 90.0,
-		totalUsed:   90000,
+		limit:        100000,
+		remaining:    10000,
+		percentUsed:  90.0,
+		totalUsed:    90000,
+		contextUsed:  90000,
+		contextLimit: 100000,
 	}
 	out := m.statusModel.Render(m.statusRenderInput())
 	// Should show 90% in bar.
@@ -1121,8 +1161,8 @@ func TestRenderInput_CompletionMenu(t *testing.T) {
 
 func TestRenderInput_CyclingMenu(t *testing.T) {
 	m := newTestModel(t)
-	m.inputModel.Text = "/help"
-	m.inputModel.CursorPos = 5
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
 	m.inputModel.CyclingIdx = 0
 	out := m.inputModel.View(m.running)
 	if out == "" {
@@ -1310,10 +1350,13 @@ func TestHandleKey_ShiftTab_CycleBackwards(t *testing.T) {
 	m.inputModel.CursorPos = 1
 	m.inputModel.CyclingIdx = 1
 	m.handleKey(makeKey(tea.KeyTab))
-	second := m.inputModel.Text
+	secondIdx := m.inputModel.CyclingIdx
 	m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}))
-	if m.inputModel.Text == second && len(m.inputModel.AllCommandNames()) > 1 {
+	if m.inputModel.CyclingIdx == secondIdx && len(m.inputModel.AllCommandNames()) > 1 {
 		t.Error("expected shift-tab to cycle backwards")
+	}
+	if m.inputModel.Text != "/" {
+		t.Errorf("expected text to stay '/' during cycling, got %q", m.inputModel.Text)
 	}
 }
 

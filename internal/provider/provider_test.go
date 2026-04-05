@@ -580,6 +580,130 @@ func TestCheckOllamaHTTPSPortInference(t *testing.T) {
 	}
 }
 
+func TestListModelsUnsupportedProvider(t *testing.T) {
+	_, err := ListModels(context.Background(), Info{Provider: "unsupported", Family: "nope"}, "key", "", nil)
+	if err == nil {
+		t.Fatal("expected error for unsupported provider family")
+	}
+	if !strings.Contains(err.Error(), "unsupported provider family") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestListModelsOpenAIMissingKey(t *testing.T) {
+	_, err := ListModels(context.Background(), Info{Provider: "openai", Family: "openai"}, "", "", nil)
+	if err == nil {
+		t.Fatal("expected error when OpenAI API key is missing")
+	}
+}
+
+func TestListModelsAnthropicMissingKey(t *testing.T) {
+	_, err := ListModels(context.Background(), Info{Provider: "anthropic", Family: "anthropic"}, "", "", nil)
+	if err == nil {
+		t.Fatal("expected error when Anthropic API key is missing")
+	}
+}
+
+func TestListModelsOllamaFallsBack(t *testing.T) {
+	// Ollama with bad URL should return connection error, not "unsupported" error.
+	_, err := ListModels(context.Background(), Info{Provider: "ollama", Family: "ollama", Ollama: true}, "", "http://127.0.0.1:1", nil)
+	if err == nil {
+		t.Fatal("expected error for unreachable Ollama")
+	}
+	// Should be a listing/connection error, not an unsupported-family error.
+	if strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("expected listing error, got: %v", err)
+	}
+}
+
+func TestListModelsNilOpts(t *testing.T) {
+	// Ensure nil opts doesn't panic.
+	_, err := ListModels(context.Background(), Info{Provider: "openai", Family: "openai"}, "", "", nil)
+	if err == nil {
+		t.Fatal("expected error (no API key), but should not panic")
+	}
+}
+
+func TestListModelsEmptyFamily(t *testing.T) {
+	// When Family is empty, Provider is used as fallback.
+	_, err := ListModels(context.Background(), Info{Provider: "openai"}, "", "", nil)
+	if err == nil {
+		t.Fatal("expected error (no API key)")
+	}
+	// Should route to openai, not "unsupported".
+	if strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("expected openai error, got: %v", err)
+	}
+}
+
+func TestModelEntryFields(t *testing.T) {
+	e := ModelEntry{
+		ID:              "claude-sonnet-4-20250514",
+		DisplayName:     "Claude Sonnet 4",
+		Provider:        "anthropic",
+		MaxInputTokens:  200000,
+		MaxOutputTokens: 8192,
+	}
+	if e.ID == "" || e.DisplayName == "" || e.Provider == "" {
+		t.Error("ModelEntry fields should not be empty")
+	}
+	if !e.Created.IsZero() {
+		t.Error("expected zero time for unset Created")
+	}
+	if e.MaxInputTokens != 200000 {
+		t.Errorf("MaxInputTokens = %d, want 200000", e.MaxInputTokens)
+	}
+	if e.MaxOutputTokens != 8192 {
+		t.Errorf("MaxOutputTokens = %d, want 8192", e.MaxOutputTokens)
+	}
+
+	// Zero values for unknown limits (e.g. OpenAI).
+	e2 := ModelEntry{ID: "gpt-4o", Provider: "openai"}
+	if e2.MaxInputTokens != 0 || e2.MaxOutputTokens != 0 {
+		t.Error("expected zero token limits for OpenAI model")
+	}
+}
+
+func TestRegistryListModelsUnknownProvider(t *testing.T) {
+	reg := NewRegistry()
+	reg.AddBuiltins()
+	_, err := reg.ListModels(context.Background(), "nonexistent", nil)
+	if err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+	if !strings.Contains(err.Error(), "unknown provider") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestKnownContextWindow(t *testing.T) {
+	tests := []struct {
+		model string
+		want  int64
+	}{
+		{"claude-sonnet-4-20250514", 200_000},
+		{"claude-opus-4-20250514", 200_000},
+		{"claude-3-5-sonnet-20250620", 200_000},
+		{"gpt-4o", 128_000},
+		{"gpt-4o-mini", 128_000},
+		{"gpt-4-turbo", 128_000},
+		{"o3-mini", 200_000},
+		{"gemini-2.5-pro", 1_048_576},
+		{"gemini-2.0-flash", 1_048_576},
+		{"gemini-1.5-pro-latest", 2_097_152},
+		{"llama-3", 0},       // Ollama — unknown
+		{"unknown-model", 0}, // Not in table
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			got := KnownContextWindow(tt.model)
+			if got != tt.want {
+				t.Errorf("KnownContextWindow(%q) = %d, want %d", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewGeminiInsecureTLSOnly(t *testing.T) {
 	// Exercise the InsecureSkipTLS path in NewGemini without extra headers.
 	t.Setenv("GOOGLE_API_KEY", "test-google-key")
