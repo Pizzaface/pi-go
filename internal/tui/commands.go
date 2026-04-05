@@ -9,13 +9,14 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"google.golang.org/adk/session"
+	"google.golang.org/genai"
+
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
-	"google.golang.org/adk/session"
-	"google.golang.org/genai"
 )
 
 func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {

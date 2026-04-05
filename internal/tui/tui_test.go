@@ -905,7 +905,7 @@ func TestRenderStatusBar_WithProvider(t *testing.T) {
 		width:       120,
 		statusModel: StatusModel{Width: 120},
 	}
-	bar := m.statusModel.Render(m.statusRenderInput())
+	bar := m.statusModel.Render(m.statusRenderInput(false))
 	if !strings.Contains(bar, "ollama") {
 		t.Errorf("status bar should contain provider, got %q", bar)
 	}
@@ -920,7 +920,7 @@ func TestRenderStatusBar_WithoutProvider(t *testing.T) {
 		width:       120,
 		statusModel: StatusModel{Width: 120},
 	}
-	bar := m.statusModel.Render(m.statusRenderInput())
+	bar := m.statusModel.Render(m.statusRenderInput(false))
 	if !strings.Contains(bar, "gpt-4o") {
 		t.Errorf("status bar should contain model, got %q", bar)
 	}
@@ -937,7 +937,7 @@ func TestRenderStatusBar_ContextEstimate(t *testing.T) {
 			},
 		},
 	}
-	bar := m.statusModel.Render(m.statusRenderInput())
+	bar := m.statusModel.Render(m.statusRenderInput(false))
 	if !strings.Contains(bar, "ctx:") {
 		t.Errorf("status bar should show context estimate, got %q", bar)
 	}

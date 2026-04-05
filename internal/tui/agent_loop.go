@@ -233,8 +233,10 @@ func (m *model) handleAgentText(msg agentTextMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.chatModel.Thinking != "" {
 		m.chatModel.Thinking = ""
-		if len(m.chatModel.Messages) > 0 && m.chatModel.Messages[len(m.chatModel.Messages)-1].role == "thinking" {
-			m.chatModel.Messages[len(m.chatModel.Messages)-1] = message{role: "assistant", content: ""}
+		// Remove the trailing thinking message (don't replace it with an empty
+		// assistant — that would create a duplicate since one already exists).
+		if n := len(m.chatModel.Messages); n > 0 && m.chatModel.Messages[n-1].role == "thinking" {
+			m.chatModel.Messages = m.chatModel.Messages[:n-1]
 		}
 	}
 
@@ -244,11 +246,24 @@ func (m *model) handleAgentText(msg agentTextMsg) (tea.Model, tea.Cmd) {
 		m.chatModel.Streaming = msg.text
 	}
 
-	for i := len(m.chatModel.Messages) - 1; i >= 0; i-- {
-		if m.chatModel.Messages[i].role == "assistant" {
-			m.chatModel.Messages[i].content = m.chatModel.Streaming
-			break
+	// Ensure the assistant message is at the tail of the list so the
+	// response text always renders below tools and thinking messages.
+	msgs := m.chatModel.Messages
+	lastIdx := len(msgs) - 1
+	if lastIdx >= 0 && msgs[lastIdx].role == "assistant" {
+		// Already at the tail — update in place.
+		msgs[lastIdx].content = m.chatModel.Streaming
+	} else {
+		// Buried behind tool/thinking messages — relocate to the tail.
+		for i := lastIdx; i >= 0; i-- {
+			if msgs[i].role == "assistant" {
+				m.chatModel.Messages = append(msgs[:i:i], msgs[i+1:]...)
+				break
+			}
 		}
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role: "assistant", content: m.chatModel.Streaming,
+		})
 	}
 	m.chatModel.Scroll = 0
 	if len(m.chatModel.TraceLog) > 0 && m.chatModel.TraceLog[len(m.chatModel.TraceLog)-1].kind == "llm" {
@@ -283,7 +298,17 @@ func (m *model) handleAgentToolCall(msg agentToolCallMsg) (tea.Model, tea.Cmd) {
 	newMsg := message{
 		role: "tool", tool: msg.name, toolIn: toolIn,
 	}
-	m.chatModel.Messages = append(m.chatModel.Messages, newMsg)
+
+	// Insert the tool message before any trailing assistant placeholder so
+	// that tools render above the final response text, not below it.
+	msgs := m.chatModel.Messages
+	lastIdx := len(msgs) - 1
+	if lastIdx >= 0 && msgs[lastIdx].role == "assistant" {
+		tail := msgs[lastIdx]
+		m.chatModel.Messages = append(msgs[:lastIdx:lastIdx], newMsg, tail)
+	} else {
+		m.chatModel.Messages = append(m.chatModel.Messages, newMsg)
+	}
 	return m, waitForAgent(m.agentCh)
 }
 

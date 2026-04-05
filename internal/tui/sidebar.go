@@ -46,6 +46,7 @@ func RenderSidebar(in SidebarRenderInput) string {
 	_ = bright
 
 	innerW := w - 3 // padding + border
+	divider := lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render("  " + strings.Repeat("─", innerW-2))
 
 	var lines []string
 
@@ -53,11 +54,11 @@ func RenderSidebar(in SidebarRenderInput) string {
 	if in.Eyes != "" {
 		eyeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 		moodLine := eyeStyle.Render(fmt.Sprintf("  %s", in.Eyes))
-		lines = append(lines, "", moodLine, "")
+		lines = append(lines, "", moodLine)
 	}
 
 	// --- Context section ---
-	// Prefer actual provider-reported context usage when available.
+	lines = append(lines, divider)
 	lines = append(lines, heading.Render("  Context"))
 	if tt := in.TokenTracker; tt != nil && tt.ContextUsed() > 0 {
 		ctxUsed := tt.ContextUsed()
@@ -84,9 +85,9 @@ func RenderSidebar(in SidebarRenderInput) string {
 			lines = append(lines, dim.Render(fmt.Sprintf("  ~%d tokens", ctxTokens)))
 		}
 	}
-	lines = append(lines, "")
 
 	// --- Model section ---
+	lines = append(lines, divider)
 	lines = append(lines, heading.Render("  Model"))
 	if in.ProviderName != "" {
 		lines = append(lines, dim.Render("  "+in.ProviderName))
@@ -98,10 +99,10 @@ func RenderSidebar(in SidebarRenderInput) string {
 		}
 		lines = append(lines, dim.Render("  "+name))
 	}
-	lines = append(lines, "")
 
 	// --- Git section ---
 	if in.GitBranch != "" {
+		lines = append(lines, divider)
 		lines = append(lines, heading.Render("  Git"))
 		lines = append(lines, dim.Render(fmt.Sprintf("  ⎇ %s", in.GitBranch)))
 		if in.DiffAdded > 0 || in.DiffRemoved > 0 {
@@ -112,10 +113,10 @@ func RenderSidebar(in SidebarRenderInput) string {
 				dim.Render(" ")+
 				delStyle.Render(fmt.Sprintf("-%d", in.DiffRemoved)))
 		}
-		lines = append(lines, "")
 	}
 
 	// --- Mode section ---
+	lines = append(lines, divider)
 	lines = append(lines, heading.Render("  Mode"))
 	mode := in.Mode
 	if mode == "" {
@@ -131,15 +132,16 @@ func RenderSidebar(in SidebarRenderInput) string {
 	// Status
 	if in.Running {
 		if in.ActiveTool != "" {
-			lines = append(lines, dim.Render("  ⚡ "+in.ActiveTool))
+			toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35"))
+			lines = append(lines, toolStyle.Render("  ⚡ "+in.ActiveTool))
 		} else {
 			lines = append(lines, dim.Render("  thinking..."))
 		}
 	}
-	lines = append(lines, "")
 
 	// --- Loading section ---
 	if in.LoadingItems != nil {
+		lines = append(lines, divider)
 		lines = append(lines, heading.Render("  Loading"))
 		for _, name := range sortedKeys(in.LoadingItems) {
 			if in.LoadingItems[name] {
@@ -150,7 +152,6 @@ func RenderSidebar(in SidebarRenderInput) string {
 				lines = append(lines, loadStyle.Render("  ◌ "+name+"..."))
 			}
 		}
-		lines = append(lines, "")
 	}
 
 	// Join content and pad to fill height.

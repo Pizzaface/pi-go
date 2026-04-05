@@ -212,10 +212,10 @@ func TestHandleInitEvent_FinalResult(t *testing.T) {
 		event: InitEvent{
 			Done: true,
 			Result: &InitResult{
-				RestartCh: restartCh,
-				GitBranch:    "main",
-				DiffAdded:    10,
-				DiffRemoved:  5,
+				RestartCh:   restartCh,
+				GitBranch:   "main",
+				DiffAdded:   10,
+				DiffRemoved: 5,
 			},
 		},
 		ch: m.initCh,

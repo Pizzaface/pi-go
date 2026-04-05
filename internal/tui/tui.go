@@ -612,14 +612,19 @@ func (m *model) View() tea.View {
 
 	// Render components.
 	messagesView := m.chatModel.RenderMessages(m.running)
-	statusBar := m.statusModel.Render(m.statusRenderInput())
+	statusBar := m.statusModel.Render(m.statusRenderInput(showSidebar))
 	inputArea := m.inputModel.View(m.running || m.loading)
 
 	// Calculate available height for messages.
 	statusLines := strings.Count(statusBar, "\n") + 1
 	inputLines := strings.Count(inputArea, "\n") + 1
 
-	availableHeight := m.height - statusLines - inputLines - 1
+	// Account for: 1 separator line + 1 newline between sections.
+	availableHeight := m.height - statusLines - inputLines - 2
+	// Reserve a line for the scroll indicator when scrolled up.
+	if m.chatModel.Scroll > 0 {
+		availableHeight--
+	}
 	// Reserve space for the branch popup overlay when open.
 	if m.branchPopup != nil {
 		// popup lines: 1 header + visible branches + 2 border + 1 footer + 2 newlines
@@ -678,6 +683,19 @@ func (m *model) View() tea.View {
 		b.WriteString(pickerView)
 		b.WriteString("\n")
 	}
+
+	// Scroll indicator — show when the user has scrolled up.
+	if m.chatModel.Scroll > 0 {
+		scrollDim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		scrollIndicator := scrollDim.Render(fmt.Sprintf(" ↑ scrolled %d lines (PgDn to return)", m.chatModel.Scroll))
+		b.WriteString(scrollIndicator)
+		b.WriteString("\n")
+	}
+
+	// Thin separator line between chat area and status bar.
+	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	b.WriteString(sepStyle.Render(strings.Repeat("─", mainWidth)))
+	b.WriteString("\n")
 
 	b.WriteString(statusBar)
 	b.WriteString("\n")
@@ -855,7 +873,7 @@ func countUntrackedLines(cwd string) int {
 }
 
 // statusRenderInput builds the StatusRenderInput from the current model state.
-func (m *model) statusRenderInput() StatusRenderInput {
+func (m *model) statusRenderInput(showSidebar bool) StatusRenderInput {
 	mode := m.mode
 	if mode == "" {
 		mode = "chat"
@@ -871,6 +889,7 @@ func (m *model) statusRenderInput() StatusRenderInput {
 		DiffAdded:    m.diffAdded,
 		DiffRemoved:  m.diffRemoved,
 		LoadingItems: m.loadingItems,
+		ShowSidebar:  showSidebar,
 	}
 }
 

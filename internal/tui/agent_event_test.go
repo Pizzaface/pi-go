@@ -674,6 +674,127 @@ func TestAgentToolCallMsg_SetsActiveTool(t *testing.T) {
 	}
 }
 
+// TestAgentToolCallMsg_ToolsBeforeAssistant verifies that tool messages are
+// inserted before the trailing assistant placeholder so they render above the
+// final response text.
+func TestAgentToolCallMsg_ToolsBeforeAssistant(t *testing.T) {
+	// Simulate the state after submitPrompt: [user, assistant("")]
+	m := &model{
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "explain"},
+			{role: "assistant", content: ""},
+		}},
+		running: true,
+		agentCh: make(chan agentMsg, 64),
+	}
+
+	// First tool call.
+	newM, _ := m.Update(agentToolCallMsg{name: "read", args: map[string]any{"file_path": "a.go"}})
+	mm := newM.(*model)
+
+	// Second tool call.
+	newM2, _ := mm.Update(agentToolCallMsg{name: "bash", args: map[string]any{"command": "ls"}})
+	mm2 := newM2.(*model)
+
+	msgs := mm2.chatModel.Messages
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 messages, got %d: %+v", len(msgs), msgs)
+	}
+
+	// Expected order: user, tool(read), tool(bash), assistant
+	if msgs[0].role != "user" {
+		t.Errorf("msgs[0] should be user, got %q", msgs[0].role)
+	}
+	if msgs[1].role != "tool" || msgs[1].tool != "read" {
+		t.Errorf("msgs[1] should be tool/read, got %q/%q", msgs[1].role, msgs[1].tool)
+	}
+	if msgs[2].role != "tool" || msgs[2].tool != "bash" {
+		t.Errorf("msgs[2] should be tool/bash, got %q/%q", msgs[2].role, msgs[2].tool)
+	}
+	if msgs[3].role != "assistant" {
+		t.Errorf("msgs[3] should be assistant, got %q", msgs[3].role)
+	}
+}
+
+// TestAgentText_RelocatesAssistantAfterTools verifies that when text arrives
+// after tool messages have been appended, the assistant message is moved to
+// the tail so it renders below tools.
+func TestAgentText_RelocatesAssistantAfterTools(t *testing.T) {
+	m := &model{
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "explain"},
+			{role: "assistant", content: ""}, // placeholder
+			{role: "tool", tool: "read"},     // tool appended after (e.g. via thinking path)
+		}},
+		running: true,
+		agentCh: make(chan agentMsg, 64),
+	}
+
+	newM, _ := m.Update(agentTextMsg{text: "Here's the answer", partial: false})
+	mm := newM.(*model)
+
+	msgs := mm.chatModel.Messages
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages (no duplicates), got %d", len(msgs))
+	}
+	if msgs[1].role != "tool" {
+		t.Errorf("msgs[1] should be tool, got %q", msgs[1].role)
+	}
+	if msgs[2].role != "assistant" || msgs[2].content != "Here's the answer" {
+		t.Errorf("msgs[2] should be assistant with text, got role=%q content=%q", msgs[2].role, msgs[2].content)
+	}
+}
+
+// TestAgentText_ThinkingThenToolThenText verifies the full flow:
+// thinking → tool call → text response — no duplicates, correct order.
+func TestAgentText_ThinkingThenToolThenText(t *testing.T) {
+	// Start: [user, assistant("")]
+	m := &model{
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "hi"},
+			{role: "assistant", content: ""},
+		}},
+		running: true,
+		agentCh: make(chan agentMsg, 64),
+	}
+
+	// 1. Thinking arrives.
+	newM, _ := m.Update(agentThinkingMsg{text: "let me think"})
+	mm := newM.(*model)
+	// Should be: [user, assistant(""), thinking("let me think")]
+
+	// 2. Tool call arrives (last is thinking, not assistant → appends).
+	newM, _ = mm.Update(agentToolCallMsg{name: "read", args: map[string]any{"file_path": "x.go"}})
+	mm = newM.(*model)
+	// Should be: [user, assistant(""), thinking("let me think"), tool(read)]
+
+	// 3. Text arrives — should relocate assistant to tail, remove thinking.
+	newM, _ = mm.Update(agentTextMsg{text: "Done!", partial: false})
+	mm = newM.(*model)
+
+	msgs := mm.chatModel.Messages
+	// Expected: [user, tool(read), assistant("Done!")]
+	// Thinking was at end → removed. Assistant relocated to tail.
+	// But thinking is NOT at end (tool is), so thinking stays in history.
+	// Expected: [user, thinking("let me think"), tool(read), assistant("Done!")]
+
+	lastMsg := msgs[len(msgs)-1]
+	if lastMsg.role != "assistant" || lastMsg.content != "Done!" {
+		t.Errorf("last message should be assistant/Done!, got %q/%q", lastMsg.role, lastMsg.content)
+	}
+
+	// Count assistant messages — should be exactly 1 (no duplicates).
+	assistantCount := 0
+	for _, msg := range msgs {
+		if msg.role == "assistant" {
+			assistantCount++
+		}
+	}
+	if assistantCount != 1 {
+		t.Errorf("expected exactly 1 assistant message, got %d; messages: %+v", assistantCount, msgs)
+	}
+}
+
 func TestAgentToolResultMsg_ClearsActiveTool(t *testing.T) {
 	m := &model{
 		chatModel: ChatModel{Messages: []message{{role: "tool", tool: "read", content: ""}}},

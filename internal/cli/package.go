@@ -6,8 +6,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/spf13/cobra"
+
+	"github.com/dimetron/pi-go/internal/extension"
 )
 
 func newPackageCmd() *cobra.Command {

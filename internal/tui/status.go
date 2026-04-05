@@ -36,6 +36,7 @@ type StatusRenderInput struct {
 	DiffAdded    int
 	DiffRemoved  int
 	LoadingItems map[string]bool // item -> done; nil means not loading
+	ShowSidebar  bool            // true when the sidebar is visible (skip redundant info)
 }
 
 // contextBarWidth is the number of characters used for the visual context bar.
@@ -86,7 +87,7 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 	dim := lipgloss.NewStyle().Background(bg).Foreground(dimFg)
 	bar := lipgloss.NewStyle().Background(bg).Width(s.Width)
 
-	sep := dim.Render("  |  ")
+	sep := dim.Render(" │ ")
 
 	var parts []string
 
@@ -100,13 +101,6 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		parts = append(parts, modeStyle.Render(fmt.Sprintf(" [%s]", mode)))
 	} else {
 		parts = append(parts, dim.Render(fmt.Sprintf(" [%s]", mode)))
-	}
-
-	// Provider | Model.
-	if in.ProviderName != "" {
-		parts = append(parts, bright.Render(fmt.Sprintf("%s | %s", in.ProviderName, in.ModelName)))
-	} else {
-		parts = append(parts, bright.Render(in.ModelName))
 	}
 
 	// Loading progress (replaces normal status content during init).
@@ -123,6 +117,37 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		}
 		parts = append(parts, dim.Render("loading: ")+strings.Join(items, dim.Render(" ")))
 		return bar.Render(strings.Join(parts, sep))
+	}
+
+	// When the sidebar is visible, it already shows model, context, git, and
+	// mode — so the status bar only needs to show live activity status.
+	if in.ShowSidebar {
+		// Active tools or thinking status.
+		if len(s.ActiveTools) > 1 {
+			var toolNames []string
+			for name := range s.ActiveTools {
+				toolNames = append(toolNames, name)
+			}
+			sort.Strings(toolNames)
+			toolStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35"))
+			parts = append(parts, toolStyle.Render(fmt.Sprintf("⚡ %s", strings.Join(toolNames, ", "))))
+		} else if s.ActiveTool != "" {
+			elapsed := time.Since(s.ToolStart).Truncate(time.Millisecond)
+			toolStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35"))
+			parts = append(parts, toolStyle.Render(fmt.Sprintf("⚡ %s", s.ActiveTool))+dim.Render(fmt.Sprintf(" %s", elapsed)))
+		} else if in.Running {
+			parts = append(parts, dim.Render("thinking..."))
+		}
+		return bar.Render(strings.Join(parts, sep))
+	}
+
+	// Full status bar (no sidebar visible).
+
+	// Provider | Model.
+	if in.ProviderName != "" {
+		parts = append(parts, bright.Render(fmt.Sprintf("%s %s", in.ProviderName, in.ModelName)))
+	} else {
+		parts = append(parts, bright.Render(in.ModelName))
 	}
 
 	// Context % bar — prefer actual provider-reported context usage.
@@ -174,7 +199,7 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 
 	// Git branch.
 	if s.GitBranch != "" {
-		parts = append(parts, bright.Render(fmt.Sprintf("\u2387 %s", s.GitBranch)))
+		parts = append(parts, bright.Render(fmt.Sprintf("⎇ %s", s.GitBranch)))
 	}
 
 	// Active tools or thinking status.
@@ -188,7 +213,7 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		parts = append(parts, bright.Render(fmt.Sprintf("tools[%d]: %s", len(toolNames), strings.Join(toolNames, ", "))))
 	} else if s.ActiveTool != "" {
 		elapsed := time.Since(s.ToolStart).Truncate(time.Millisecond)
-		parts = append(parts, bright.Render(fmt.Sprintf("tool: %s (%s)", s.ActiveTool, elapsed)))
+		parts = append(parts, bright.Render(fmt.Sprintf("⚡ %s (%s)", s.ActiveTool, elapsed)))
 	} else if in.Running {
 		parts = append(parts, dim.Render("thinking..."))
 	}

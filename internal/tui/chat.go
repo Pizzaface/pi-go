@@ -221,12 +221,14 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	separator := dim.Render(strings.Repeat("─", sepWidth))
 
 	var b strings.Builder
+	prevRole := ""
 	for i, msg := range c.Messages {
 		switch msg.role {
 		case "user":
 			if i > 0 {
-				b.WriteString(separator)
 				b.WriteString("\n")
+				b.WriteString(separator)
+				b.WriteString("\n\n")
 			}
 			label := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("39")).
@@ -237,7 +239,10 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			b.WriteString("\n")
 
 		case "tool":
-			b.WriteString("\n")
+			// Add spacing before the first tool in a sequence, not between tools.
+			if prevRole != "tool" {
+				b.WriteString("\n")
+			}
 			b.WriteString(c.ToolDisplay.RenderToolMessage(msg))
 
 		case "thinking":
@@ -270,6 +275,10 @@ func (c *ChatModel) RenderMessages(running bool) string {
 				content = "..."
 			}
 			if content != "" {
+				// Add extra spacing after a tool sequence before the assistant response.
+				if prevRole == "tool" {
+					b.WriteString("\n")
+				}
 				b.WriteString("\n")
 				if msg.isWarning {
 					warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
@@ -284,6 +293,7 @@ func (c *ChatModel) RenderMessages(running bool) string {
 				b.WriteString("\n")
 			}
 		}
+		prevRole = msg.role
 	}
 
 	return b.String()
