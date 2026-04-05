@@ -483,6 +483,26 @@ func TestView_EmptyMessages(t *testing.T) {
 	}
 }
 
+func TestView_SlashOverlayDoesNotChangeRenderedLineCount(t *testing.T) {
+	m := newTestModel(t)
+	m.chatModel.Messages = append(m.chatModel.Messages,
+		message{role: "assistant", content: strings.Repeat("line\n", 20)},
+	)
+	withoutOverlay := m.View().Content
+
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+	m.openSlashCommandOverlay()
+	withOverlay := m.View().Content
+
+	if strings.Count(withOverlay, "\n") != strings.Count(withoutOverlay, "\n") {
+		t.Fatalf("expected overlay not to change rendered line count: without=%d with=%d", strings.Count(withoutOverlay, "\n"), strings.Count(withOverlay, "\n"))
+	}
+	if !strings.Contains(withOverlay, "Slash Commands") || !strings.Contains(withOverlay, "1/") {
+		t.Fatalf("expected overlay content in view, got %q", withOverlay)
+	}
+}
+
 // testSubmit simulates pressing Enter: InputModel handles the key, then
 // if it returns an InputSubmitMsg, the root model processes it.
 func (m *model) testSubmit() (tea.Model, tea.Cmd) {
@@ -734,27 +754,119 @@ func TestHandleKey_PgUpPgDown(t *testing.T) {
 	}
 }
 
-func TestHandleKey_Tab_CycleCommands(t *testing.T) {
+func TestHandleKey_Tab_OnExactSlashOpensOverlay(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.Text = "/"
 	m.inputModel.CursorPos = 1
 	m.inputModel.CyclingIdx = -1
-	// First Tab starts cycling
+
 	m.handleKey(makeKey(tea.KeyTab))
-	if m.inputModel.CyclingIdx < 0 {
-		t.Error("expected cycling to start")
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+	if m.inputModel.CyclingIdx != -1 {
+		t.Fatalf("expected cycling to remain disabled, got %d", m.inputModel.CyclingIdx)
 	}
 	if m.inputModel.Text != "/" {
-		t.Errorf("expected text to stay '/' (ghost mode), got %q", m.inputModel.Text)
+		t.Errorf("expected text to stay '/', got %q", m.inputModel.Text)
 	}
-	firstIdx := m.inputModel.CyclingIdx
-	// Second Tab cycles to next
+}
+
+func TestHandleKey_ShiftTab_OnExactSlashOpensOverlay(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+
+	m.handleKey(makeKeyMod(tea.KeyTab, tea.ModShift))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open on shift-tab")
+	}
+}
+
+func TestHandleKey_EnterOnSlashOverlayInsertsCommand(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
 	m.handleKey(makeKey(tea.KeyTab))
-	if m.inputModel.CyclingIdx == firstIdx && len(m.inputModel.AllCommandNames()) > 1 {
-		t.Error("expected cycling to advance")
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+
+	m.handleKey(makeKey(tea.KeyEnter))
+	if m.slashOverlay != nil {
+		t.Fatal("expected slash overlay to close after insert")
+	}
+	if m.inputModel.Text != "/help" {
+		t.Fatalf("expected selected command to be inserted, got %q", m.inputModel.Text)
+	}
+}
+
+func TestHandleKey_TabWhileSlashOverlayOpenDoesNotInsert(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+	m.handleKey(makeKey(tea.KeyTab))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+
+	m.handleKey(makeKey(tea.KeyTab))
+	if m.inputModel.Text != "/" {
+		t.Fatalf("expected tab not to insert while overlay open, got %q", m.inputModel.Text)
+	}
+}
+
+func TestHandleKey_ShiftTabWhileSlashOverlayOpenDoesNotInsert(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+	m.handleKey(makeKey(tea.KeyTab))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+
+	m.handleKey(makeKeyMod(tea.KeyTab, tea.ModShift))
+	if m.inputModel.Text != "/" {
+		t.Fatalf("expected shift-tab not to insert while overlay open, got %q", m.inputModel.Text)
+	}
+}
+
+func TestHandleKey_TypingAfterSlashClosesOverlay(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+	m.handleKey(makeKey(tea.KeyTab))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+
+	m.handleKey(makeTextKey("m"))
+	if m.slashOverlay != nil {
+		t.Fatal("expected slash overlay to close after typing")
+	}
+	if m.inputModel.Text != "/m" {
+		t.Fatalf("expected text /m, got %q", m.inputModel.Text)
+	}
+	if m.inputModel.CompletionMode {
+		t.Fatal("expected normal completion UI to stay closed until next explicit tab")
+	}
+}
+
+func TestHandleKey_EscapeClosesSlashOverlay(t *testing.T) {
+	m := newTestModel(t)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+	m.handleKey(makeKey(tea.KeyTab))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+
+	m.handleKey(makeKey(tea.KeyEsc))
+	if m.slashOverlay != nil {
+		t.Fatal("expected slash overlay to close on escape")
 	}
 	if m.inputModel.Text != "/" {
-		t.Errorf("expected text to stay '/' during cycling, got %q", m.inputModel.Text)
+		t.Fatalf("expected input to remain '/', got %q", m.inputModel.Text)
 	}
 }
 
@@ -1344,19 +1456,17 @@ func TestHistoryDisplay_WithMentions(t *testing.T) {
 
 // --- handleKey: ShiftTab ---
 
-func TestHandleKey_ShiftTab_CycleBackwards(t *testing.T) {
+func TestHandleKey_ShiftTab_ExactSlashOpensOverlay(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.Text = "/"
 	m.inputModel.CursorPos = 1
-	m.inputModel.CyclingIdx = 1
-	m.handleKey(makeKey(tea.KeyTab))
-	secondIdx := m.inputModel.CyclingIdx
+
 	m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}))
-	if m.inputModel.CyclingIdx == secondIdx && len(m.inputModel.AllCommandNames()) > 1 {
-		t.Error("expected shift-tab to cycle backwards")
+	if m.slashOverlay == nil {
+		t.Fatal("expected shift-tab on exact slash to open overlay")
 	}
 	if m.inputModel.Text != "/" {
-		t.Errorf("expected text to stay '/' during cycling, got %q", m.inputModel.Text)
+		t.Errorf("expected text to stay '/' while overlay is open, got %q", m.inputModel.Text)
 	}
 }
 

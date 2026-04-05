@@ -40,7 +40,7 @@ func Complete(input string, skills []extension.Skill, workDir string) *CompleteR
 		return &CompleteResult{}
 	}
 
-	// "/" alone returns no completion candidates (handled by showCommandList)
+	// "/" alone returns no completion candidates (handled by the exact-slash overlay path)
 	if input == "/" {
 		return &CompleteResult{}
 	}

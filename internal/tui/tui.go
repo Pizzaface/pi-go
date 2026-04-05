@@ -79,6 +79,9 @@ type model struct {
 	// Model picker popup state (shown by /model).
 	modelPicker *modelPickerState
 
+	// Slash command overlay state (shown for exact `/` + Tab).
+	slashOverlay *slashCommandOverlayState
+
 	// Quit.
 	quitting bool
 	initErr  error // fatal init error → propagated from Run()
@@ -159,6 +162,24 @@ func listGitBranches(workDir string) []string {
 		return result
 	}
 	return branches
+}
+
+func (m *model) openSlashCommandOverlay() {
+	rows := buildSlashCommandOverlayRows(m.inputModel.slashCommandInventory())
+	if len(rows) == 0 {
+		m.slashOverlay = nil
+		return
+	}
+	state := newSlashCommandOverlayState(rows)
+	state.Height = 8
+	if !state.HasVisibleSelectableRow() {
+		m.slashOverlay = nil
+		return
+	}
+	m.branchPopup = nil
+	m.modelPicker = nil
+	m.inputModel.CyclingIdx = -1
+	m.slashOverlay = &state
 }
 
 // Run starts the interactive TUI.
@@ -516,6 +537,46 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle slash command overlay.
+	if m.slashOverlay != nil {
+		switch {
+		case key.Code == tea.KeyEsc:
+			m.slashOverlay = nil
+			return m, nil
+		case key.Code == tea.KeyEnter:
+			if row, ok := m.slashOverlay.SelectedRow(); ok {
+				m.inputModel.Text = row.Name
+				m.inputModel.CursorPos = len(m.inputModel.Text)
+				m.inputModel.CyclingIdx = -1
+				m.slashOverlay = nil
+			}
+			return m, nil
+		case key.Code == tea.KeyUp:
+			m.slashOverlay.Move(-1)
+			return m, nil
+		case key.Code == tea.KeyDown:
+			m.slashOverlay.Move(1)
+			return m, nil
+		case key.Code == tea.KeyTab && key.Mod == tea.ModShift:
+			return m, nil
+		case key.Code == tea.KeyTab:
+			return m, nil
+		default:
+			cmd := m.inputModel.HandleKey(msg)
+			if m.inputModel.Text != "/" {
+				m.slashOverlay = nil
+			}
+			return m, cmd
+		}
+	}
+
+	if key.Code == tea.KeyTab && m.inputModel.Text == "/" {
+		m.openSlashCommandOverlay()
+		if m.slashOverlay != nil {
+			return m, nil
+		}
+	}
+
 	// Esc / Ctrl+C: dismiss completion, cancel agent, or quit.
 	switch {
 	case key.Code == tea.KeyEsc:
@@ -665,6 +726,22 @@ func (m *model) View() tea.View {
 	// Constrain chat area to main width.
 	chatStyle := lipgloss.NewStyle().Width(mainWidth)
 	visibleMessages = chatStyle.Render(visibleMessages)
+	if m.slashOverlay != nil {
+		maxOverlayHeight := availableHeight - 1
+		if maxOverlayHeight < 1 {
+			m.slashOverlay = nil
+		} else {
+			if m.slashOverlay.Height <= 0 || m.slashOverlay.Height > maxOverlayHeight {
+				m.slashOverlay.Height = minInt(8, maxOverlayHeight)
+			}
+			m.slashOverlay.EnsureSelectionVisible()
+			if !m.slashOverlay.HasVisibleSelectableRow() {
+				m.slashOverlay = nil
+			} else {
+				visibleMessages = overlaySlashCommandBlock(visibleMessages, m.slashOverlay.render(mainWidth))
+			}
+		}
+	}
 
 	var b strings.Builder
 	b.WriteString(visibleMessages)
@@ -783,6 +860,35 @@ func (m *model) eyes() string {
 		return m.face.Eyes()
 	}
 	return MoodIdle.Eyes()
+}
+
+func overlaySlashCommandBlock(base, overlay string) string {
+	if overlay == "" {
+		return base
+	}
+	baseLines := strings.Split(base, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+	if len(overlayLines) > len(baseLines) {
+		overlayLines = overlayLines[len(overlayLines)-len(baseLines):]
+	}
+	start := len(baseLines) - len(overlayLines)
+	if start < 0 {
+		start = 0
+	}
+	for i, line := range overlayLines {
+		idx := start + i
+		if idx >= 0 && idx < len(baseLines) && strings.TrimSpace(line) != "" {
+			baseLines[idx] = line
+		}
+	}
+	return strings.Join(baseLines, "\n")
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (m *model) debugTraceWidth() int {

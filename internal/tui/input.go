@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"sort"
 	"strings"
 	"unicode"
 
@@ -250,7 +249,7 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 				im.ReloadSkills()
 				im.Text = "/"
 				im.CursorPos = 1
-				im.CyclingIdx = 0
+				im.CyclingIdx = -1
 				return nil
 			}
 			im.Text = im.Text[:im.CursorPos] + key.Text + im.Text[im.CursorPos:]
@@ -427,6 +426,11 @@ func (im *InputModel) View(running bool) string {
 func (im *InputModel) InsertText(text string) {
 	im.Text = im.Text[:im.CursorPos] + text + im.Text[im.CursorPos:]
 	im.CursorPos += len(text)
+	im.Completion = ""
+	im.CompletionMode = false
+	im.CompletionResult = nil
+	im.SelectedIndex = 0
+	im.CyclingIdx = -1
 }
 
 // Clear resets the input text and cursor.
@@ -475,31 +479,82 @@ func (im *InputModel) ReloadSkills() {
 	}
 }
 
-// AllCommandNames returns a sorted list of all command names: built-in + skills.
-func (im *InputModel) AllCommandNames() []string {
-	seen := make(map[string]bool)
-	var cmds []string
+type slashCommandInventoryItem struct {
+	Name        string
+	Description string
+}
+
+type slashCommandInventory struct {
+	BuiltIns   []slashCommandInventoryItem
+	Extensions []slashCommandInventoryItem
+	Skills     []slashCommandInventoryItem
+}
+
+func builtInSlashCommandInventory() []slashCommandInventoryItem {
+	items := make([]slashCommandInventoryItem, 0, len(slashCommands))
 	for _, cmd := range slashCommands {
-		if !seen[cmd] {
-			seen[cmd] = true
-			cmds = append(cmds, cmd)
+		items = append(items, slashCommandInventoryItem{
+			Name:        cmd,
+			Description: slashCommandDesc(cmd),
+		})
+	}
+	return items
+}
+
+func extensionSlashCommandInventory(commands []extension.SlashCommand, seen map[string]bool) []slashCommandInventoryItem {
+	items := make([]slashCommandInventoryItem, 0, len(commands))
+	for _, cmd := range commands {
+		name := "/" + strings.TrimPrefix(strings.TrimSpace(cmd.Name), "/")
+		if name == "/" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, slashCommandInventoryItem{
+			Name:        name,
+			Description: strings.TrimSpace(cmd.Description),
+		})
+	}
+	return items
+}
+
+func skillSlashCommandInventory(skills []extension.Skill, seen map[string]bool) []slashCommandInventoryItem {
+	items := make([]slashCommandInventoryItem, 0, len(skills))
+	for _, skill := range skills {
+		name := "/" + strings.TrimPrefix(strings.TrimSpace(skill.Name), "/")
+		if name == "/" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, slashCommandInventoryItem{
+			Name:        name,
+			Description: strings.TrimSpace(skill.Description),
+		})
+	}
+	return items
+}
+
+func (im *InputModel) slashCommandInventory() slashCommandInventory {
+	inventory := slashCommandInventory{
+		BuiltIns: builtInSlashCommandInventory(),
+	}
+	seen := make(map[string]bool, len(inventory.BuiltIns))
+	for _, cmd := range inventory.BuiltIns {
+		seen[cmd.Name] = true
+	}
+	inventory.Extensions = extensionSlashCommandInventory(im.ExtensionCommands, seen)
+	inventory.Skills = skillSlashCommandInventory(im.Skills, seen)
+	return inventory
+}
+
+// AllCommandNames returns all command names in overlay order: built-in, extension, then skill.
+func (im *InputModel) AllCommandNames() []string {
+	inventory := im.slashCommandInventory()
+	cmds := make([]string, 0, len(inventory.BuiltIns)+len(inventory.Extensions)+len(inventory.Skills))
+	for _, section := range [][]slashCommandInventoryItem{inventory.BuiltIns, inventory.Extensions, inventory.Skills} {
+		for _, cmd := range section {
+			cmds = append(cmds, cmd.Name)
 		}
 	}
-	for _, skill := range im.Skills {
-		name := "/" + skill.Name
-		if !seen[name] {
-			seen[name] = true
-			cmds = append(cmds, name)
-		}
-	}
-	for _, cmd := range im.ExtensionCommands {
-		name := "/" + strings.TrimPrefix(cmd.Name, "/")
-		if !seen[name] {
-			seen[name] = true
-			cmds = append(cmds, name)
-		}
-	}
-	sort.Strings(cmds)
 	return cmds
 }
 
