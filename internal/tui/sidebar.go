@@ -15,7 +15,7 @@ type SidebarRenderInput struct {
 	Width        int
 	Height       int
 	Eyes         string
-	Mode         string
+
 	ProviderName string
 	ModelName    string
 	GitBranch    string
@@ -113,20 +113,6 @@ func RenderSidebar(in SidebarRenderInput) string {
 				dim.Render(" ")+
 				delStyle.Render(fmt.Sprintf("-%d", in.DiffRemoved)))
 		}
-	}
-
-	// --- Mode section ---
-	lines = append(lines, divider)
-	lines = append(lines, heading.Render("  Mode"))
-	mode := in.Mode
-	if mode == "" {
-		mode = "chat"
-	}
-	if mode == "plan" {
-		modeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-		lines = append(lines, modeStyle.Render("  [plan]"))
-	} else {
-		lines = append(lines, dim.Render("  ["+mode+"]"))
 	}
 
 	// Status

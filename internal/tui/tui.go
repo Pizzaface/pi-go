@@ -46,7 +46,6 @@ type model struct {
 
 	// Agent state.
 	running bool
-	mode    string        // current UI mode label shown in the status bar
 	agentCh chan agentMsg // channel for receiving agent events
 
 	// Agent face renderer with mood expressions.
@@ -210,6 +209,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	im := NewInputModel(history, cfg.Skills, cfg.SkillDirs, cfg.WorkDir)
 	im.ExtensionCommands = cfg.ExtensionCommands
+	im.ExtensionManager = cfg.ExtensionManager
 
 	m := model{
 		cfg:          cfg,
@@ -814,7 +814,6 @@ func (m *model) View() tea.View {
 			Width:        sidebarWidth,
 			Height:       m.height,
 			Eyes:         m.eyes(),
-			Mode:         m.mode,
 			ProviderName: m.cfg.ProviderName,
 			ModelName:    m.cfg.ModelName,
 			GitBranch:    m.statusModel.GitBranch,
@@ -983,15 +982,10 @@ func countUntrackedLines(cwd string) int {
 
 // statusRenderInput builds the StatusRenderInput from the current model state.
 func (m *model) statusRenderInput(showSidebar bool) StatusRenderInput {
-	mode := m.mode
-	if mode == "" {
-		mode = "chat"
-	}
 	return StatusRenderInput{
 		ProviderName: m.cfg.ProviderName,
 		ModelName:    m.cfg.ModelName,
 		Running:      m.running,
-		Mode:         mode,
 		Eyes:         m.eyes(),
 		Messages:     m.chatModel.Messages,
 		TokenTracker: m.cfg.TokenTracker,
@@ -1117,6 +1111,7 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.TokenTracker = r.TokenTracker
 		m.cfg.WrapLLM = r.WrapLLM
 		m.cfg.CompactMetrics = r.CompactMetrics
+		m.cfg.ExtensionManager = r.ExtensionManager
 		m.cfg.ExtensionCommands = r.ExtensionCommands
 		m.cfg.RestartCh = r.RestartCh
 		m.cfg.Screen = r.Screen
@@ -1130,6 +1125,7 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		// Update input model with loaded skills and extension commands.
 		m.inputModel.Skills = r.Skills
 		m.inputModel.SkillDirs = r.SkillDirs
+		m.inputModel.ExtensionManager = r.ExtensionManager
 		m.inputModel.ExtensionCommands = r.ExtensionCommands
 
 		var cmds []tea.Cmd

@@ -29,7 +29,7 @@ type StatusRenderInput struct {
 	ProviderName string
 	ModelName    string
 	Running      bool
-	Mode         string       // e.g. "chat"
+
 	Eyes         string       // mood eyes e.g. "◕ ◕"
 	Messages     []message    // for context estimate
 	TokenTracker TokenTracker // may be nil
@@ -91,17 +91,6 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 
 	var parts []string
 
-	// Mode indicator.
-	mode := in.Mode
-	if mode == "" {
-		mode = "chat"
-	}
-	if mode == "plan" {
-		modeStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")) // orange/warning
-		parts = append(parts, modeStyle.Render(fmt.Sprintf(" [%s]", mode)))
-	} else {
-		parts = append(parts, dim.Render(fmt.Sprintf(" [%s]", mode)))
-	}
 
 	// Loading progress (replaces normal status content during init).
 	if in.LoadingItems != nil {
@@ -119,8 +108,8 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		return bar.Render(strings.Join(parts, sep))
 	}
 
-	// When the sidebar is visible, it already shows model, context, git, and
-	// mode — so the status bar only needs to show live activity status.
+	// When the sidebar is visible, it already shows model, context, and git
+	// — so the status bar only needs to show live activity status.
 	if in.ShowSidebar {
 		// Active tools or thinking status.
 		if len(s.ActiveTools) > 1 {

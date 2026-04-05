@@ -1018,23 +1018,6 @@ func TestRenderStatusBar_Running(t *testing.T) {
 	}
 }
 
-func TestRenderStatusBar_ModeIndicatorChat(t *testing.T) {
-	m := newTestModel(t)
-	out := m.statusModel.Render(m.statusRenderInput(false))
-	// Default mode is "chat".
-	if !strings.Contains(out, "[chat]") {
-		t.Error("expected [chat] mode indicator in status bar")
-	}
-}
-
-func TestRenderStatusBar_ModeIndicatorPlan(t *testing.T) {
-	m := newTestModel(t)
-	m.mode = "plan"
-	out := m.statusModel.Render(m.statusRenderInput(false))
-	if !strings.Contains(out, "[plan]") {
-		t.Error("expected [plan] mode indicator in status bar")
-	}
-}
 
 func TestRenderStatusBar_ContextBar(t *testing.T) {
 	m := newTestModel(t)
