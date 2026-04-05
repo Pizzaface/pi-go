@@ -11,7 +11,9 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
+
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/provider"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -49,6 +51,9 @@ type model struct {
 
 	// Agent face renderer with mood expressions.
 	face *FaceRenderer
+
+	// Debug trace panel toggle (F12).
+	debugPanel bool
 
 	// Deferred initialization state.
 	loading      bool
@@ -211,17 +216,20 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 func (m *model) Init() tea.Cmd {
+	var cmds []tea.Cmd
 	if m.initCh != nil {
 		// Deferred init: start listening for init events.
 		// Heavy initialization runs in a background goroutine (started by cli).
-		return waitForInitEvent(m.initCh)
+		cmds = append(cmds, waitForInitEvent(m.initCh))
+	} else {
+		// Synchronous init (non-deferred path, used by tests and non-interactive modes).
+		m.refreshDiffStats()
 	}
-
-	// Synchronous init (non-deferred path, used by tests and non-interactive modes).
-	m.refreshDiffStats()
-	var cmds []tea.Cmd
 	if m.cfg.RestartCh != nil {
 		cmds = append(cmds, waitForRestart(m.cfg.RestartCh))
+	}
+	if m.cfg.DebugTracer != nil {
+		cmds = append(cmds, waitForProviderDebug(m.cfg.DebugTracer.Channel()))
 	}
 	return tea.Batch(cmds...)
 }
@@ -234,15 +242,39 @@ func waitForRestart(ch chan struct{}) tea.Cmd {
 	}
 }
 
+type providerDebugMsg struct{ event provider.DebugEvent }
+
+func waitForProviderDebug(ch <-chan provider.DebugEvent) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return providerDebugMsg{event: ev}
+	}
+}
+
+func (m *model) handleProviderDebug(msg providerDebugMsg) (tea.Model, tea.Cmd) {
+	summary, detail := provider.FormatDebugEvent(msg.event)
+	kind := msg.event.Kind
+	m.chatModel.TraceLog = append(m.chatModel.TraceLog, traceEntry{
+		time:    msg.event.Time,
+		kind:    kind,
+		summary: summary,
+		detail:  detail,
+	})
+	return m, waitForProviderDebug(m.cfg.DebugTracer.Channel())
+}
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		mainWidth := m.width
-		if m.width > 80 {
-			mainWidth = m.width - SidebarWidth
-		}
+		mainWidth := m.layoutMainWidth()
 		m.statusModel.Width = mainWidth
 		m.chatModel.UpdateRenderer(mainWidth)
 
@@ -271,6 +303,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case initEventMsg:
 		return m.handleInitEvent(msg)
 
+	case providerDebugMsg:
+		return m.handleProviderDebug(msg)
+
 	case restartMsg:
 		execRestart()
 		return m, tea.Quit
@@ -289,6 +324,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentToolResultMsg:
 		return m.handleAgentToolResult(msg)
+
+	case agentTraceMsg:
+		return m.handleAgentTrace(msg)
 
 	case agentDoneMsg:
 		return m.handleAgentDone(msg)
@@ -326,6 +364,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleMouseClick processes mouse click events.
 func (m *model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	return m, nil
+}
+
+func (m *model) toggleDebugPanel() {
+	m.debugPanel = !m.debugPanel
+	mainWidth := m.layoutMainWidth()
+	m.statusModel.Width = mainWidth
+	m.chatModel.UpdateRenderer(mainWidth)
 }
 
 func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -442,6 +487,7 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, resetCtrlCCount(m)
 
 	case key.Code == tea.KeyF12:
+		m.toggleDebugPanel()
 		return m, nil
 	}
 
@@ -485,7 +531,7 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) View() tea.View {
 	if m.quitting {
-		return tea.NewView("Goodbye!\n")
+		os.Exit(0)
 	}
 
 	if m.width == 0 {
@@ -493,12 +539,14 @@ func (m *model) View() tea.View {
 	}
 
 	// Layout: sidebar on the right, chat+status+input on the left.
-	sidebarWidth := SidebarWidth
-	showSidebar := m.width > 80 // only show sidebar if terminal is wide enough
-	if !showSidebar {
-		sidebarWidth = 0
+	// When the debug panel is active it replaces the sidebar with a wider pane.
+	showSidebar := m.width > 80 && !m.debugPanel
+	sidebarWidth := 0
+	if showSidebar {
+		sidebarWidth = SidebarWidth
 	}
-	mainWidth := m.width - sidebarWidth
+	debugTraceWidth := m.debugTraceWidth()
+	mainWidth := m.layoutMainWidth()
 
 	// Render components.
 	messagesView := m.chatModel.RenderMessages(m.running)
@@ -569,7 +617,27 @@ func (m *model) View() tea.View {
 	}
 
 	var final string
-	if showSidebar {
+	if m.debugPanel && debugTraceWidth > 0 {
+		traceContent := m.chatModel.RenderTracePanel(debugTraceWidth-4, m.height)
+		traceLines := strings.Split(traceContent, "\n")
+		// Show the last N lines that fit the terminal height.
+		if len(traceLines) > m.height {
+			traceLines = traceLines[len(traceLines)-m.height:]
+		}
+		for len(traceLines) < m.height {
+			traceLines = append(traceLines, "")
+		}
+		traceContent = strings.Join(traceLines, "\n")
+
+		borderFg := lipgloss.Color("245")
+		traceBox := lipgloss.NewStyle().
+			Width(debugTraceWidth).
+			BorderStyle(lipgloss.Border{Left: "│"}).
+			BorderLeft(true).
+			BorderForeground(borderFg)
+
+		final = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, traceBox.Render(traceContent))
+	} else if showSidebar {
 		sidebar := RenderSidebar(SidebarRenderInput{
 			Width:        sidebarWidth,
 			Height:       m.height,
@@ -623,6 +691,36 @@ func (m *model) eyes() string {
 		return m.face.Eyes()
 	}
 	return MoodIdle.Eyes()
+}
+
+func (m *model) debugTraceWidth() int {
+	if !m.debugPanel {
+		return 0
+	}
+	width := m.width / 2
+	if width < 40 {
+		width = 40
+	}
+	if width > m.width-30 {
+		width = m.width - 30
+	}
+	if width < 0 {
+		width = 0
+	}
+	return width
+}
+
+func (m *model) layoutMainWidth() int {
+	mainWidth := m.width
+	if m.debugPanel {
+		mainWidth -= m.debugTraceWidth()
+	} else if m.width > 80 {
+		mainWidth -= SidebarWidth
+	}
+	if mainWidth < 20 {
+		mainWidth = 20
+	}
+	return mainWidth
 }
 
 // refreshDiffStats updates the git diff line counts.

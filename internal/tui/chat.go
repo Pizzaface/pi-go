@@ -251,6 +251,102 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	return b.String()
 }
 
+// RenderTracePanel renders the debug trace log as a color-coded panel.
+// Each entry shows a timestamp, kind icon, summary, and (truncated) detail.
+func (c *ChatModel) RenderTracePanel(width, height int) string {
+	if len(c.TraceLog) == 0 {
+		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+		return dim.Render("  No trace events yet. Send a message to start.")
+	}
+
+	// Style definitions.
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	llmStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	toolCallStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	toolResultStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35"))
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	requestStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	httpReqStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	httpRespStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+	httpErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	userStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("183")).Bold(true)
+
+	maxDetail := width - 14 // timestamp (8) + icon (2) + padding (4)
+	if maxDetail < 20 {
+		maxDetail = 20
+	}
+
+	var lines []string
+
+	// Header.
+	header := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("75")).
+		Bold(true).
+		Render("  ─── Debug Trace (F12 to close) ───")
+	lines = append(lines, header, "")
+
+	for _, entry := range c.TraceLog {
+		ts := timeStyle.Render(entry.time.Format("15:04:05"))
+
+		var icon, summary string
+		switch entry.kind {
+		case "user_prompt":
+			icon = userStyle.Render("📤")
+			summary = userStyle.Render(entry.summary)
+		case "request_sent":
+			icon = requestStyle.Render("🚀")
+			summary = requestStyle.Render(entry.summary)
+		case "request_done":
+			icon = requestStyle.Render("🏁")
+			summary = requestStyle.Render(entry.summary)
+		case "llm":
+			icon = llmStyle.Render("🔵")
+			summary = llmStyle.Render(entry.summary)
+		case "http_request":
+			icon = httpReqStyle.Render("🌐")
+			summary = httpReqStyle.Render(entry.summary)
+		case "http_response":
+			icon = httpRespStyle.Render("📥")
+			summary = httpRespStyle.Render(entry.summary)
+		case "http_error":
+			icon = httpErrStyle.Render("🛑")
+			summary = httpErrStyle.Render(entry.summary)
+		case "tool_call":
+			icon = toolCallStyle.Render("🔧")
+			summary = toolCallStyle.Render(entry.summary)
+		case "tool_result":
+			icon = toolResultStyle.Render("✅")
+			summary = toolResultStyle.Render(entry.summary)
+		case "error":
+			icon = errorStyle.Render("❌")
+			summary = errorStyle.Render(entry.summary)
+		default:
+			icon = dimStyle.Render("·")
+			summary = dimStyle.Render(entry.summary)
+		}
+
+		line := fmt.Sprintf("  %s %s %s", ts, icon, summary)
+		lines = append(lines, line)
+
+		// Show truncated detail if present.
+		if entry.detail != "" {
+			detail := entry.detail
+			// Collapse to first line for compact view.
+			if idx := strings.IndexByte(detail, '\n'); idx >= 0 {
+				detail = detail[:idx] + "…"
+			}
+			if len(detail) > maxDetail {
+				detail = detail[:maxDetail-1] + "…"
+			}
+			lines = append(lines, "       "+dimStyle.Render(detail))
+		}
+	}
+
+	// Join and return (caller handles height clipping).
+	return strings.Join(lines, "\n")
+}
+
 // countByRole counts messages with the given role.
 func countByRole(msgs []message, role string) int {
 	n := 0

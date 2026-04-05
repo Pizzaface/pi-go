@@ -77,6 +77,17 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleThemeCommand(parts[1:])
 	case "/ping":
 		return m.handlePingCommand(parts[1:])
+	case "/debug":
+		m.toggleDebugPanel()
+		state := "off"
+		if m.debugPanel {
+			state = "on"
+		}
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "assistant",
+			content: fmt.Sprintf("Debug panel toggled **%s**.", state),
+		})
+		return m, nil
 	case "/restart":
 		return m.handleRestartCommand()
 	case "/exit", "/quit":
@@ -718,6 +729,7 @@ func (m *model) formatHelp() string {
 	b.WriteString("\n**System:**\n")
 
 	b.WriteString("  `/login <provider>`    — Configure API keys\n")
+	b.WriteString("  `/debug`               — Toggle debug trace panel\n")
 	b.WriteString("  `/restart`             — Restart the go-pi process\n")
 
 	b.WriteString("\n**Skills:**\n")

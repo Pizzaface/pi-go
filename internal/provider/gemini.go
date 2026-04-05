@@ -46,7 +46,7 @@ func NewGemini(ctx context.Context, providerName, modelName, apiKey, baseURL str
 	if baseURL != "" || (opts != nil && len(opts.ExtraHeaders) > 0) {
 		cfg.HTTPOptions = httpOpts
 	}
-	if opts != nil && opts.InsecureSkipTLS {
+	if opts != nil && (opts.InsecureSkipTLS || opts.DebugTracer != nil) {
 		cfg.HTTPClient = BuildHTTPClient(opts, 0)
 	}
 

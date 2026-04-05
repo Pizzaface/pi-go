@@ -755,12 +755,20 @@ func TestHandleKey_Enter_CyclingDismiss(t *testing.T) {
 	}
 }
 
-func TestHandleKey_F12_Noop(t *testing.T) {
+func TestHandleKey_F12_TogglesDebugPanel(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.Text = "test"
+	m.width = 120
 	m.handleKey(makeKey(tea.KeyF12))
+	if !m.debugPanel {
+		t.Error("expected F12 to enable debug panel")
+	}
 	if m.inputModel.Text != "test" {
-		t.Error("expected F12 to be a no-op")
+		t.Error("expected F12 not to mutate input text")
+	}
+	m.handleKey(makeKey(tea.KeyF12))
+	if m.debugPanel {
+		t.Error("expected second F12 to disable debug panel")
 	}
 }
 

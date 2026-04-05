@@ -4,6 +4,14 @@ import (
 	"testing"
 )
 
+func TestRegistryBuiltinOpenAIBaseURLHasV1(t *testing.T) {
+	reg := NewRegistry()
+	reg.AddBuiltins()
+	if got := reg.BaseURL("openai"); got != "https://api.openai.com/v1" {
+		t.Fatalf("BaseURL(openai) = %q, want https://api.openai.com/v1", got)
+	}
+}
+
 func TestRegistryResolveCustomProviderAndModelAlias(t *testing.T) {
 	reg := NewRegistry()
 	reg.AddBuiltins()

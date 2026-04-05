@@ -117,6 +117,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		mode = detectMode()
 	}
 
+	var debugTracer *provider.DebugTracer
+	if mode == "interactive" {
+		debugTracer = provider.NewDebugTracer()
+	}
+
 	apiKey := reg.APIKey(info.Provider)
 	if apiKey == "" && reg.RequiresAPIKey(info.Provider) {
 		envVar := reg.ProviderEnvVar(info.Provider)
@@ -140,6 +145,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	llmOpts := &provider.LLMOptions{
 		ExtraHeaders:    mergeExtraHeaders(mergeExtraHeaders(reg.DefaultHeaders(info.Provider), nil), append(headerMapToPairs(cfg.ExtraHeaders), flagHeaders...)),
 		InsecureSkipTLS: cfg.InsecureSkipTLS || flagInsecure,
+		DebugTracer:     debugTracer,
 	}
 
 	// Create the LLM provider.
@@ -175,7 +181,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// Interactive mode: show TUI immediately, initialize in background.
 	if mode == "interactive" {
-		return runInteractive(cmd.Context(), cfg, llm, info, reg, activeRole, cwd, sandboxRoot)
+		return runInteractive(cmd.Context(), cfg, llm, info, reg, activeRole, cwd, sandboxRoot, debugTracer)
 	}
 
 	// Non-interactive modes: synchronous initialization.

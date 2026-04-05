@@ -26,13 +26,14 @@ type agentToolResultMsg struct {
 	content string
 }
 type agentDoneMsg struct{ err error }
-
+type agentTraceMsg struct{ entry traceEntry }
 
 func (agentTextMsg) agentMsg()       {}
 func (agentThinkingMsg) agentMsg()   {}
 func (agentToolCallMsg) agentMsg()   {}
 func (agentToolResultMsg) agentMsg() {}
 func (agentDoneMsg) agentMsg()       {}
+func (agentTraceMsg) agentMsg()      {}
 
 // waitForAgent returns a Cmd that waits for the next message on the agent channel.
 func waitForAgent(ch chan agentMsg) tea.Cmd {
@@ -47,7 +48,6 @@ func waitForAgent(ch chan agentMsg) tea.Cmd {
 		return msg
 	}
 }
-
 
 // cancelAgent stops a running agent and drains its channel.
 func (m *model) cancelAgent() {
@@ -92,6 +92,15 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 		m.cfg.Logger.UserMessage(promptText)
 	}
 
+	// Trace: log the user prompt being submitted.
+	truncated := promptText
+	if len(truncated) > 200 {
+		truncated = truncated[:200] + "…"
+	}
+	m.chatModel.TraceLog = append(m.chatModel.TraceLog, traceEntry{
+		time: time.Now(), kind: "user_prompt", summary: "User prompt submitted", detail: truncated,
+	})
+
 	m.chatModel.Messages = append(m.chatModel.Messages, message{role: "user", content: text})
 	m.chatModel.Messages = append(m.chatModel.Messages, message{role: "assistant", content: ""})
 	m.chatModel.Streaming = ""
@@ -132,6 +141,13 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 	}
 
 	log := m.cfg.Logger
+
+	// Trace: mark that we're dispatching to the LLM provider.
+	m.agentCh <- agentTraceMsg{entry: traceEntry{
+		time: time.Now(), kind: "request_sent",
+		summary: fmt.Sprintf("Request dispatched → %s", m.cfg.ModelName),
+		detail:  fmt.Sprintf("session=%s prompt_len=%d", m.cfg.SessionID, len(prompt)),
+	}}
 
 	for ev, err := range m.cfg.Agent.RunStreaming(runCtx, m.cfg.SessionID, prompt) {
 		if err != nil {
@@ -176,6 +192,18 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 			}
 		}
 	}
+
+	// Trace: mark request completion.
+	m.agentCh <- agentTraceMsg{entry: traceEntry{
+		time: time.Now(), kind: "request_done",
+		summary: "Agent loop finished",
+	}}
+}
+
+// handleAgentTrace processes an agentTraceMsg and appends to the trace log.
+func (m *model) handleAgentTrace(msg agentTraceMsg) (tea.Model, tea.Cmd) {
+	m.chatModel.TraceLog = append(m.chatModel.TraceLog, msg.entry)
+	return m, waitForAgent(m.agentCh)
 }
 
 // handleAgentThinking processes an agentThinkingMsg.
@@ -277,7 +305,6 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 	m.refreshDiffStats()
 	return m, waitForAgent(m.agentCh)
 }
-
 
 // handleAgentDone processes an agentDoneMsg.
 func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {

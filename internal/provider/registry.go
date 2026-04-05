@@ -83,7 +83,7 @@ func (r *Registry) AddBuiltins() {
 				Family:         "openai",
 				APIKeyEnv:      []string{"OPENAI_API_KEY"},
 				BaseURLEnv:     "OPENAI_BASE_URL",
-				DefaultBaseURL: "https://api.openai.com",
+				DefaultBaseURL: "https://api.openai.com/v1",
 				PingEndpoint:   "/v1/models",
 				Match:          []MatchRule{{Prefix: "gpt-5"}, {Prefix: "gpt"}, {Prefix: "o1"}, {Prefix: "o3"}, {Prefix: "o4"}},
 			},

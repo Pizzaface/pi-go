@@ -57,9 +57,10 @@ type HTTPDoer interface {
 func defaultAPIBaseURL(providerName string) string {
 	switch providerName {
 	case "anthropic":
+
 		return "https://api.anthropic.com"
 	case "openai":
-		return "https://api.openai.com"
+		return "https://api.openai.com/v1"
 	case "gemini":
 		return "https://generativelanguage.googleapis.com"
 	default:

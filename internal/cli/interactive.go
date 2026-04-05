@@ -45,6 +45,7 @@ func runInteractive(
 	info provider.Info,
 	reg *provider.Registry,
 	activeRole, cwd, sandboxRoot string,
+	debugTracer *provider.DebugTracer,
 ) error {
 	initCh := make(chan tui.InitEvent, 32)
 
@@ -70,6 +71,7 @@ func runInteractive(
 		WorkDir:          cwd,
 		ThemeName:        cfg.Theme,
 		DeferredInit:     initCh,
+		DebugTracer:      debugTracer,
 	})
 
 	initCancel() // signal deferred init to stop

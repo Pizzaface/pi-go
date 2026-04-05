@@ -7,6 +7,7 @@ import (
 	"iter"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -33,6 +34,7 @@ func NewOpenAI(_ context.Context, modelName, apiKey, baseURL string, llmOpts *LL
 	}
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if baseURL != "" {
+		baseURL = normalizeOpenAIBaseURL(baseURL)
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	if llmOpts != nil {
@@ -48,6 +50,27 @@ func NewOpenAI(_ context.Context, modelName, apiKey, baseURL string, llmOpts *LL
 }
 
 func (m *openaiModel) Name() string { return m.modelName }
+
+func normalizeOpenAIBaseURL(baseURL string) string {
+	trimmed := strings.TrimSpace(baseURL)
+	if trimmed == "" {
+		return trimmed
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	if strings.HasSuffix(u.Path, "/v1") || strings.Contains(u.Path, "/v1/") {
+		return trimmed
+	}
+	path := strings.TrimRight(u.Path, "/")
+	if path == "" {
+		u.Path = "/v1"
+		return u.String()
+	}
+	u.Path = path + "/v1"
+	return u.String()
+}
 
 func (m *openaiModel) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {

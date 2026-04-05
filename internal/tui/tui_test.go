@@ -35,6 +35,32 @@ func TestHandleSlashCommandHelp(t *testing.T) {
 	}
 }
 
+func TestHandleSlashCommandDebug(t *testing.T) {
+	m := &model{
+		width:     120,
+		chatModel: ChatModel{Messages: make([]message, 0)},
+	}
+
+	newM, cmd := m.handleSlashCommand("/debug")
+	mm := newM.(*model)
+
+	if cmd != nil {
+		t.Error("expected nil cmd for /debug")
+	}
+	if !mm.debugPanel {
+		t.Error("expected /debug to enable debug panel")
+	}
+	if len(mm.chatModel.Messages) == 0 || !strings.Contains(mm.chatModel.Messages[len(mm.chatModel.Messages)-1].content, "toggled **on**") {
+		t.Error("expected confirmation message for /debug on")
+	}
+
+	newM, _ = mm.handleSlashCommand("/debug")
+	mm = newM.(*model)
+	if mm.debugPanel {
+		t.Error("expected second /debug to disable debug panel")
+	}
+}
+
 func TestHandleSlashCommandClear(t *testing.T) {
 	m := &model{
 		inputModel: InputModel{Text: "/clear"},

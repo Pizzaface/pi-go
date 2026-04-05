@@ -20,7 +20,8 @@ func BuildTransport(opts *LLMOptions) http.RoundTripper {
 		return nil
 	}
 	hasHeaders := len(opts.ExtraHeaders) > 0
-	if !opts.InsecureSkipTLS && !hasHeaders {
+	hasDebug := opts.DebugTracer != nil
+	if !opts.InsecureSkipTLS && !hasHeaders && !hasDebug {
 		return nil
 	}
 
@@ -34,6 +35,9 @@ func BuildTransport(opts *LLMOptions) http.RoundTripper {
 			transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // user-requested
 			base = transport
 		}
+	}
+	if hasDebug {
+		base = &debugTransport{base: base, tracer: opts.DebugTracer}
 	}
 	if hasHeaders {
 		base = &headerTransport{base: base, headers: opts.ExtraHeaders}
@@ -122,6 +126,7 @@ func CheckOllama(baseURL string) error {
 type LLMOptions struct {
 	ExtraHeaders    map[string]string
 	InsecureSkipTLS bool
+	DebugTracer     *DebugTracer
 }
 
 // NewLLM creates a model.LLM for the given provider info, API key, optional base URL, thinking level, and options.

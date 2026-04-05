@@ -23,6 +23,7 @@ type Config struct {
 	ActiveRole       string
 	Roles            map[string]config.RoleConfig
 	ProviderRegistry *provider.Registry
+	DebugTracer      *provider.DebugTracer
 	SessionService   *pisession.FileService
 	WorkDir          string
 	// GenerateCommitMsg is called by /commit to generate a conventional commit message from diffs.

@@ -524,6 +524,7 @@ var slashCommands = []string{
 	"/skill-list",
 	"/theme",
 	"/ping",
+	"/debug",
 	"/restart",
 	"/exit",
 	"/quit",
@@ -572,6 +573,8 @@ func slashCommandDesc(cmd string) string {
 		return "List available skills"
 	case "/ping":
 		return "Test LLM connectivity"
+	case "/debug":
+		return "Toggle debug trace panel"
 	case "/restart":
 		return "Restart pi process"
 	case "/exit", "/quit":
