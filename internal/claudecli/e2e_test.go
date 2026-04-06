@@ -443,6 +443,60 @@ func TestE2E_ADKFlowIntegration(t *testing.T) {
 	}
 }
 
+// TestE2E_RealCLI tests with the actual claude binary.
+// Skipped unless CLAUDE_CLI_E2E=1 is set (requires auth).
+func TestE2E_RealCLI(t *testing.T) {
+	if os.Getenv("CLAUDE_CLI_E2E") != "1" {
+		t.Skip("set CLAUDE_CLI_E2E=1 to run with real Claude CLI")
+	}
+
+	binary, err := FindBinary()
+	if err != nil {
+		t.Skipf("claude CLI not found: %v", err)
+	}
+	t.Logf("Using claude binary: %s", binary)
+
+	p := New(Config{
+		BinaryPath: binary,
+		WorkDir:    t.TempDir(),
+	})
+	t.Cleanup(func() { p.Close() })
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{genai.NewPartFromText("Say exactly: hello world")}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	t.Log("Sending prompt to real Claude CLI...")
+	var responses []*model.LLMResponse
+	for resp, err := range p.GenerateContent(ctx, req, true) {
+		if err != nil {
+			t.Logf("ERROR: %v", err)
+			break
+		}
+		if resp != nil {
+			responses = append(responses, resp)
+			t.Logf("Response: Partial=%v TurnComplete=%v", resp.Partial, resp.TurnComplete)
+			if resp.Content != nil {
+				for _, part := range resp.Content.Parts {
+					if part.Text != "" {
+						t.Logf("  Text: %q", truncate(part.Text, 200))
+					}
+				}
+			}
+		}
+	}
+
+	t.Logf("Total responses: %d", len(responses))
+	if len(responses) == 0 {
+		t.Fatal("FAIL: no responses from real Claude CLI — check stderr logs above")
+	}
+}
+
 type eventSummary struct {
 	author       string
 	hasContent   bool

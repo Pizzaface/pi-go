@@ -127,16 +127,34 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 
 		// Send the user message.
 		if err := session.Send(ctx, userText); err != nil {
+			// Session may have died — reset so next call creates a fresh one.
+			p.mu.Lock()
+			if p.session == session {
+				_ = session.Close()
+				p.session = nil
+			}
+			p.mu.Unlock()
 			yield(nil, fmt.Errorf("claudecli: send: %w", err))
 			return
 		}
 
 		// Stream responses.
+		gotMessages := false
 		for msg, err := range session.Stream(ctx) {
 			if err != nil {
+				// The SDK yields parse errors for malformed messages but continues
+				// reading. Common case: SystemMessage.Agents field changed from
+				// map to array in newer CLI versions. Log and continue.
+				if msg == nil {
+					log.Printf("claudecli: non-fatal stream error (skipping): %v", err)
+					continue
+				}
+				// If we have both msg and err, something unusual happened.
 				yield(nil, fmt.Errorf("claudecli: stream: %w", err))
 				return
 			}
+
+			gotMessages = true
 
 			resp := p.messageToResponse(msg)
 			if resp == nil {
@@ -146,6 +164,18 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 			if !yield(resp, nil) {
 				return
 			}
+		}
+
+		// If we got no messages at all, the CLI process likely died on startup.
+		if !gotMessages {
+			p.mu.Lock()
+			if p.session == session {
+				_ = session.Close()
+				p.session = nil
+			}
+			p.mu.Unlock()
+			yield(nil, fmt.Errorf("claudecli: CLI process produced no output — check stderr logs above for auth/startup errors"))
+			return
 		}
 	}
 }
@@ -169,6 +199,14 @@ func (p *Provider) buildOptions() []claude.Option {
 	if p.config.AppendSystemPrompt != "" {
 		opts = append(opts, claude.WithAppendSystemPrompt(p.config.AppendSystemPrompt))
 	}
+
+	// Claude CLI requires --verbose when using --print --output-format=stream-json.
+	opts = append(opts, claude.WithVerbose(true))
+
+	// Capture stderr for diagnostics.
+	opts = append(opts, claude.WithStderrCallback(func(line string) {
+		log.Printf("claudecli [stderr]: %s", line)
+	}))
 
 	// Set up the tool approval callback.
 	opts = append(opts, claude.WithCanUseTool(p.canUseTool))
