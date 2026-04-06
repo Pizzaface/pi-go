@@ -77,6 +77,15 @@ func (m *model) cancelAgent() {
 
 // submitPrompt sends a user prompt to the agent.
 func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd) {
+	// Block prompt submission when no model is configured.
+	if m.cfg.NoModelConfigured && m.cfg.Agent == nil {
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "assistant",
+			content: "No model configured. Use `/login <provider>` to set up an API key first.\n\nAvailable providers: `anthropic`, `openai`, `gemini`, `groq`, `mistral`, `xai`, `openrouter`",
+		})
+		return m, nil
+	}
+
 	// Append referenced file annotations for @mentions.
 	promptText := text
 	if len(mentions) > 0 {

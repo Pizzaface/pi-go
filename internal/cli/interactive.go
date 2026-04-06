@@ -48,33 +48,44 @@ func runInteractive(
 	reg *provider.Registry,
 	activeRole, cwd, sandboxRoot string,
 	debugTracer *provider.DebugTracer,
+	noModelConfigured bool,
 ) error {
-	initCh := make(chan tui.InitEvent, 32)
-
+	// When no model is configured, skip deferred init entirely —
+	// the TUI will show a setup alert and the user must /login first.
+	var initCh chan tui.InitEvent
 	var res initResources
 	initDone := make(chan struct{})
-
-	// Create a child context so deferred init is canceled when the TUI exits.
 	initCtx, initCancel := context.WithCancel(ctx)
 
-	go func() {
-		defer close(initDone)
-		defer close(initCh)
-		deferredInit(initCtx, cfg, llm, cwd, sandboxRoot, initCh, &res)
-	}()
+	if !noModelConfigured {
+		initCh = make(chan tui.InitEvent, 32)
+		go func() {
+			defer close(initDone)
+			defer close(initCh)
+			deferredInit(initCtx, cfg, llm, cwd, sandboxRoot, initCh, &res)
+		}()
+	} else {
+		close(initDone)
+	}
+
+	modelName := ""
+	if llm != nil {
+		modelName = llm.Name()
+	}
 
 	tuiErr := tui.Run(ctx, tui.Config{
-		LLM:              llm,
-		ModelName:        llm.Name(),
-		ProviderName:     info.Provider,
-		ActiveRole:       activeRole,
-		Roles:            cfg.Roles,
-		ProviderRegistry: reg,
-		WorkDir:          cwd,
-		ThemeName:        cfg.Theme,
-		EffortLevel:      provider.ParseEffortLevel(cfg.ThinkingLevel),
-		DeferredInit:     initCh,
-		DebugTracer:      debugTracer,
+		LLM:                llm,
+		ModelName:          modelName,
+		ProviderName:       info.Provider,
+		ActiveRole:         activeRole,
+		Roles:              cfg.Roles,
+		ProviderRegistry:   reg,
+		WorkDir:            cwd,
+		ThemeName:          cfg.Theme,
+		EffortLevel:        provider.ParseEffortLevel(cfg.ThinkingLevel),
+		DeferredInit:       initCh,
+		DebugTracer:        debugTracer,
+		NoModelConfigured:  noModelConfigured,
 	})
 
 	initCancel() // signal deferred init to stop

@@ -45,9 +45,13 @@ func (m *model) handleLoginCommand(args []string) (tea.Model, tea.Cmd) {
 	// Find provider.
 	authProv, ok := auth.FindProvider(provName)
 	if !ok {
+		provNames := make([]string, 0, len(auth.Providers()))
+		for _, p := range auth.Providers() {
+			provNames = append(provNames, p.Name)
+		}
 		m.chatModel.Messages = append(m.chatModel.Messages, message{
 			role:    "assistant",
-			content: fmt.Sprintf("Unknown provider: `%s`. Available: codex, openai, anthropic, gemini", provName),
+			content: fmt.Sprintf("Unknown provider: `%s`. Available: %s", provName, strings.Join(provNames, ", ")),
 		})
 		return m, nil
 	}

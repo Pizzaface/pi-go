@@ -60,6 +60,10 @@ type Config struct {
 	// EffortLevel is the initial reasoning/thinking effort level.
 	EffortLevel provider.EffortLevel
 
+	// NoModelConfigured is true when no API key / model is available at startup.
+	// The TUI shows a setup alert directing the user to /login.
+	NoModelConfigured bool
+
 	// DeferredInit, if non-nil, is a channel of InitEvent messages.
 	// When set, the TUI starts immediately in loading state and receives
 	// initialization progress updates. The final event carries the fully

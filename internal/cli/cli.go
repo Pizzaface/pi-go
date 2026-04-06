@@ -138,9 +138,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	apiKey := reg.APIKey(info.Provider)
-	if apiKey == "" && reg.RequiresAPIKey(info.Provider) {
-		envVar := reg.ProviderEnvVar(info.Provider)
-		return fmt.Errorf("no API key found for provider %q (set %s)", info.Provider, envVar)
+	noModelConfigured := apiKey == "" && reg.RequiresAPIKey(info.Provider)
+
+	// Non-interactive modes require an API key upfront.
+	if noModelConfigured {
+		m := detectMode()
+		if flagMode != "" {
+			m = flagMode
+		}
+		if m != "interactive" {
+			envVar := reg.ProviderEnvVar(info.Provider)
+			return fmt.Errorf("no API key found for provider %q (set %s)", info.Provider, envVar)
+		}
 	}
 
 	// Resolve base URL: --url flag takes precedence over registry env/defaults.
@@ -149,8 +158,8 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		baseURL = reg.BaseURL(info.Provider)
 	}
 
-	// Check Ollama is online before proceeding.
-	if info.Ollama {
+	// Check Ollama is online before proceeding (skip if no model configured).
+	if !noModelConfigured && info.Ollama {
 		if err := provider.CheckOllama(baseURL); err != nil {
 			return fmt.Errorf("ollama health check: %w", err)
 		}
@@ -163,11 +172,14 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		DebugTracer:     debugTracer,
 	}
 
-	// Create the LLM provider.
+	// Create the LLM provider (nil when no model is configured).
 	effortLevel := provider.ParseEffortLevel(cfg.ThinkingLevel)
-	llm, err := provider.NewLLM(cmd.Context(), info, apiKey, baseURL, effortLevel, llmOpts)
-	if err != nil {
-		return fmt.Errorf("creating LLM provider: %w", err)
+	var llm adkmodel.LLM
+	if !noModelConfigured {
+		llm, err = provider.NewLLM(cmd.Context(), info, apiKey, baseURL, effortLevel, llmOpts)
+		if err != nil {
+			return fmt.Errorf("creating LLM provider: %w", err)
+		}
 	}
 
 	prompt := strings.Join(args, " ")
@@ -197,7 +209,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// Interactive mode: show TUI immediately, initialize in background.
 	if mode == "interactive" {
-		return runInteractive(cmd.Context(), cfg, llm, info, reg, activeRole, cwd, sandboxRoot, debugTracer)
+		return runInteractive(cmd.Context(), cfg, llm, info, reg, activeRole, cwd, sandboxRoot, debugTracer, noModelConfigured)
 	}
 
 	// Non-interactive modes: synchronous initialization.

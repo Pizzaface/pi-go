@@ -67,6 +67,7 @@ type Result struct {
 // Providers returns the list of configured OAuth providers.
 func Providers() []Provider {
 	return []Provider{
+		// --- Providers with OAuth/SSO support ---
 		{
 			Name:     "anthropic",
 			EnvVar:   "ANTHROPIC_API_KEY",
@@ -134,7 +135,47 @@ func Providers() []Provider {
 			},
 			KeyPageURL: "https://aistudio.google.com/apikey",
 		},
+
+		// --- API key-only providers (manual key entry only, no OAuth) ---
+		{
+			Name:       "mistral",
+			EnvVar:     "MISTRAL_API_KEY",
+			KeyPageURL: "https://console.mistral.ai/api-keys",
+			TokenToKey: defaultTokenToKey,
+		},
+		{
+			Name:       "groq",
+			EnvVar:     "GROQ_API_KEY",
+			KeyPageURL: "https://console.groq.com/keys",
+			TokenToKey: defaultTokenToKey,
+		},
+		{
+			Name:       "xai",
+			EnvVar:     "XAI_API_KEY",
+			KeyPageURL: "https://console.x.ai/",
+			TokenToKey: defaultTokenToKey,
+		},
+		{
+			Name:       "openrouter",
+			EnvVar:     "OPENROUTER_API_KEY",
+			KeyPageURL: "https://openrouter.ai/keys",
+			TokenToKey: defaultTokenToKey,
+		},
+		{
+			Name:       "azure-openai",
+			EnvVar:     "AZURE_OPENAI_API_KEY",
+			KeyPageURL: "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub",
+			TokenToKey: defaultTokenToKey,
+		},
 	}
+}
+
+// defaultTokenToKey is a fallback TokenToKey that returns APIKey or AccessToken.
+func defaultTokenToKey(tok *TokenResponse) string {
+	if tok.APIKey != "" {
+		return tok.APIKey
+	}
+	return tok.AccessToken
 }
 
 // FindProvider returns a provider by name.

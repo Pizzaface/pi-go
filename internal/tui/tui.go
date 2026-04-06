@@ -91,6 +91,9 @@ type model struct {
 	// Slash command overlay state (shown for exact `/` + Tab).
 	slashOverlay *slashCommandOverlayState
 
+	// Setup alert modal (shown when no model is configured).
+	setupAlert bool
+
 	// Quit.
 	quitting bool
 	initErr  error // fatal init error → propagated from Run()
@@ -237,6 +240,7 @@ func Run(ctx context.Context, cfg Config) error {
 		themeManager: tm,
 		face:         NewFaceRenderer(),
 		effortLevel:  cfg.EffortLevel,
+		setupAlert:   cfg.NoModelConfigured,
 	}
 	m.resetExtensionBridge(cfg.ExtensionManager)
 
@@ -437,6 +441,17 @@ func (m *model) toggleDebugPanel() {
 
 func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.Key()
+
+	// Handle setup alert modal — dismiss on Enter or Esc.
+	if m.setupAlert {
+		switch {
+		case key.Code == tea.KeyEnter, key.Code == tea.KeyEsc, key.Code == ' ':
+			m.setupAlert = false
+			return m, nil
+		default:
+			return m, nil
+		}
+	}
 
 	// Handle commit confirmation mode first.
 	if !m.running && m.commit != nil && m.commit.phase == "confirming" {
@@ -890,9 +905,124 @@ func (m *model) View() tea.View {
 		final = leftPanel
 	}
 
+	// Overlay the setup alert modal when no model is configured.
+	if m.setupAlert {
+		final = overlaySetupAlert(final, m.width, m.height)
+	}
+
 	v := tea.NewView(final)
 	v.AltScreen = true
 	return v
+}
+
+// overlaySetupAlert renders a centered modal box over the screen content.
+func overlaySetupAlert(screen string, width, height int) string {
+	// Build the alert box content.
+	title := "  No Models Configured  "
+	body1 := "  Use /login <provider> to set up an API key.  "
+	body2 := "                                                "
+	body3 := "  Providers: anthropic, openai, gemini,         "
+	body4 := "             groq, mistral, xai, openrouter     "
+	footer := "          Press Enter to dismiss                "
+
+	lines := []string{title, body2, body1, body2, body3, body4, body2, footer}
+
+	// Find the widest line for the box.
+	maxW := 0
+	for _, l := range lines {
+		if len(l) > maxW {
+			maxW = len(l)
+		}
+	}
+
+	// Pad all lines to maxW.
+	for i, l := range lines {
+		if len(l) < maxW {
+			lines[i] = l + strings.Repeat(" ", maxW-len(l))
+		}
+	}
+
+	boxBg := lipgloss.Color("235")
+	boxFg := lipgloss.Color("255")
+	borderFg := lipgloss.Color("33") // blue accent
+	titleFg := lipgloss.Color("214") // yellow/orange for title
+	dimFg := lipgloss.Color("243")
+
+	boxStyle := lipgloss.NewStyle().
+		Background(boxBg).
+		Foreground(boxFg).
+		Padding(0, 1)
+
+	titleStyle := lipgloss.NewStyle().
+		Background(boxBg).
+		Foreground(titleFg).
+		Bold(true).
+		Padding(0, 1)
+
+	footerStyle := lipgloss.NewStyle().
+		Background(boxBg).
+		Foreground(dimFg).
+		Padding(0, 1)
+
+	topBorder := lipgloss.NewStyle().Foreground(borderFg).Render("╭" + strings.Repeat("─", maxW+2) + "╮")
+	botBorder := lipgloss.NewStyle().Foreground(borderFg).Render("╰" + strings.Repeat("─", maxW+2) + "╯")
+	sideBorderL := lipgloss.NewStyle().Foreground(borderFg).Render("│")
+	sideBorderR := lipgloss.NewStyle().Foreground(borderFg).Render("│")
+
+	var boxLines []string
+	boxLines = append(boxLines, topBorder)
+	for i, l := range lines {
+		var styled string
+		if i == 0 {
+			styled = titleStyle.Render(l)
+		} else if i == len(lines)-1 {
+			styled = footerStyle.Render(l)
+		} else {
+			styled = boxStyle.Render(l)
+		}
+		boxLines = append(boxLines, sideBorderL+styled+sideBorderR)
+	}
+	boxLines = append(boxLines, botBorder)
+
+	// Now overlay the box centered on the screen.
+	screenLines := strings.Split(screen, "\n")
+	boxHeight := len(boxLines)
+	startY := (height - boxHeight) / 2
+	if startY < 0 {
+		startY = 0
+	}
+	startX := (width - maxW - 4) / 2
+	if startX < 0 {
+		startX = 0
+	}
+
+	for i, boxLine := range boxLines {
+		row := startY + i
+		if row >= 0 && row < len(screenLines) {
+			// Overlay the box line onto the screen line.
+			orig := screenLines[row]
+			screenLines[row] = overlayLine(orig, boxLine, startX)
+		}
+	}
+
+	return strings.Join(screenLines, "\n")
+}
+
+// overlayLine places overlay text on top of a screen line at the given column.
+func overlayLine(orig, overlay string, startX int) string {
+	// Simple approach: replace characters at the given position.
+	// Since we're dealing with ANSI-styled strings, just prepend padding and append.
+	padding := ""
+	if startX > 0 {
+		// Extract the first startX visible characters from the original line.
+		runes := []rune(orig)
+		if startX < len(runes) {
+			padding = string(runes[:startX])
+		} else {
+			padding = orig + strings.Repeat(" ", startX-len(runes))
+		}
+	}
+	return padding + overlay
 }
 
 // drainTerminalResponses discards any pending terminal response sequences

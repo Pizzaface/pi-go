@@ -98,6 +98,47 @@ func (r *Registry) AddBuiltins() {
 				Match:          []MatchRule{{Prefix: "gemini"}},
 			},
 			{
+				Name:           "mistral",
+				Family:         "openai", // Mistral uses OpenAI-compatible API
+				APIKeyEnv:      []string{"MISTRAL_API_KEY"},
+				DefaultBaseURL: "https://api.mistral.ai/v1",
+				PingEndpoint:   "/v1/models",
+				Match:          []MatchRule{{Prefix: "mistral"}, {Prefix: "codestral"}, {Prefix: "pixtral"}},
+			},
+			{
+				Name:           "groq",
+				Family:         "openai", // OpenAI-compatible
+				APIKeyEnv:      []string{"GROQ_API_KEY"},
+				DefaultBaseURL: "https://api.groq.com/openai/v1",
+				PingEndpoint:   "/v1/models",
+				Match:          []MatchRule{{Prefix: "groq/", StripPrefix: true}},
+			},
+			{
+				Name:           "xai",
+				Family:         "openai", // OpenAI-compatible
+				APIKeyEnv:      []string{"XAI_API_KEY"},
+				DefaultBaseURL: "https://api.x.ai/v1",
+				PingEndpoint:   "/v1/models",
+				Match:          []MatchRule{{Prefix: "grok"}},
+			},
+			{
+				Name:           "openrouter",
+				Family:         "openai", // OpenAI-compatible
+				APIKeyEnv:      []string{"OPENROUTER_API_KEY"},
+				DefaultBaseURL: "https://openrouter.ai/api/v1",
+				PingEndpoint:   "/api/v1/models",
+				DefaultHeaders: map[string]string{"HTTP-Referer": "https://github.com/dimetron/pi-go"},
+				Match:          []MatchRule{{Prefix: "openrouter/", StripPrefix: true}},
+			},
+			{
+				Name:           "azure-openai",
+				Family:         "openai", // OpenAI-compatible
+				APIKeyEnv:      []string{"AZURE_OPENAI_API_KEY"},
+				BaseURLEnv:     "AZURE_OPENAI_BASE_URL",
+				PingEndpoint:   "/openai/models",
+				Match:          []MatchRule{{Prefix: "azure/", StripPrefix: true}},
+			},
+			{
 				Name:   "claudecli",
 				Family: "claudecli",
 				// No API key needed — Claude CLI handles its own auth.

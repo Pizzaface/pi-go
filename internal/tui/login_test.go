@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/dimetron/pi-go/internal/auth"
 )
 
@@ -111,8 +113,8 @@ func TestHandleLoginCommand_NoArgs(t *testing.T) {
 	if msg.role != "assistant" {
 		t.Errorf("expected assistant role, got %q", msg.role)
 	}
-	// Should show provider status including codex.
-	for _, want := range []string{"anthropic", "openai", "codex", "gemini"} {
+	// Should show provider status including all providers.
+	for _, want := range []string{"anthropic", "openai", "codex", "gemini", "mistral", "groq", "xai", "openrouter", "azure-openai"} {
 		if !strings.Contains(msg.content, want) {
 			t.Errorf("expected %q in output, got: %s", want, msg.content)
 		}
@@ -894,5 +896,168 @@ func TestLoginStartPKCEFlow_PassesOpenBrowserToAuth(t *testing.T) {
 	// Before cmd executes, no browser call yet.
 	if mb.called() != 0 {
 		t.Errorf("expected 0 browser calls before cmd execution, got %d", mb.called())
+	}
+}
+
+// --- New provider login tests ---
+
+func TestHandleLoginCommand_Mistral(t *testing.T) {
+	mb := withMockBrowser(t)
+	m := &model{}
+	m.handleLoginCommand([]string{"mistral"})
+	if m.login == nil {
+		t.Fatal("expected login state")
+	}
+	if m.login.provider != "mistral" {
+		t.Errorf("expected provider mistral, got %q", m.login.provider)
+	}
+	if m.login.phase != "waiting" {
+		t.Errorf("expected manual (waiting) phase for API-key-only provider, got %q", m.login.phase)
+	}
+	if mb.called() != 1 {
+		t.Errorf("expected 1 browser call, got %d", mb.called())
+	}
+}
+
+func TestHandleLoginCommand_Groq(t *testing.T) {
+	mb := withMockBrowser(t)
+	m := &model{}
+	m.handleLoginCommand([]string{"groq"})
+	if m.login == nil {
+		t.Fatal("expected login state")
+	}
+	if m.login.provider != "groq" {
+		t.Errorf("expected provider groq, got %q", m.login.provider)
+	}
+	if m.login.phase != "waiting" {
+		t.Errorf("expected manual phase, got %q", m.login.phase)
+	}
+	_ = mb
+}
+
+func TestHandleLoginCommand_XAI(t *testing.T) {
+	withMockBrowser(t)
+	m := &model{}
+	m.handleLoginCommand([]string{"xai"})
+	if m.login == nil {
+		t.Fatal("expected login state")
+	}
+	if m.login.provider != "xai" {
+		t.Errorf("expected provider xai, got %q", m.login.provider)
+	}
+	if m.login.phase != "waiting" {
+		t.Errorf("expected manual phase, got %q", m.login.phase)
+	}
+}
+
+func TestHandleLoginCommand_OpenRouter(t *testing.T) {
+	withMockBrowser(t)
+	m := &model{}
+	m.handleLoginCommand([]string{"openrouter"})
+	if m.login == nil {
+		t.Fatal("expected login state")
+	}
+	if m.login.provider != "openrouter" {
+		t.Errorf("expected provider openrouter, got %q", m.login.provider)
+	}
+	if m.login.phase != "waiting" {
+		t.Errorf("expected manual phase, got %q", m.login.phase)
+	}
+}
+
+func TestHandleLoginCommand_AzureOpenAI(t *testing.T) {
+	withMockBrowser(t)
+	m := &model{}
+	m.handleLoginCommand([]string{"azure-openai"})
+	if m.login == nil {
+		t.Fatal("expected login state")
+	}
+	if m.login.provider != "azure-openai" {
+		t.Errorf("expected provider azure-openai, got %q", m.login.provider)
+	}
+	if m.login.phase != "waiting" {
+		t.Errorf("expected manual phase, got %q", m.login.phase)
+	}
+}
+
+// --- Setup alert tests ---
+
+func TestSetupAlert_ShownWhenNoModel(t *testing.T) {
+	m := &model{
+		setupAlert: true,
+		cfg:        Config{NoModelConfigured: true},
+	}
+	if !m.setupAlert {
+		t.Error("expected setupAlert to be true")
+	}
+}
+
+func TestSetupAlert_DismissedOnEnter(t *testing.T) {
+	m := &model{
+		setupAlert: true,
+		cfg:        Config{NoModelConfigured: true},
+	}
+	_, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if m.setupAlert {
+		t.Error("expected setupAlert to be false after Enter")
+	}
+}
+
+func TestSetupAlert_DismissedOnEsc(t *testing.T) {
+	m := &model{
+		setupAlert: true,
+		cfg:        Config{NoModelConfigured: true},
+	}
+	_, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
+	if m.setupAlert {
+		t.Error("expected setupAlert to be false after Esc")
+	}
+}
+
+func TestSetupAlert_BlocksOtherKeys(t *testing.T) {
+	m := &model{
+		setupAlert: true,
+		cfg:        Config{NoModelConfigured: true},
+	}
+	_, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: 'a'}))
+	if !m.setupAlert {
+		t.Error("expected setupAlert to remain true for non-dismiss key")
+	}
+}
+
+func TestSubmitPrompt_BlockedWithoutModel(t *testing.T) {
+	m := &model{
+		cfg: Config{NoModelConfigured: true},
+	}
+	m.submitPrompt("hello", nil)
+	if len(m.chatModel.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(m.chatModel.Messages))
+	}
+	if !strings.Contains(m.chatModel.Messages[0].content, "No model configured") {
+		t.Errorf("expected no-model message, got: %s", m.chatModel.Messages[0].content)
+	}
+}
+
+func TestOverlaySetupAlert_Renders(t *testing.T) {
+	// Basic smoke test that the overlay doesn't panic.
+	screen := strings.Repeat("test line\n", 20)
+	result := overlaySetupAlert(screen, 80, 20)
+	if result == "" {
+		t.Error("expected non-empty overlay result")
+	}
+	if !strings.Contains(result, "No Models Configured") {
+		t.Error("expected alert title in overlay")
+	}
+}
+
+func TestHandleLoginCommand_UnknownProvider_ShowsAllProviders(t *testing.T) {
+	m := &model{}
+	m.handleLoginCommand([]string{"nonexistent"})
+	msg := m.chatModel.Messages[0].content
+	// Verify all providers are listed in the error message.
+	for _, want := range []string{"anthropic", "openai", "gemini", "mistral", "groq", "xai", "openrouter", "azure-openai"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("expected %q in unknown provider message, got: %s", want, msg)
+		}
 	}
 }
