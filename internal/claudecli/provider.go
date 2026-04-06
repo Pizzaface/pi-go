@@ -152,13 +152,11 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 
 			gotMessages = true
 
-			resp := p.messageToResponse(msg)
-			if resp == nil {
-				continue // skip system messages, etc.
-			}
-
-			if !yield(resp, nil) {
-				return
+			responses := p.messageToResponses(msg)
+			for _, resp := range responses {
+				if !yield(resp, nil) {
+					return
+				}
 			}
 		}
 
@@ -258,16 +256,24 @@ func (p *Provider) canUseTool(toolName string, input map[string]any) (string, er
 	return "allow", nil
 }
 
-// messageToResponse converts a claude.Message to a model.LLMResponse.
-// Returns nil for messages that should be skipped (e.g. SystemMessage).
-func (p *Provider) messageToResponse(msg claude.Message) *model.LLMResponse {
+// messageToResponses converts a claude.Message to one or more model.LLMResponse values.
+// Thinking blocks are emitted as separate responses with Role "thinking" so the TUI
+// can render them with the collapsible thinking UI. Returns nil for messages that
+// should be skipped (e.g. SystemMessage).
+func (p *Provider) messageToResponses(msg claude.Message) []*model.LLMResponse {
 	switch m := msg.(type) {
 	case *claude.AssistantMessage:
-		return p.assistantToResponse(m)
+		return p.assistantToResponses(m)
 	case *claude.UserMessage:
-		return p.userToolResultToResponse(m)
+		if r := p.userToolResultToResponse(m); r != nil {
+			return []*model.LLMResponse{r}
+		}
+		return nil
 	case *claude.ResultMessage:
-		return p.resultToResponse(m)
+		if r := p.resultToResponse(m); r != nil {
+			return []*model.LLMResponse{r}
+		}
+		return nil
 	case *claude.SystemMessage:
 		// Skip system init messages.
 		return nil
@@ -279,13 +285,17 @@ func (p *Provider) messageToResponse(msg claude.Message) *model.LLMResponse {
 	}
 }
 
-// assistantToResponse converts an assistant message's content blocks to an LLM response.
-func (p *Provider) assistantToResponse(m *claude.AssistantMessage) *model.LLMResponse {
+// assistantToResponses converts an assistant message's content blocks to LLM responses.
+// Thinking blocks are emitted as separate responses with Role "thinking" so the TUI
+// renders them with the collapsible thinking UI, matching the Anthropic provider behavior.
+func (p *Provider) assistantToResponses(m *claude.AssistantMessage) []*model.LLMResponse {
 	if m.Message == nil {
 		return nil
 	}
 
+	var responses []*model.LLMResponse
 	var parts []*genai.Part
+
 	for _, block := range m.Message.Content {
 		switch b := block.(type) {
 		case *claude.TextBlock:
@@ -294,9 +304,13 @@ func (p *Provider) assistantToResponse(m *claude.AssistantMessage) *model.LLMRes
 			}
 		case *claude.ThinkingBlock:
 			if b.Thinking != "" {
-				parts = append(parts, genai.NewPartFromText(
-					fmt.Sprintf("[thinking]\n%s\n[/thinking]", b.Thinking),
-				))
+				responses = append(responses, &model.LLMResponse{
+					Content: &genai.Content{
+						Role:  "thinking",
+						Parts: []*genai.Part{genai.NewPartFromText(b.Thinking)},
+					},
+					Partial: true,
+				})
 			}
 		case *claude.ToolUseBlock:
 			parts = append(parts, genai.NewPartFromText(
@@ -309,17 +323,17 @@ func (p *Provider) assistantToResponse(m *claude.AssistantMessage) *model.LLMRes
 		}
 	}
 
-	if len(parts) == 0 {
-		return nil
+	if len(parts) > 0 {
+		responses = append(responses, &model.LLMResponse{
+			Content: &genai.Content{
+				Role:  "model",
+				Parts: parts,
+			},
+			Partial: true, // more messages may follow
+		})
 	}
 
-	return &model.LLMResponse{
-		Content: &genai.Content{
-			Role:  "model",
-			Parts: parts,
-		},
-		Partial: true, // more messages may follow
-	}
+	return responses
 }
 
 // userToolResultToResponse converts a user message (tool results) to text.

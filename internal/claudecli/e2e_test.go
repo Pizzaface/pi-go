@@ -330,10 +330,10 @@ func TestE2E_ThinkingBlocks(t *testing.T) {
 	foundAnalysis := false
 	for _, resp := range responses {
 		if resp.Content != nil {
+			if resp.Content.Role == "thinking" {
+				foundThinking = true
+			}
 			for _, part := range resp.Content.Parts {
-				if strings.Contains(part.Text, "[thinking]") {
-					foundThinking = true
-				}
 				if strings.Contains(part.Text, "analysis") {
 					foundAnalysis = true
 				}
@@ -341,7 +341,7 @@ func TestE2E_ThinkingBlocks(t *testing.T) {
 		}
 	}
 	if !foundThinking {
-		t.Error("expected thinking block in response")
+		t.Error("expected thinking block with Role=\"thinking\" in response")
 	}
 	if !foundAnalysis {
 		t.Error("expected analysis text in response")
