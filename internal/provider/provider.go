@@ -231,7 +231,7 @@ func NewLLM(ctx context.Context, info Info, apiKey, baseURL string, effort Effor
 	case "anthropic":
 		return NewAnthropic(ctx, info.Model, apiKey, baseURL, effort, opts)
 	case "claudecli":
-		return newClaudeCLI()
+		return newClaudeCLI(effort)
 	default:
 		return nil, fmt.Errorf("unsupported provider family: %s", family)
 	}
@@ -239,16 +239,20 @@ func NewLLM(ctx context.Context, info Info, apiKey, baseURL string, effort Effor
 
 // newClaudeCLI creates a Claude CLI provider using the SDK.
 // The CLI binary is resolved from $CLAUDE_CLI_PATH or exec.LookPath.
-func newClaudeCLI() (model.LLM, error) {
+func newClaudeCLI(effort EffortLevel) (model.LLM, error) {
 	binaryPath, err := claudecli.FindBinary()
 	if err != nil {
 		return nil, fmt.Errorf("claude CLI not found: %w (set CLAUDE_CLI_PATH or install claude)", err)
 	}
 	cwd, _ := os.Getwd()
-	return claudecli.New(claudecli.Config{
+	cfg := claudecli.Config{
 		BinaryPath: binaryPath,
 		WorkDir:    cwd,
-	}), nil
+	}
+	if budget := effort.AnthropicThinkingBudget(); budget > 0 {
+		cfg.MaxThinkingTokens = int(budget)
+	}
+	return claudecli.New(cfg), nil
 }
 
 // listClaudeCLIModels returns a static model list for the Claude CLI provider.

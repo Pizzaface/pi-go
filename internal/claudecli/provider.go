@@ -41,6 +41,10 @@ type Config struct {
 	// cannot replace Claude CLI's system prompt entirely.
 	AppendSystemPrompt string
 
+	// MaxThinkingTokens sets the thinking budget for the CLI session.
+	// 0 means use the CLI's default. Maps to WithMaxThinkingTokens in the SDK.
+	MaxThinkingTokens int
+
 	// ApprovalRules are evaluated in order when the CLI requests tool
 	// permission. If no rule matches, the tool is auto-approved.
 	ApprovalRules []ApprovalRule
@@ -192,6 +196,9 @@ func (p *Provider) buildOptions() []claude.Option {
 	}
 	if p.config.AppendSystemPrompt != "" {
 		opts = append(opts, claude.WithAppendSystemPrompt(p.config.AppendSystemPrompt))
+	}
+	if p.config.MaxThinkingTokens > 0 {
+		opts = append(opts, claude.WithMaxThinkingTokens(p.config.MaxThinkingTokens))
 	}
 
 	// Claude CLI requires --verbose when using --print --output-format=stream-json.
