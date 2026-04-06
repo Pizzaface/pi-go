@@ -246,7 +246,7 @@ func TestNormalizeOpenAIBaseURL(t *testing.T) {
 }
 
 func TestNewOpenAIWithBaseURL(t *testing.T) {
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "sk-test", "https://custom-api.example.com/v1", nil)
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "sk-test", "https://custom-api.example.com/v1", EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("NewOpenAI() with baseURL error: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestNewOpenAIWithBaseURL(t *testing.T) {
 }
 
 func TestNewOpenAIWithExtraHeaders(t *testing.T) {
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "sk-test", "", &LLMOptions{
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "sk-test", "", EffortMedium, &LLMOptions{
 		ExtraHeaders: map[string]string{
 			"X-Custom-Header": "custom-value",
 			"X-Org-ID":        "org-123",
@@ -277,7 +277,7 @@ func TestNewOpenAIWithExtraHeaders(t *testing.T) {
 }
 
 func TestNewOpenAIWithBaseURLAndHeaders(t *testing.T) {
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "sk-test", "https://custom.example.com", &LLMOptions{
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "sk-test", "https://custom.example.com", EffortMedium, &LLMOptions{
 		ExtraHeaders: map[string]string{"X-Custom": "value"},
 	})
 	if err != nil {
@@ -289,7 +289,7 @@ func TestNewOpenAIWithBaseURLAndHeaders(t *testing.T) {
 }
 
 func TestNewOpenAIEmptyAPIKey(t *testing.T) {
-	_, err := NewOpenAI(context.Background(), "gpt-4o", "", "", nil)
+	_, err := NewOpenAI(context.Background(), "gpt-4o", "", "", EffortMedium, nil)
 	if err == nil {
 		t.Fatal("expected error for empty API key")
 	}
@@ -434,7 +434,7 @@ func TestOpenAIModelName(t *testing.T) {
 
 func TestOpenAIGenerateContentErrors(t *testing.T) {
 	// Test with invalid API key to trigger error path
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", nil)
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestOpenAIGenerateContentErrors(t *testing.T) {
 
 func TestOpenAIGenerateContentStreaming(t *testing.T) {
 	// Test streaming mode
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", nil)
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestOpenAIGenerateContentStreaming(t *testing.T) {
 
 func TestOpenAIGenerateContentWithTools(t *testing.T) {
 	// Test with tools configured
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", nil)
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestOpenAIGenerateContentWithTools(t *testing.T) {
 
 func TestOpenAIGenerateContentWithModelOverride(t *testing.T) {
 	// Test with model override in request
-	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", nil)
+	llm, err := NewOpenAI(context.Background(), "gpt-4o", "test-key-invalid", "", EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -663,7 +663,7 @@ func TestOpenAINonStreamingTextResponse(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, nil)
+	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("NewOpenAI() error: %v", err)
 	}
@@ -752,7 +752,7 @@ func TestOpenAINonStreamingToolCallResponse(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, nil)
+	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("NewOpenAI() error: %v", err)
 	}
@@ -831,7 +831,7 @@ func TestOpenAINonStreamingErrorResponse(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, nil)
+	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("NewOpenAI() error: %v", err)
 	}

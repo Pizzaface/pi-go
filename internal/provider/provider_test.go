@@ -57,7 +57,7 @@ func TestNewLLMWithProvider(t *testing.T) {
 		if os.Getenv("GOOGLE_API_KEY") == "" && os.Getenv("GEMINI_API_KEY") == "" {
 			t.Skip("skipping: no Google/Gemini API key set")
 		}
-		llm, err := NewLLM(context.TODO(), Info{Provider: "gemini", Model: "gemini-2.5-flash"}, "key", "", "", nil)
+		llm, err := NewLLM(context.TODO(), Info{Provider: "gemini", Model: "gemini-2.5-flash"}, "key", "", EffortMedium, nil)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -66,7 +66,7 @@ func TestNewLLMWithProvider(t *testing.T) {
 		}
 	})
 	t.Run("creates openai provider", func(t *testing.T) {
-		llm, err := NewLLM(context.TODO(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", "", nil)
+		llm, err := NewLLM(context.TODO(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", EffortMedium, nil)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -75,7 +75,7 @@ func TestNewLLMWithProvider(t *testing.T) {
 		}
 	})
 	t.Run("creates anthropic provider", func(t *testing.T) {
-		llm, err := NewLLM(context.TODO(), Info{Provider: "anthropic", Model: "claude-sonnet-4-6"}, "sk-test", "", "", nil)
+		llm, err := NewLLM(context.TODO(), Info{Provider: "anthropic", Model: "claude-sonnet-4-6"}, "sk-test", "", EffortMedium, nil)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -269,7 +269,7 @@ func TestResolveKnownProviders(t *testing.T) {
 }
 
 func TestNewLLMUnsupportedProvider(t *testing.T) {
-	_, err := NewLLM(context.Background(), Info{Provider: "unsupported", Model: "test"}, "key", "", "", nil)
+	_, err := NewLLM(context.Background(), Info{Provider: "unsupported", Model: "test"}, "key", "", EffortMedium, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported provider")
 	}
@@ -282,7 +282,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	}}
 
 	t.Run("openai with extra headers", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", "", opts)
+		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", EffortMedium, opts)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -292,7 +292,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	})
 
 	t.Run("anthropic with extra headers", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "anthropic", Model: "claude-sonnet-4-6"}, "sk-test", "", "", opts)
+		llm, err := NewLLM(context.Background(), Info{Provider: "anthropic", Model: "claude-sonnet-4-6"}, "sk-test", "", EffortMedium, opts)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -302,7 +302,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	})
 
 	t.Run("ollama with extra headers", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "ollama", Model: "test-model", Ollama: true}, "", "http://localhost:11434", "", opts)
+		llm, err := NewLLM(context.Background(), Info{Provider: "ollama", Model: "test-model", Ollama: true}, "", "http://localhost:11434", EffortMedium, opts)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -312,7 +312,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	})
 
 	t.Run("nil opts", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", "", nil)
+		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", EffortMedium, nil)
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -322,7 +322,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	})
 
 	t.Run("empty opts", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", "", &LLMOptions{})
+		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", EffortMedium, &LLMOptions{})
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -332,7 +332,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	})
 
 	t.Run("insecure TLS", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", "", &LLMOptions{InsecureSkipTLS: true})
+		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", EffortMedium, &LLMOptions{InsecureSkipTLS: true})
 		if err != nil {
 			t.Fatalf("NewLLM() error: %v", err)
 		}
@@ -342,7 +342,7 @@ func TestNewLLMWithExtraHeaders(t *testing.T) {
 	})
 
 	t.Run("insecure TLS with headers", func(t *testing.T) {
-		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", "", &LLMOptions{
+		llm, err := NewLLM(context.Background(), Info{Provider: "openai", Model: "gpt-4o"}, "sk-test", "", EffortMedium, &LLMOptions{
 			ExtraHeaders:    map[string]string{"X-Test": "val"},
 			InsecureSkipTLS: true,
 		})

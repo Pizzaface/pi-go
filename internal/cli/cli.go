@@ -164,7 +164,8 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the LLM provider.
-	llm, err := provider.NewLLM(cmd.Context(), info, apiKey, baseURL, cfg.ThinkingLevel, llmOpts)
+	effortLevel := provider.ParseEffortLevel(cfg.ThinkingLevel)
+	llm, err := provider.NewLLM(cmd.Context(), info, apiKey, baseURL, effortLevel, llmOpts)
 	if err != nil {
 		return fmt.Errorf("creating LLM provider: %w", err)
 	}

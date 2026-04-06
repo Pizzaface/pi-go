@@ -231,28 +231,28 @@ func TestAntGenaiToolsToAnthropic(t *testing.T) {
 
 func TestNewLLMFactory(t *testing.T) {
 	t.Run("unsupported provider", func(t *testing.T) {
-		_, err := NewLLM(context.TODO(), Info{Provider: "unknown", Model: "test"}, "key", "", "", nil)
+		_, err := NewLLM(context.TODO(), Info{Provider: "unknown", Model: "test"}, "key", "", EffortNone, nil)
 		if err == nil {
 			t.Fatal("expected error for unsupported provider")
 		}
 	})
 
 	t.Run("openai requires key", func(t *testing.T) {
-		_, err := NewOpenAI(context.TODO(), "gpt-4o", "", "", nil)
+		_, err := NewOpenAI(context.TODO(), "gpt-4o", "", "", EffortNone, nil)
 		if err == nil {
 			t.Fatal("expected error for empty API key")
 		}
 	})
 
 	t.Run("anthropic requires key without baseURL", func(t *testing.T) {
-		_, err := NewAnthropic(context.TODO(), "claude-sonnet-4-6", "", "", "", nil)
+		_, err := NewAnthropic(context.TODO(), "claude-sonnet-4-6", "", "", EffortNone, nil)
 		if err == nil {
 			t.Fatal("expected error for empty API key")
 		}
 	})
 
 	t.Run("anthropic allows empty key with baseURL", func(t *testing.T) {
-		llm, err := NewAnthropic(context.TODO(), "qwen2.5", "", "http://localhost:11434", "", nil)
+		llm, err := NewAnthropic(context.TODO(), "qwen2.5", "", "http://localhost:11434", EffortNone, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -279,27 +279,26 @@ func TestResolveCloudSuffix(t *testing.T) {
 
 func TestAntThinkingConfig(t *testing.T) {
 	tests := []struct {
-		level   string
+		level   EffortLevel
+		name    string
 		wantNil bool
 	}{
-		{"none", true},
-		{"", true},
-		{"unknown", true},
-		{"low", false},
-		{"medium", false},
-		{"high", false},
+		{EffortNone, "none", true},
+		{EffortLow, "low", false},
+		{EffortMedium, "medium", false},
+		{EffortHigh, "high", false},
 	}
 	for _, tt := range tests {
-		t.Run(tt.level, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			got := antThinkingConfig(tt.level)
 			if tt.wantNil {
 				if got != nil {
-					t.Errorf("antThinkingConfig(%q) = %v, want nil", tt.level, got)
+					t.Errorf("antThinkingConfig(%v) = %v, want nil", tt.level, got)
 				}
 				return
 			}
 			if got == nil {
-				t.Errorf("antThinkingConfig(%q) = nil, want non-nil", tt.level)
+				t.Errorf("antThinkingConfig(%v) = nil, want non-nil", tt.level)
 			}
 		})
 	}
@@ -307,7 +306,7 @@ func TestAntThinkingConfig(t *testing.T) {
 
 func TestAnthropicGenerateContentErrors(t *testing.T) {
 	// Test with invalid API key to trigger error path
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", "", nil)
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -351,7 +350,7 @@ func TestAnthropicGenerateContentErrors(t *testing.T) {
 
 func TestAnthropicGenerateContentStreaming(t *testing.T) {
 	// Test streaming mode (will fail with invalid key, but exercises the code path)
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", "", nil)
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -375,7 +374,7 @@ func TestAnthropicGenerateContentStreaming(t *testing.T) {
 
 func TestAnthropicGenerateContentWithTools(t *testing.T) {
 	// Test with tools configured
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", "", nil)
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -415,7 +414,7 @@ func TestAnthropicGenerateContentWithTools(t *testing.T) {
 
 func TestAnthropicGenerateContentWithModelOverride(t *testing.T) {
 	// Test with model override in request
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", "", nil)
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -438,7 +437,7 @@ func TestAnthropicGenerateContentWithModelOverride(t *testing.T) {
 
 func TestAnthropicGenerateContentWithThinking(t *testing.T) {
 	// Test with thinking enabled
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", "medium", nil)
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key-invalid", "", EffortMedium, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -461,7 +460,7 @@ func TestAnthropicGenerateContentWithThinking(t *testing.T) {
 func TestAnthropicGenerateContentModelNameFallback(t *testing.T) {
 	// When the model is named "anthropic" it should fall back to claude-sonnet-4-6.
 	// We create the model with name "anthropic" so modelName == "anthropic" after no override.
-	llm, err := NewAnthropic(context.Background(), "anthropic", "test-key-invalid", "", "", nil)
+	llm, err := NewAnthropic(context.Background(), "anthropic", "test-key-invalid", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -484,7 +483,7 @@ func TestAnthropicGenerateContentModelNameFallback(t *testing.T) {
 
 func TestAnthropicGenerateContentModelOverrideToAnthropic(t *testing.T) {
 	// req.Model == "anthropic" should also trigger the fallback to "claude-sonnet-4-6".
-	llm, err := NewAnthropic(context.Background(), "some-model", "test-key-invalid", "", "", nil)
+	llm, err := NewAnthropic(context.Background(), "some-model", "test-key-invalid", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("failed to create model: %v", err)
 	}
@@ -541,7 +540,7 @@ func TestAntContentsToMessagesAssistantRoleFunctionCall(t *testing.T) {
 }
 
 func TestNewAnthropicWithExtraHeaders(t *testing.T) {
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key", "", "", &LLMOptions{
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key", "", EffortNone, &LLMOptions{
 		ExtraHeaders: map[string]string{
 			"X-Custom-Header": "value1",
 			"X-Org-ID":        "org-456",
@@ -559,7 +558,7 @@ func TestNewAnthropicWithExtraHeaders(t *testing.T) {
 }
 
 func TestNewAnthropicWithInsecureTLS(t *testing.T) {
-	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key", "", "", &LLMOptions{
+	llm, err := NewAnthropic(context.Background(), "claude-sonnet-4-6", "test-key", "", EffortNone, &LLMOptions{
 		InsecureSkipTLS: true,
 	})
 	if err != nil {
@@ -572,7 +571,7 @@ func TestNewAnthropicWithInsecureTLS(t *testing.T) {
 
 func TestNewAnthropicWithBaseURLAndKey(t *testing.T) {
 	// Both apiKey and baseURL set - exercises both option branches.
-	llm, err := NewAnthropic(context.Background(), "custom-model", "test-key", "http://localhost:8080", "low", nil)
+	llm, err := NewAnthropic(context.Background(), "custom-model", "test-key", "http://localhost:8080", EffortLow, nil)
 	if err != nil {
 		t.Fatalf("NewAnthropic() with baseURL+key error: %v", err)
 	}
@@ -706,7 +705,7 @@ func TestAnthropicNonStreamingTextResponse(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	llm, err := NewAnthropic(ctx, "claude-sonnet-4-6", "sk-test", srv.URL, "none", nil)
+	llm, err := NewAnthropic(ctx, "claude-sonnet-4-6", "sk-test", srv.URL, EffortNone, nil)
 	if err != nil {
 		t.Fatalf("NewAnthropic() error: %v", err)
 	}
@@ -784,7 +783,7 @@ func TestAnthropicNonStreamingToolCallResponse(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	llm, err := NewAnthropic(ctx, "claude-sonnet-4-6", "sk-test", srv.URL, "none", nil)
+	llm, err := NewAnthropic(ctx, "claude-sonnet-4-6", "sk-test", srv.URL, EffortNone, nil)
 	if err != nil {
 		t.Fatalf("NewAnthropic() error: %v", err)
 	}
@@ -1006,7 +1005,7 @@ func TestAnthropicNonStreamingErrorResponse(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	llm, err := NewAnthropic(ctx, "claude-sonnet-4-6", "sk-test", srv.URL, "none", nil)
+	llm, err := NewAnthropic(ctx, "claude-sonnet-4-6", "sk-test", srv.URL, EffortNone, nil)
 	if err != nil {
 		t.Fatalf("NewAnthropic() error: %v", err)
 	}

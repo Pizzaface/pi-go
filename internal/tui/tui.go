@@ -66,6 +66,9 @@ type model struct {
 	extensionWidgetBelow *extensionWidgetState
 	extensionDialog      *extensionDialogState
 
+	// Effort level for provider reasoning/thinking control.
+	effortLevel provider.EffortLevel
+
 	// Git diff stats (refreshed after tool completions).
 	diffAdded   int
 	diffRemoved int
@@ -233,6 +236,7 @@ func Run(ctx context.Context, cfg Config) error {
 		statusModel:  StatusModel{},
 		themeManager: tm,
 		face:         NewFaceRenderer(),
+		effortLevel:  cfg.EffortLevel,
 	}
 	m.resetExtensionBridge(cfg.ExtensionManager)
 
@@ -1042,6 +1046,7 @@ func (m *model) statusRenderInput(showSidebar bool) StatusRenderInput {
 		ProviderName:    m.cfg.ProviderName,
 		ModelName:       m.cfg.ModelName,
 		Running:         m.running,
+		EffortLevel:     m.effortLevel.String(),
 		Eyes:            m.eyes(),
 		Messages:        m.chatModel.Messages,
 		TokenTracker:    m.cfg.TokenTracker,

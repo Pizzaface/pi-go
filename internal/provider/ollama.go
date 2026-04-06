@@ -16,15 +16,15 @@ import (
 
 // ollamaModel implements model.LLM for the native Ollama API.
 type ollamaModel struct {
-	modelName     string
-	client        *ollamaapi.Client
-	thinkingLevel string // "none", "low", "medium", "high"
+	modelName string
+	client    *ollamaapi.Client
+	effort    EffortLevel
 }
 
 // NewOllama creates an Ollama model.LLM using the native Ollama Go client.
 // baseURL defaults to http://localhost:11434 if empty.
-// thinkingLevel controls extended thinking: "none", "low", "medium", "high".
-func NewOllama(_ context.Context, modelName, baseURL, thinkingLevel string, opts *LLMOptions) (model.LLM, error) {
+// effort controls extended thinking.
+func NewOllama(_ context.Context, modelName, baseURL string, effort EffortLevel, opts *LLMOptions) (model.LLM, error) {
 	if modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -38,9 +38,9 @@ func NewOllama(_ context.Context, modelName, baseURL, thinkingLevel string, opts
 	httpClient := BuildHTTPClient(opts, 10*time.Minute)
 	client := ollamaapi.NewClient(u, httpClient)
 	return &ollamaModel{
-		modelName:     modelName,
-		client:        client,
-		thinkingLevel: thinkingLevel,
+		modelName: modelName,
+		client:    client,
+		effort:    effort,
 	}, nil
 }
 
@@ -66,9 +66,8 @@ func (m *ollamaModel) GenerateContent(ctx context.Context, req *model.LLMRequest
 		}
 
 		// Configure thinking.
-		thinkCfg := ollamaThinkingConfig(m.thinkingLevel)
-		if thinkCfg != nil {
-			chatReq.Think = thinkCfg
+		if thinkVal := m.effort.OllamaThinkingValue(); thinkVal != "" {
+			chatReq.Think = &ollamaapi.ThinkValue{Value: thinkVal}
 		}
 
 		// Convert tools.
@@ -85,15 +84,7 @@ func (m *ollamaModel) GenerateContent(ctx context.Context, req *model.LLMRequest
 	}
 }
 
-// ollamaThinkingConfig maps a thinking level string to Ollama ThinkValue.
-func ollamaThinkingConfig(level string) *ollamaapi.ThinkValue {
-	switch level {
-	case "low", "medium", "high":
-		return &ollamaapi.ThinkValue{Value: level}
-	default:
-		return nil
-	}
-}
+
 
 // ollamaFinishReasonToGenai maps Ollama done_reason to genai.FinishReason.
 func ollamaFinishReasonToGenai(reason string) genai.FinishReason {

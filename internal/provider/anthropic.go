@@ -20,16 +20,16 @@ const defaultMaxTokens int64 = 8192
 
 // anthropicModel implements model.LLM for the Anthropic API.
 type anthropicModel struct {
-	modelName     string
-	client        anthropic.Client
-	thinkingLevel string // "none", "low", "medium", "high"
+	modelName string
+	client    anthropic.Client
+	effort    EffortLevel
 }
 
 // NewAnthropic creates an Anthropic model.LLM.
 // If baseURL is non-empty, it overrides the default API endpoint.
 // When baseURL is set, the API key is optional (for Ollama compatibility).
-// thinkingLevel controls extended thinking: "none", "low", "medium", "high".
-func NewAnthropic(_ context.Context, modelName, apiKey, baseURL, thinkingLevel string, llmOpts *LLMOptions) (model.LLM, error) {
+// effort controls extended thinking budget.
+func NewAnthropic(_ context.Context, modelName, apiKey, baseURL string, effort EffortLevel, llmOpts *LLMOptions) (model.LLM, error) {
 	if apiKey == "" && baseURL == "" {
 		return nil, fmt.Errorf("anthropic API key is required")
 	}
@@ -49,7 +49,7 @@ func NewAnthropic(_ context.Context, modelName, apiKey, baseURL, thinkingLevel s
 		}
 	}
 	client := anthropic.NewClient(opts...)
-	return &anthropicModel{modelName: modelName, client: client, thinkingLevel: thinkingLevel}, nil
+	return &anthropicModel{modelName: modelName, client: client, effort: effort}, nil
 }
 
 func (m *anthropicModel) Name() string { return m.modelName }
@@ -67,7 +67,7 @@ func (m *anthropicModel) GenerateContent(ctx context.Context, req *model.LLMRequ
 		}
 
 		maxTokens := defaultMaxTokens
-		thinkingCfg := antThinkingConfig(m.thinkingLevel)
+		thinkingCfg := antThinkingConfig(m.effort)
 		if thinkingCfg != nil {
 			// Thinking requires higher max_tokens to accommodate the thinking budget.
 			maxTokens = 16384
@@ -262,17 +262,10 @@ func antGenaiToolsToAnthropic(tools []*genai.Tool) []anthropic.ToolUnionParam {
 	return out
 }
 
-// antThinkingConfig maps a thinking level string to Anthropic thinking config.
-func antThinkingConfig(level string) *anthropic.ThinkingConfigParamUnion {
-	var budget int64
-	switch level {
-	case "low":
-		budget = 2048
-	case "medium":
-		budget = 4096
-	case "high":
-		budget = 8192
-	default:
+// antThinkingConfig maps an EffortLevel to Anthropic thinking config.
+func antThinkingConfig(effort EffortLevel) *anthropic.ThinkingConfigParamUnion {
+	budget := effort.AnthropicThinkingBudget()
+	if budget <= 0 {
 		return nil
 	}
 	return new(anthropic.ThinkingConfigParamOfEnabled(budget))

@@ -119,6 +119,7 @@ var defaultBuiltinSlashCommands = []string{
 	"/help",
 	"/clear",
 	"/model",
+	"/effort",
 	"/session",
 	"/new",
 	"/resume",

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,8 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		m.handleForkCommand(parts[1:])
 	case "/tree":
 		m.handleTreeCommand()
+	case "/effort":
+		return m.handleEffortCommand(parts[1:])
 	case "/settings":
 		m.handleSettingsCommand()
 	case "/context":
@@ -568,7 +571,7 @@ func (m *model) handleModelSelect() (tea.Model, tea.Cmd) {
 		ExtraHeaders: reg.DefaultHeaders(info.Provider),
 	}
 
-	newLLM, err := provider.NewLLM(m.ctx, info, apiKey, baseURL, "", llmOpts)
+	newLLM, err := provider.NewLLM(m.ctx, info, apiKey, baseURL, m.effortLevel, llmOpts)
 	if err != nil {
 		m.appendAssistant(fmt.Sprintf("Failed to create LLM for `%s`: %v", selected.ID, err))
 		m.modelPicker = nil
@@ -611,6 +614,115 @@ func (m *model) handleModelSelect() (tea.Model, tea.Cmd) {
 	m.appendAssistant(fmt.Sprintf("Switched to model **%s** (%s)", selected.ID, info.Provider))
 	m.modelPicker = nil
 	return m, nil
+}
+
+// handleEffortCommand shows or changes the reasoning effort level.
+// Usage: /effort — shows current level; /effort <level> — sets the level.
+func (m *model) handleEffortCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		levels := provider.AllEffortLevels()
+		var b strings.Builder
+		b.WriteString("**Reasoning effort level:** `")
+		b.WriteString(m.effortLevel.String())
+		b.WriteString("`\n\nAvailable levels:\n")
+		for _, lvl := range levels {
+			marker := "  "
+			if lvl == m.effortLevel {
+				marker = "▸ "
+			}
+			desc := effortDescription(lvl)
+			fmt.Fprintf(&b, "%s`%s` — %s\n", marker, lvl.String(), desc)
+		}
+		b.WriteString("\nUsage: `/effort <level>` to change")
+		m.appendAssistant(b.String())
+		return m, nil
+	}
+
+	newLevel := provider.ParseEffortLevel(args[0])
+	if newLevel == m.effortLevel {
+		m.appendAssistant(fmt.Sprintf("Effort level is already `%s`.", newLevel.String()))
+		return m, nil
+	}
+
+	oldLevel := m.effortLevel
+	m.effortLevel = newLevel
+
+	// Rebuild LLM with new effort level.
+	reg := m.cfg.ProviderRegistry
+	if reg != nil {
+		info, err := reg.Resolve(m.cfg.ModelName, m.cfg.ProviderName)
+		if err == nil {
+			apiKey := reg.APIKey(info.Provider)
+			baseURL := reg.BaseURL(info.Provider)
+			llmOpts := &provider.LLMOptions{
+				ExtraHeaders: reg.DefaultHeaders(info.Provider),
+			}
+			newLLM, err := provider.NewLLM(m.ctx, info, apiKey, baseURL, newLevel, llmOpts)
+			if err == nil {
+				if m.cfg.WrapLLM != nil {
+					newLLM = m.cfg.WrapLLM(newLLM)
+				}
+				if m.cfg.Agent != nil {
+					if rebuildErr := m.cfg.Agent.RebuildWithModel(newLLM); rebuildErr != nil {
+						m.effortLevel = oldLevel
+						m.appendAssistant(fmt.Sprintf("Failed to rebuild model with new effort: %v", rebuildErr))
+						return m, nil
+					}
+				}
+				m.cfg.LLM = newLLM
+			}
+		}
+	}
+
+	// Persist effort level.
+	saveEffortLevel(newLevel)
+
+	m.appendAssistant(fmt.Sprintf("Effort level changed: `%s` → `%s`", oldLevel.String(), newLevel.String()))
+	return m, nil
+}
+
+// effortDescription returns a human-readable description for an effort level.
+func effortDescription(level provider.EffortLevel) string {
+	switch level {
+	case provider.EffortNone:
+		return "No extended thinking/reasoning"
+	case provider.EffortLow:
+		return "Minimal thinking budget"
+	case provider.EffortMedium:
+		return "Balanced thinking (default)"
+	case provider.EffortHigh:
+		return "Maximum thinking budget"
+	default:
+		return ""
+	}
+}
+
+// saveEffortLevel persists the effort level to ~/.pi-go/config.json.
+func saveEffortLevel(level provider.EffortLevel) {
+	dir := piGoDir()
+	if dir == "" {
+		return
+	}
+	configPath := filepath.Join(dir, "config.json")
+
+	var raw map[string]any
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		raw = make(map[string]any)
+	} else {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			raw = make(map[string]any)
+		}
+	}
+
+	raw["thinkingLevel"] = level.String()
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(configPath, out, 0o644)
 }
 
 // formatModelInfo returns a formatted string showing the current model and all configured roles.
@@ -844,6 +956,7 @@ func (m *model) formatHelp() string {
 	b.WriteString("  `/help`                — Show this help\n")
 	b.WriteString("  `/clear`               — Clear conversation\n")
 	b.WriteString("  `/model`               — Open interactive model picker\n")
+	b.WriteString("  `/effort [level]`      — Show or set reasoning effort (none/low/medium/high)\n")
 	b.WriteString("  `/session`             — Show active session details\n")
 	b.WriteString("  `/new`                 — Start a fresh session\n")
 	b.WriteString("  `/resume [id]`         — List or switch saved sessions\n")

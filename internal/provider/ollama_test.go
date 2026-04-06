@@ -14,33 +14,22 @@ import (
 	"google.golang.org/genai"
 )
 
-func TestOllamaThinkingConfig(t *testing.T) {
+func TestOllamaEffortMapping(t *testing.T) {
 	tests := []struct {
-		level   string
-		wantNil bool
+		level   EffortLevel
+		name    string
 		wantVal string
 	}{
-		{"none", true, ""},
-		{"", true, ""},
-		{"unknown", true, ""},
-		{"low", false, "low"},
-		{"medium", false, "medium"},
-		{"high", false, "high"},
+		{EffortNone, "none", ""},
+		{EffortLow, "low", "low"},
+		{EffortMedium, "medium", "medium"},
+		{EffortHigh, "high", "high"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.level, func(t *testing.T) {
-			got := ollamaThinkingConfig(tt.level)
-			if tt.wantNil {
-				if got != nil {
-					t.Errorf("ollamaThinkingConfig(%q) = %v, want nil", tt.level, got)
-				}
-				return
-			}
-			if got == nil {
-				t.Fatalf("ollamaThinkingConfig(%q) = nil, want non-nil", tt.level)
-			}
-			if got.Value != tt.wantVal {
-				t.Errorf("ollamaThinkingConfig(%q).Value = %q, want %q", tt.level, got.Value, tt.wantVal)
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.level.OllamaThinkingValue()
+			if got != tt.wantVal {
+				t.Errorf("EffortLevel(%v).OllamaThinkingValue() = %q, want %q", tt.level, got, tt.wantVal)
 			}
 		})
 	}
@@ -345,7 +334,7 @@ func TestOllamaListModels(t *testing.T) {
 
 func TestOllamaGenerateContent(t *testing.T) {
 	// Create a mock-like Ollama model for testing
-	llm, err := NewOllama(context.Background(), "qwen3.5:latest", "http://localhost:11434", "none", nil)
+	llm, err := NewOllama(context.Background(), "qwen3.5:latest", "http://localhost:11434", EffortNone, nil)
 	if err != nil {
 		t.Skipf("skipping: could not create Ollama model: %v", err)
 	}
@@ -414,7 +403,7 @@ func TestOllamaGenerateContent(t *testing.T) {
 	})
 
 	t.Run("with thinking level", func(t *testing.T) {
-		llmThink, err := NewOllama(context.Background(), "qwen3.5:latest", "http://localhost:11434", "medium", nil)
+		llmThink, err := NewOllama(context.Background(), "qwen3.5:latest", "http://localhost:11434", EffortMedium, nil)
 		if err != nil {
 			t.Skipf("skipping: could not create Ollama model: %v", err)
 		}
@@ -623,21 +612,21 @@ func TestOllamaListModelsWithMockServer(t *testing.T) {
 
 func TestNewOllamaValidation(t *testing.T) {
 	t.Run("empty model name", func(t *testing.T) {
-		_, err := NewOllama(context.Background(), "", "", "none", nil)
+		_, err := NewOllama(context.Background(), "", "", EffortNone, nil)
 		if err == nil {
 			t.Fatal("expected error for empty model name")
 		}
 	})
 
 	t.Run("invalid URL", func(t *testing.T) {
-		_, err := NewOllama(context.Background(), "test-model", "://bad", "none", nil)
+		_, err := NewOllama(context.Background(), "test-model", "://bad", EffortNone, nil)
 		if err == nil {
 			t.Fatal("expected error for invalid URL")
 		}
 	})
 
 	t.Run("default base URL", func(t *testing.T) {
-		llm, err := NewOllama(context.Background(), "test-model", "", "none", nil)
+		llm, err := NewOllama(context.Background(), "test-model", "", EffortNone, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -647,7 +636,7 @@ func TestNewOllamaValidation(t *testing.T) {
 	})
 
 	t.Run("custom base URL", func(t *testing.T) {
-		llm, err := NewOllama(context.Background(), "test-model", "http://custom:1234", "none", nil)
+		llm, err := NewOllama(context.Background(), "test-model", "http://custom:1234", EffortNone, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -657,7 +646,7 @@ func TestNewOllamaValidation(t *testing.T) {
 	})
 
 	t.Run("with extra headers", func(t *testing.T) {
-		llm, err := NewOllama(context.Background(), "test-model", "", "none", &LLMOptions{
+		llm, err := NewOllama(context.Background(), "test-model", "", EffortNone, &LLMOptions{
 			ExtraHeaders: map[string]string{"X-Custom": "value"},
 		})
 		if err != nil {
@@ -673,7 +662,7 @@ func TestNewOllamaValidation(t *testing.T) {
 	})
 
 	t.Run("nil extra headers no transport wrapping", func(t *testing.T) {
-		llm, err := NewOllama(context.Background(), "test-model", "", "none", nil)
+		llm, err := NewOllama(context.Background(), "test-model", "", EffortNone, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -731,9 +720,9 @@ func ollamaChatLine(modelName, role, content, thinking, doneReason string, done 
 }
 
 // newOllamaModelFromServer creates an ollamaModel whose HTTP client points at srv.
-func newOllamaModelFromServer(t *testing.T, srv *httptest.Server, modelName, thinkingLevel string) model.LLM {
+func newOllamaModelFromServer(t *testing.T, srv *httptest.Server, modelName string, effort EffortLevel) model.LLM {
 	t.Helper()
-	llm, err := NewOllama(context.Background(), modelName, srv.URL, thinkingLevel, nil)
+	llm, err := NewOllama(context.Background(), modelName, srv.URL, effort, nil)
 	if err != nil {
 		t.Fatalf("NewOllama: %v", err)
 	}
@@ -772,7 +761,7 @@ func TestOllamaRunStreaming_BasicText(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}},
@@ -835,7 +824,7 @@ func TestOllamaRunStreaming_ThinkingContent(t *testing.T) {
 		writeNDJSON(w, []any{thinkLine, answerLine})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "high")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortHigh)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "What is 6*7?"}}},
@@ -890,7 +879,7 @@ func TestOllamaRunStreaming_ToolCalls(t *testing.T) {
 		writeNDJSON(w, []any{toolCallLine})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Weather in Paris?"}}},
@@ -929,7 +918,7 @@ func TestOllamaRunStreaming_FinishReasonLength(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "tell me a story"}}},
@@ -954,7 +943,7 @@ func TestOllamaRunStreaming_ServerError(t *testing.T) {
 		_, _ = fmt.Fprintln(w, `{"error":"internal server error"}`)
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}},
@@ -981,7 +970,7 @@ func TestOllamaRunStreaming_CancelledContext(t *testing.T) {
 		<-r.Context().Done()
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}},
@@ -1020,7 +1009,7 @@ func TestOllamaRunStreaming_WithTools(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Use the tool"}}},
@@ -1077,7 +1066,7 @@ func TestOllamaRunStreaming_WithThinkingLevel(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "medium")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortMedium)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Think hard"}}},
@@ -1111,7 +1100,7 @@ func TestOllamaRunStreaming_YieldCancelled(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}},
@@ -1151,7 +1140,7 @@ func TestOllamaRunNonStreaming_BasicText(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}},
@@ -1211,7 +1200,7 @@ func TestOllamaRunNonStreaming_ThinkingContent(t *testing.T) {
 		writeNDJSON(w, []any{line})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "high")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortHigh)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "6*7?"}}},
@@ -1264,7 +1253,7 @@ func TestOllamaRunNonStreaming_ToolCalls(t *testing.T) {
 		writeNDJSON(w, []any{line})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Calculate 2+2"}}},
@@ -1308,7 +1297,7 @@ func TestOllamaRunNonStreaming_FinishReasonLength(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Write a novel"}}},
@@ -1331,7 +1320,7 @@ func TestOllamaRunNonStreaming_ServerError(t *testing.T) {
 		_, _ = fmt.Fprintln(w, `{"error":"something went wrong"}`)
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}},
@@ -1356,7 +1345,7 @@ func TestOllamaRunNonStreaming_ModelOverride(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "original-model", "none")
+	llm := newOllamaModelFromServer(t, srv, "original-model", EffortNone)
 	req := &model.LLMRequest{
 		Model: "override-model",
 		Contents: []*genai.Content{
@@ -1390,7 +1379,7 @@ func TestOllamaRunNonStreaming_SystemPrompt(t *testing.T) {
 		})
 	})
 
-	llm := newOllamaModelFromServer(t, srv, "test", "none")
+	llm := newOllamaModelFromServer(t, srv, "test", EffortNone)
 	req := &model.LLMRequest{
 		Contents: []*genai.Content{
 			{Role: "user", Parts: []*genai.Part{{Text: "Hello"}}},
@@ -1424,7 +1413,7 @@ func TestOllamaRunNonStreaming_SystemPrompt(t *testing.T) {
 }
 
 func TestOllamaName(t *testing.T) {
-	llm, err := NewOllama(context.Background(), "my-model", "", "none", nil)
+	llm, err := NewOllama(context.Background(), "my-model", "", EffortNone, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

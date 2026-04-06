@@ -588,6 +588,8 @@ func slashCommandDesc(cmd string) string {
 		return "Clear conversation"
 	case "/model":
 		return "Show current model"
+	case "/effort":
+		return "Show or set reasoning effort (none/low/medium/high)"
 	case "/session":
 		return "Show active session details"
 	case "/new":

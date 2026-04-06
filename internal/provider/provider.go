@@ -212,8 +212,8 @@ func KnownContextWindow(modelName string) int64 {
 	return 0
 }
 
-// NewLLM creates a model.LLM for the given provider info, API key, optional base URL, thinking level, and options.
-func NewLLM(ctx context.Context, info Info, apiKey, baseURL, thinkingLevel string, opts *LLMOptions) (model.LLM, error) {
+// NewLLM creates a model.LLM for the given provider info, API key, optional base URL, effort level, and options.
+func NewLLM(ctx context.Context, info Info, apiKey, baseURL string, effort EffortLevel, opts *LLMOptions) (model.LLM, error) {
 	if opts == nil {
 		opts = &LLMOptions{}
 	}
@@ -223,13 +223,13 @@ func NewLLM(ctx context.Context, info Info, apiKey, baseURL, thinkingLevel strin
 	}
 	switch family {
 	case "ollama":
-		return NewOllama(ctx, info.Model, baseURL, thinkingLevel, opts)
+		return NewOllama(ctx, info.Model, baseURL, effort, opts)
 	case "gemini":
 		return NewGemini(ctx, info.Provider, info.Model, apiKey, baseURL, opts)
 	case "openai":
-		return NewOpenAI(ctx, info.Model, apiKey, baseURL, opts)
+		return NewOpenAI(ctx, info.Model, apiKey, baseURL, effort, opts)
 	case "anthropic":
-		return NewAnthropic(ctx, info.Model, apiKey, baseURL, thinkingLevel, opts)
+		return NewAnthropic(ctx, info.Model, apiKey, baseURL, effort, opts)
 	case "claudecli":
 		return newClaudeCLI()
 	default:

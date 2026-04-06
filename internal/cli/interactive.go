@@ -72,6 +72,7 @@ func runInteractive(
 		ProviderRegistry: reg,
 		WorkDir:          cwd,
 		ThemeName:        cfg.Theme,
+		EffortLevel:      provider.ParseEffortLevel(cfg.ThinkingLevel),
 		DeferredInit:     initCh,
 		DebugTracer:      debugTracer,
 	})

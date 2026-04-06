@@ -31,6 +31,7 @@ type StatusRenderInput struct {
 	ProviderName string
 	ModelName    string
 	Running      bool
+	EffortLevel  string // current effort level label (e.g. "medium")
 
 	Eyes            string       // mood eyes e.g. "◕ ◕"
 	Messages        []message    // for context estimate
@@ -189,6 +190,12 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		} else if total > 0 {
 			parts = append(parts, dim.Render(fmt.Sprintf("tokens: %s", formatTokenCount(total))))
 		}
+	}
+
+	// Effort level indicator.
+	if in.EffortLevel != "" && in.EffortLevel != "medium" {
+		effortStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("183"))
+		parts = append(parts, effortStyle.Render(fmt.Sprintf("⚡%s", in.EffortLevel)))
 	}
 
 	// Git branch.

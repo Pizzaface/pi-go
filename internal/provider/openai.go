@@ -26,11 +26,13 @@ import (
 type openaiModel struct {
 	modelName string
 	client    openai.Client
+	effort    EffortLevel
 }
 
 // NewOpenAI creates an OpenAI model.LLM.
 // If baseURL is non-empty, it overrides the default API endpoint.
-func NewOpenAI(_ context.Context, modelName, apiKey, baseURL string, llmOpts *LLMOptions) (model.LLM, error) {
+// effort controls reasoning_effort for o-series and compatible models.
+func NewOpenAI(_ context.Context, modelName, apiKey, baseURL string, effort EffortLevel, llmOpts *LLMOptions) (model.LLM, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("OpenAI API key is required")
 	}
@@ -48,7 +50,7 @@ func NewOpenAI(_ context.Context, modelName, apiKey, baseURL string, llmOpts *LL
 		}
 	}
 	client := openai.NewClient(opts...)
-	return &openaiModel{modelName: modelName, client: client}, nil
+	return &openaiModel{modelName: modelName, client: client, effort: effort}, nil
 }
 
 func (m *openaiModel) Name() string { return m.modelName }
@@ -91,6 +93,11 @@ func (m *openaiModel) GenerateContent(ctx context.Context, req *model.LLMRequest
 			params.Messages = append([]openai.ChatCompletionMessageParamUnion{
 				openai.SystemMessage(systemInstruction),
 			}, params.Messages...)
+		}
+
+		// Apply reasoning effort for models that support it.
+		if re := m.effort.OpenAIReasoningEffort(); re != "" {
+			params.ReasoningEffort = re
 		}
 
 		if req.Config != nil && len(req.Config.Tools) > 0 {

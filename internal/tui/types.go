@@ -57,6 +57,8 @@ type Config struct {
 	CompactMetrics CompactStatsProvider
 	// ThemeName is the configured theme name from config. Empty or "default" uses tokyo-night.
 	ThemeName string
+	// EffortLevel is the initial reasoning/thinking effort level.
+	EffortLevel provider.EffortLevel
 
 	// DeferredInit, if non-nil, is a channel of InitEvent messages.
 	// When set, the TUI starts immediately in loading state and receives
