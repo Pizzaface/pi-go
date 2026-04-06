@@ -404,6 +404,65 @@ func TestSaveKey(t *testing.T) {
 	_ = os.Unsetenv("TEST_KEY")
 }
 
+func TestSaveAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
+
+	err := SaveAuth("codex", &StoredAuth{
+		Type:      "oauth",
+		Access:    "access-token",
+		Refresh:   "refresh-token",
+		Expires:   1234567890,
+		AccountID: "acct_123",
+	})
+	if err != nil {
+		t.Fatalf("SaveAuth error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	if err != nil {
+		t.Fatalf("error reading auth.json: %v", err)
+	}
+	var got map[string]StoredAuth
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("error parsing auth.json: %v", err)
+	}
+	if got["codex"].Access != "access-token" || got["codex"].AccountID != "acct_123" {
+		t.Fatalf("unexpected auth.json contents: %+v", got["codex"])
+	}
+}
+
+func TestSaveAuth_MergesExistingProviders(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
+
+	if err := SaveAuth("anthropic", &StoredAuth{Type: "oauth", Access: "ant-token"}); err != nil {
+		t.Fatalf("SaveAuth anthropic error: %v", err)
+	}
+	if err := SaveAuth("codex", &StoredAuth{Type: "oauth", Access: "codex-token"}); err != nil {
+		t.Fatalf("SaveAuth codex error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	if err != nil {
+		t.Fatalf("error reading auth.json: %v", err)
+	}
+	var got map[string]StoredAuth
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("error parsing auth.json: %v", err)
+	}
+	if got["anthropic"].Access != "ant-token" {
+		t.Fatalf("missing anthropic auth: %+v", got)
+	}
+	if got["codex"].Access != "codex-token" {
+		t.Fatalf("missing codex auth: %+v", got)
+	}
+}
+
 func TestUpdateEnvVar(t *testing.T) {
 	tests := []struct {
 		name     string

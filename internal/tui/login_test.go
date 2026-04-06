@@ -203,7 +203,7 @@ func TestHandleLoginCommand_OpenAIDeviceFlow(t *testing.T) {
 
 func TestHandleLoginSave(t *testing.T) {
 	tmpDir := t.TempDir()
-	piDir := filepath.Join(tmpDir, ".pi")
+	piDir := filepath.Join(tmpDir, ".pi-go")
 	if err := os.MkdirAll(piDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -303,6 +303,43 @@ func TestHandleLoginSSOResult_Success(t *testing.T) {
 	os.Unsetenv("ANTHROPIC_API_KEY")
 }
 
+func TestHandleLoginSSOResult_SavesOAuthAuthJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	setLoginTestHome(t, tmpDir)
+
+	m := &model{
+		login: &loginState{phase: "sso", provider: "codex"},
+	}
+
+	msg := loginSSOResultMsg{
+		result: &auth.Result{
+			Provider: "codex",
+			APIKey:   "jwt-access-token",
+			EnvVar:   "OPENAI_API_KEY",
+			OAuth: &auth.StoredAuth{
+				Type:      "oauth",
+				Access:    "jwt-access-token",
+				Refresh:   "refresh-token",
+				Expires:   1234567890,
+				AccountID: "acct_123",
+			},
+		},
+	}
+
+	m.handleLoginSSOResult(msg)
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	if err != nil {
+		t.Fatalf("expected auth.json to be written: %v", err)
+	}
+	if !strings.Contains(string(data), "\"codex\"") || !strings.Contains(string(data), "\"accountId\": \"acct_123\"") {
+		t.Fatalf("unexpected auth.json contents: %s", data)
+	}
+	if !strings.Contains(m.chatModel.Messages[0].content, "auth.json") {
+		t.Fatalf("expected success message to mention auth.json, got: %s", m.chatModel.Messages[0].content)
+	}
+}
+
 func TestHandleLoginSSOResult_Error(t *testing.T) {
 	m := &model{
 		login: &loginState{phase: "device", provider: "codex"},
@@ -374,7 +411,7 @@ func TestHandleLoginSSOResult_EmptyKey(t *testing.T) {
 }
 
 func TestHandleLoginSSOResult_SaveError(t *testing.T) {
-	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.pi.
+	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.pi-go.
 	homeFile := filepath.Join(t.TempDir(), "home-file")
 	if err := os.WriteFile(homeFile, []byte("x"), 0600); err != nil {
 		t.Fatal(err)

@@ -167,7 +167,7 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 		t.Errorf("expected env var 'OPENAI_API_KEY', got %q", result.EnvVar)
 	}
 
-	// --- Save key and verify ---
+	// --- Save key/auth and verify ---
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", tmpDir)
@@ -176,6 +176,9 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 	if err := SaveKey(result.EnvVar, result.APIKey); err != nil {
 		t.Fatalf("SaveKey() error: %v", err)
 	}
+	if err := SaveAuth(result.Provider, result.OAuth); err != nil {
+		t.Fatalf("SaveAuth() error: %v", err)
+	}
 
 	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", ".env"))
 	if err != nil {
@@ -183,6 +186,17 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "OPENAI_API_KEY=codex-browser-token-xyz789") {
 		t.Errorf("expected key in .env, got: %s", data)
+	}
+
+	authData, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	if err != nil {
+		t.Fatalf("error reading auth.json: %v", err)
+	}
+	if !strings.Contains(string(authData), "\"codex\"") {
+		t.Fatalf("expected codex entry in auth.json, got: %s", authData)
+	}
+	if !strings.Contains(string(authData), "\"refresh\": \"codex-refresh-token\"") {
+		t.Fatalf("expected refresh token in auth.json, got: %s", authData)
 	}
 
 	if os.Getenv("OPENAI_API_KEY") != "codex-browser-token-xyz789" {

@@ -237,14 +237,25 @@ func (m *model) handleLoginSSOResult(msg loginSSOResultMsg) (tea.Model, tea.Cmd)
 		})
 		return m, nil
 	}
+	if err := auth.SaveAuth(r.Provider, r.OAuth); err != nil {
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "assistant",
+			content: fmt.Sprintf("Error saving auth: %v", err),
+		})
+		return m, nil
+	}
 
 	masked := maskKey(r.APIKey)
+	location := "`~/.pi-go/.env`"
+	if r.OAuth != nil {
+		location = "`~/.pi-go/.env` and `~/.pi-go/auth.json`"
+	}
 	m.chatModel.Messages = append(m.chatModel.Messages, message{
 		role: "assistant",
 		content: fmt.Sprintf(
-			"Login successful! Saved **%s** key `%s` to `~/.pi-go/.env`.\n\n"+
+			"Login successful! Saved **%s** key `%s` to %s.\n\n"+
 				"The key is active for this session.",
-			r.Provider, masked),
+			r.Provider, masked, location),
 	})
 	return m, nil
 }

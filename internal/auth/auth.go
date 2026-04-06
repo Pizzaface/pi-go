@@ -63,7 +63,17 @@ type Result struct {
 	Provider string
 	APIKey   string
 	EnvVar   string
+	OAuth    *StoredAuth
 	Err      error
+}
+
+// StoredAuth is the persisted OAuth credential shape used by ~/.pi-go/auth.json.
+type StoredAuth struct {
+	Type      string `json:"type"`
+	Access    string `json:"access,omitempty"`
+	Refresh   string `json:"refresh,omitempty"`
+	Expires   int64  `json:"expires,omitempty"`
+	AccountID string `json:"accountId,omitempty"`
 }
 
 // Providers returns the list of configured OAuth providers.
@@ -264,6 +274,7 @@ func PKCEFlow(ctx context.Context, prov Provider, openBrowser func(string) error
 			Provider: prov.Name,
 			APIKey:   apiKey,
 			EnvVar:   prov.EnvVar,
+			OAuth:    storedAuthFromToken(prov, tok),
 		}, nil
 	}
 }
@@ -336,6 +347,7 @@ func PollDeviceToken(ctx context.Context, prov Provider, deviceCode string, inte
 				Provider: prov.Name,
 				APIKey:   apiKey,
 				EnvVar:   prov.EnvVar,
+				OAuth:    storedAuthFromToken(prov, tok),
 			}, nil
 		}
 	}
@@ -490,6 +502,45 @@ func requestDeviceToken(ctx context.Context, prov Provider, deviceCode string) (
 	return &tok, nil
 }
 
+func storedAuthFromToken(prov Provider, tok *TokenResponse) *StoredAuth {
+	if tok == nil || (tok.AccessToken == "" && tok.RefreshToken == "") {
+		return nil
+	}
+	stored := &StoredAuth{
+		Type:    "oauth",
+		Access:  tok.AccessToken,
+		Refresh: tok.RefreshToken,
+	}
+	if tok.ExpiresIn > 0 {
+		stored.Expires = time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second).UnixMilli()
+	}
+	if strings.EqualFold(prov.Name, "codex") {
+		stored.AccountID = extractCodexAccountID(tok.AccessToken)
+	}
+	return stored
+}
+
+func extractCodexAccountID(accessToken string) string {
+	parts := strings.Split(accessToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	authClaim, ok := claims["https://api.openai.com/auth"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	accountID, _ := authClaim["chatgpt_account_id"].(string)
+	return accountID
+}
+
 func resolveHomeDir() (string, error) {
 	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
 		return home, nil
@@ -504,7 +555,7 @@ func SaveKey(envVar, apiKey string) error {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
-	envPath := filepath.Join(home, ".pi", ".env")
+	envPath := filepath.Join(home, ".pi-go", ".env")
 
 	existing := ""
 	if data, err := os.ReadFile(envPath); err == nil {
@@ -522,6 +573,43 @@ func SaveKey(envVar, apiKey string) error {
 	}
 
 	_ = os.Setenv(envVar, apiKey)
+	return nil
+}
+
+// SaveAuth persists OAuth credentials to ~/.pi-go/auth.json.
+func SaveAuth(provider string, auth *StoredAuth) error {
+	if auth == nil {
+		return nil
+	}
+	home, err := resolveHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	path := filepath.Join(home, ".pi-go", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	existing := map[string]StoredAuth{}
+	if data, err := os.ReadFile(path); err == nil {
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &existing); err != nil {
+				return fmt.Errorf("parsing auth.json: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("reading auth.json: %w", err)
+	}
+
+	existing[provider] = *auth
+	body, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding auth.json: %w", err)
+	}
+	body = append(body, '\n')
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		return fmt.Errorf("writing auth.json: %w", err)
+	}
 	return nil
 }
 
