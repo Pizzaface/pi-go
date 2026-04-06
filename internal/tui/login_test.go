@@ -105,23 +105,113 @@ func TestMaskKey_NineChars(t *testing.T) {
 
 func TestHandleLoginCommand_NoArgs(t *testing.T) {
 	m := &model{}
-	m.handleLoginCommand(nil)
-	if len(m.chatModel.Messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(m.chatModel.Messages))
+	newM, cmd := m.handleLoginCommand(nil)
+	mm := newM.(*model)
+	if mm.loginPicker == nil {
+		t.Fatal("expected login picker to open")
 	}
-	msg := m.chatModel.Messages[0]
-	if msg.role != "assistant" {
-		t.Errorf("expected assistant role, got %q", msg.role)
+	if len(mm.chatModel.Messages) != 0 {
+		t.Fatalf("expected no chat status message, got %d messages", len(mm.chatModel.Messages))
 	}
-	// Should show provider status including all providers.
-	for _, want := range []string{"anthropic", "openai", "codex", "gemini", "mistral", "groq", "xai", "openrouter", "azure-openai"} {
-		if !strings.Contains(msg.content, want) {
-			t.Errorf("expected %q in output, got: %s", want, msg.content)
+	if cmd != nil {
+		t.Error("expected no async command for login picker")
+	}
+}
+
+func TestBuildLoginPickerEntries_GroupsProvidersAndStatuses(t *testing.T) {
+	tmpDir := t.TempDir()
+	setLoginTestHome(t, tmpDir)
+
+	if err := auth.SaveAuth("codex", &auth.StoredAuth{Type: "oauth", Access: "oauth-token"}); err != nil {
+		t.Fatalf("save oauth auth: %v", err)
+	}
+	if err := auth.SaveKey("GROQ_API_KEY", "groq-test-key"); err != nil {
+		t.Fatalf("save api key: %v", err)
+	}
+
+	entries := buildLoginPickerEntries()
+	if len(entries) == 0 {
+		t.Fatal("expected login picker entries")
+	}
+	if entries[0].sectionHeader != "OAuth providers" {
+		t.Fatalf("expected first header to be OAuth providers, got %q", entries[0].sectionHeader)
+	}
+	if entries[1].provider == nil || entries[1].provider.Name != "codex" {
+		t.Fatalf("expected codex as first selectable provider, got %#v", entries[1].provider)
+	}
+	if !entries[1].configured {
+		t.Fatal("expected codex to be marked configured")
+	}
+
+	var sawAPIHeader bool
+	var sawGroqConfigured bool
+	for _, entry := range entries {
+		if entry.sectionHeader == "API key providers" {
+			sawAPIHeader = true
+		}
+		if entry.provider != nil && entry.provider.Name == "groq" {
+			if !entry.configured {
+				t.Fatal("expected groq to be marked configured")
+			}
+			sawGroqConfigured = true
 		}
 	}
-	// Should show simple usage without --sso.
-	if strings.Contains(msg.content, "--sso") {
-		t.Error("should not contain --sso in usage")
+	if !sawAPIHeader {
+		t.Fatal("expected API key providers section")
+	}
+	if !sawGroqConfigured {
+		t.Fatal("expected groq entry in API key providers section")
+	}
+}
+
+func TestRenderLoginPicker_ShowsSectionsAndConfiguredStatus(t *testing.T) {
+	m := &model{width: 100, height: 40}
+	m.loginPicker = &loginPickerState{
+		entries: buildLoginPickerEntries(),
+		height:  12,
+	}
+	m.loginPicker.selected = m.loginPicker.clampToProvider(0)
+
+	view := m.renderLoginPicker()
+	for _, want := range []string{"OAuth providers", "API key providers", "configured", "not configured"} {
+		if !strings.Contains(strings.ToLower(view), strings.ToLower(want)) {
+			t.Fatalf("expected %q in picker view, got: %s", want, view)
+		}
+	}
+}
+
+func TestHandleKey_LoginPickerEnterSelectsProvider(t *testing.T) {
+	withMockBrowser(t)
+	entries := buildLoginPickerEntries()
+	selected := 0
+	for i, entry := range entries {
+		if entry.provider != nil && entry.provider.Name == "groq" {
+			selected = i
+			break
+		}
+	}
+	m := &model{
+		loginPicker: &loginPickerState{
+			entries:   entries,
+			selected:  selected,
+			height:    12,
+			scrollOff: 0,
+		},
+	}
+
+	newM, _ := m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	mm := newM.(*model)
+	if mm.loginPicker != nil {
+		t.Fatal("expected login picker to close after selection")
+	}
+	if mm.login == nil {
+		t.Fatal("expected login flow to start after selection")
+	}
+	if mm.login.provider != "groq" {
+		t.Fatalf("expected groq login flow, got %q", mm.login.provider)
+	}
+	if mm.login.phase != "waiting" {
+		t.Fatalf("expected manual login phase, got %q", mm.login.phase)
 	}
 }
 

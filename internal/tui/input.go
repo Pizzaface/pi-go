@@ -611,7 +611,7 @@ func slashCommandDesc(cmd string) string {
 	case "/history":
 		return "Command history"
 	case "/login":
-		return "Configure API keys (codex, openai, anthropic, gemini)"
+		return "Open login picker or configure a provider directly"
 	case "/theme":
 		return "Switch theme or list themes"
 	case "/skills":

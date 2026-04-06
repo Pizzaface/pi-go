@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dimetron/pi-go/internal/auth"
-	"github.com/dimetron/pi-go/internal/config"
 )
 
 // loginState tracks the /login interactive flow.
@@ -59,28 +58,35 @@ func (m *model) handleLoginCommand(args []string) (tea.Model, tea.Cmd) {
 	return m.loginStart(authProv)
 }
 
-// loginShowStatus displays current API key status for all providers.
+// loginShowStatus opens the interactive /login provider picker.
 func (m *model) loginShowStatus() (tea.Model, tea.Cmd) {
-	keys := config.APIKeys()
-	var sb strings.Builder
-	sb.WriteString("**API Key Status:**\n\n")
-
-	for _, p := range auth.Providers() {
-		status := "not set"
-		if _, ok := keys[p.Name]; ok {
-			status = "configured"
-		}
-		fmt.Fprintf(&sb, "- **%s** — %s\n", p.Name, status)
+	entries := buildLoginPickerEntries()
+	if len(entries) == 0 {
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "assistant",
+			content: "No login providers available.",
+		})
+		return m, nil
 	}
-
-	sb.WriteString("\n**Usage:** `/login <provider>`\n")
-	sb.WriteString("Example: `/login codex`")
-
-	m.chatModel.Messages = append(m.chatModel.Messages, message{
-		role:    "assistant",
-		content: sb.String(),
-	})
+	m.loginPicker = &loginPickerState{
+		entries: entries,
+		height:  12,
+	}
+	m.loginPicker.selected = m.loginPicker.clampToProvider(0)
+	m.loginPicker.ensureSelectionVisible()
 	return m, nil
+}
+
+func (m *model) handleLoginPickerSelect() (tea.Model, tea.Cmd) {
+	if m.loginPicker == nil {
+		return m, nil
+	}
+	selected := m.loginPicker.selectedProvider()
+	m.loginPicker = nil
+	if selected == nil {
+		return m, nil
+	}
+	return m.loginStart(*selected)
 }
 
 // loginStart auto-selects the best auth flow for a provider.

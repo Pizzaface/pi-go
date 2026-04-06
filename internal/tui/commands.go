@@ -976,7 +976,7 @@ func (m *model) formatHelp() string {
 
 	b.WriteString("\n**System:**\n")
 
-	b.WriteString("  `/login <provider>`    — Configure API keys\n")
+	b.WriteString("  `/login [provider]`   — Open login picker or configure a provider\n")
 	b.WriteString("  `/debug`               — Toggle debug trace panel\n")
 	b.WriteString("  `/restart`             — Restart the go-pi process\n")
 

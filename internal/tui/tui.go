@@ -88,6 +88,9 @@ type model struct {
 	// Model picker popup state (shown by /model).
 	modelPicker *modelPickerState
 
+	// Login picker popup state (shown by /login with no args).
+	loginPicker *loginPickerState
+
 	// Slash command overlay state (shown for exact `/` + Tab).
 	slashOverlay *slashCommandOverlayState
 
@@ -590,6 +593,26 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle login picker popup.
+	if m.loginPicker != nil {
+		switch {
+		case key.Code == tea.KeyEsc:
+			m.loginPicker = nil
+			return m, nil
+		case key.Code == tea.KeyEnter:
+			return m.handleLoginPickerSelect()
+		case key.Code == tea.KeyUp:
+			m.loginPicker.moveUp()
+			return m, nil
+		case key.Code == tea.KeyDown:
+			m.loginPicker.moveDown()
+			return m, nil
+		default:
+			m.loginPicker = nil
+			return m, nil
+		}
+	}
+
 	// Handle slash command overlay.
 	if m.slashOverlay != nil {
 		switch {
@@ -718,8 +741,8 @@ func (m *model) View() tea.View {
 
 	// Layout: sidebar on the right, chat+status+input on the left.
 	// When the debug panel is active it replaces the sidebar with a wider pane.
-	// When the model picker is open, the sidebar is suppressed for full-width display.
-	showSidebar := m.width > 80 && !m.debugPanel && m.modelPicker == nil
+	// When a popup picker is open, the sidebar is suppressed for full-width display.
+	showSidebar := m.width > 80 && !m.debugPanel && m.modelPicker == nil && m.loginPicker == nil
 	sidebarWidth := 0
 	if showSidebar {
 		sidebarWidth = SidebarWidth
@@ -762,6 +785,11 @@ func (m *model) View() tea.View {
 	// Reserve space for the model picker popup when open.
 	if m.modelPicker != nil {
 		pickerLines := m.modelPicker.height + 6
+		availableHeight -= pickerLines
+	}
+	// Reserve space for the login picker popup when open.
+	if m.loginPicker != nil {
+		pickerLines := m.loginPicker.height + 6
 		availableHeight -= pickerLines
 	}
 	if availableHeight < 1 {
@@ -827,6 +855,13 @@ func (m *model) View() tea.View {
 	// Render model picker popup if open.
 	if m.modelPicker != nil {
 		pickerView := m.renderModelPicker()
+		b.WriteString(pickerView)
+		b.WriteString("\n")
+	}
+
+	// Render login picker popup if open.
+	if m.loginPicker != nil {
+		pickerView := m.renderLoginPicker()
 		b.WriteString(pickerView)
 		b.WriteString("\n")
 	}
