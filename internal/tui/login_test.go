@@ -766,6 +766,33 @@ func TestOpenBrowserDefault_ExecutesCommand(t *testing.T) {
 	}
 }
 
+func TestOpenBrowserCommand_WindowsUsesRundll32(t *testing.T) {
+	url := "https://auth.openai.com/oauth/authorize?client_id=test&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access"
+	cmd, err := openBrowserCommand("windows", url)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cmd.Path; got != "rundll32" {
+		t.Fatalf("expected rundll32, got %q", got)
+	}
+	if len(cmd.Args) != 3 {
+		t.Fatalf("expected 3 args, got %d: %v", len(cmd.Args), cmd.Args)
+	}
+	if cmd.Args[1] != "url.dll,FileProtocolHandler" {
+		t.Fatalf("expected FileProtocolHandler, got %q", cmd.Args[1])
+	}
+	if cmd.Args[2] != url {
+		t.Fatalf("expected full URL preserved, got %q", cmd.Args[2])
+	}
+}
+
+func TestOpenBrowserCommand_UnsupportedPlatform(t *testing.T) {
+	_, err := openBrowserCommand("plan9", "https://example.com")
+	if err == nil {
+		t.Fatal("expected error for unsupported platform")
+	}
+}
+
 func TestOpenBrowser_MockVerifiesURL(t *testing.T) {
 	mb := withMockBrowser(t)
 

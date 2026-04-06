@@ -303,17 +303,25 @@ func maskKey(key string) string {
 // It is a var so tests can replace it with a mock.
 var openBrowser = openBrowserDefault
 
-func openBrowserDefault(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
+func openBrowserCommand(goos, url string) (*exec.Cmd, error) {
+	switch goos {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		return exec.Command("open", url), nil
 	case "linux":
-		cmd = exec.Command("xdg-open", url)
+		return exec.Command("xdg-open", url), nil
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
+		// Avoid `cmd /c start <url>` because `&` in OAuth query strings gets
+		// interpreted by cmd.exe and truncates the URL at the first parameter.
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url), nil
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return nil, fmt.Errorf("unsupported platform: %s", goos)
+	}
+}
+
+func openBrowserDefault(url string) error {
+	cmd, err := openBrowserCommand(runtime.GOOS, url)
+	if err != nil {
+		return err
 	}
 	return cmd.Start()
 }
