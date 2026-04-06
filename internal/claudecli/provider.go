@@ -66,8 +66,7 @@ type Provider struct {
 	mu      sync.Mutex
 	closed  bool
 
-	// warnedSystemPrompt tracks whether we've logged the system prompt warning.
-	warnedSystemPrompt bool
+
 }
 
 // New creates a new Claude CLI provider.
@@ -98,11 +97,8 @@ func (p *Provider) Close() error {
 // internally; tool activity is surfaced as structured text in the response.
 func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
-		// Warn once if system instruction is set but ignored.
-		if req.Config != nil && req.Config.SystemInstruction != nil && !p.warnedSystemPrompt {
-			p.warnedSystemPrompt = true
-			log.Println("claudecli: system instruction from ADK is not forwarded; Claude CLI uses its own agent prompt")
-		}
+		// Note: Claude CLI uses its own system prompt. ADK system instructions
+		// are not forwarded. This is by design — see the design spec.
 
 		// Extract user message text from the request.
 		userText := extractUserMessage(req)
@@ -146,7 +142,7 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 				// reading. Common case: SystemMessage.Agents field changed from
 				// map to array in newer CLI versions. Log and continue.
 				if msg == nil {
-					log.Printf("claudecli: non-fatal stream error (skipping): %v", err)
+					// Silently skip — typically SDK/CLI version mismatch on system init.
 					continue
 				}
 				// If we have both msg and err, something unusual happened.
@@ -203,9 +199,11 @@ func (p *Provider) buildOptions() []claude.Option {
 	// Claude CLI requires --verbose when using --print --output-format=stream-json.
 	opts = append(opts, claude.WithVerbose(true))
 
-	// Capture stderr for diagnostics.
+	// Capture stderr — only surface errors/warnings, not routine verbose output.
 	opts = append(opts, claude.WithStderrCallback(func(line string) {
-		log.Printf("claudecli [stderr]: %s", line)
+		if strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") {
+			log.Printf("claudecli: %s", line)
+		}
 	}))
 
 	// Set up the tool approval callback.
