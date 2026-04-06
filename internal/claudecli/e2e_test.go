@@ -22,9 +22,11 @@ func mockCLIScript(t *testing.T, initLines []string, responseLines []string) str
 	sb.WriteString("#!/bin/sh\n")
 
 	// Output init lines immediately.
+	// Use printf instead of echo — macOS /bin/sh echo interprets \n as newline
+	// even in single quotes, which breaks JSON lines containing literal \n.
 	for _, line := range initLines {
 		escaped := strings.ReplaceAll(line, "'", "'\\''")
-		fmt.Fprintf(&sb, "echo '%s'\n", escaped)
+		fmt.Fprintf(&sb, "printf '%%s\\n' '%s'\n", escaped)
 	}
 
 	// For each stdin line, output response lines.
@@ -33,7 +35,7 @@ func mockCLIScript(t *testing.T, initLines []string, responseLines []string) str
 	sb.WriteString("  case \"$input\" in *control_response*) continue ;; esac\n")
 	for _, line := range responseLines {
 		escaped := strings.ReplaceAll(line, "'", "'\\''")
-		fmt.Fprintf(&sb, "  echo '%s'\n", escaped)
+		fmt.Fprintf(&sb, "  printf '%%s\\n' '%s'\n", escaped)
 	}
 	sb.WriteString("done\n")
 
@@ -186,7 +188,13 @@ func TestE2E_ToolUseSession(t *testing.T) {
 		t.Logf("  [%d] Partial=%v TurnComplete=%v Content=%v", i, resp.Partial, resp.TurnComplete, resp.Content != nil)
 		if resp.Content != nil {
 			for j, part := range resp.Content.Parts {
-				t.Logf("       Part[%d] Text=%q", j, truncate(part.Text, 80))
+				if part.FunctionCall != nil {
+					t.Logf("       Part[%d] FunctionCall=%s", j, part.FunctionCall.Name)
+				} else if part.FunctionResponse != nil {
+					t.Logf("       Part[%d] FunctionResponse=%s", j, part.FunctionResponse.Name)
+				} else {
+					t.Logf("       Part[%d] Text=%q", j, truncate(part.Text, 80))
+				}
 			}
 		}
 	}
@@ -196,14 +204,18 @@ func TestE2E_ToolUseSession(t *testing.T) {
 		t.Errorf("expected at least 3 responses, got %d", len(responses))
 	}
 
-	// Verify tool use text appears.
-	foundToolUse := false
+	// Verify tool use appears as FunctionCall, tool result as FunctionResponse.
+	foundToolCall := false
+	foundToolResult := false
 	foundFinalText := false
 	for _, resp := range responses {
 		if resp.Content != nil {
 			for _, part := range resp.Content.Parts {
-				if strings.Contains(part.Text, "[tool:Read]") {
-					foundToolUse = true
+				if part.FunctionCall != nil && part.FunctionCall.Name == "Read" {
+					foundToolCall = true
+				}
+				if part.FunctionResponse != nil {
+					foundToolResult = true
 				}
 				if strings.Contains(part.Text, "simple main package") {
 					foundFinalText = true
@@ -211,8 +223,11 @@ func TestE2E_ToolUseSession(t *testing.T) {
 			}
 		}
 	}
-	if !foundToolUse {
-		t.Error("expected to find [tool:Read] in response text")
+	if !foundToolCall {
+		t.Error("expected FunctionCall for Read tool")
+	}
+	if !foundToolResult {
+		t.Error("expected FunctionResponse for tool result")
 	}
 	if !foundFinalText {
 		t.Error("expected to find final answer text")
@@ -647,7 +662,7 @@ func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
 	defer cancel()
 
 	var allText []string
-	foundToolUse := false
+	foundToolCall := false
 	for resp, err := range p.GenerateContent(ctx, req, true) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -658,9 +673,9 @@ func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
 		for _, part := range resp.Content.Parts {
 			if part.Text != "" {
 				allText = append(allText, part.Text)
-				if strings.Contains(part.Text, "[tool:Bash]") {
-					foundToolUse = true
-				}
+			}
+			if part.FunctionCall != nil && part.FunctionCall.Name == "Bash" {
+				foundToolCall = true
 			}
 		}
 	}
@@ -669,8 +684,8 @@ func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
 
 	// Stream delta "Hello " should appear.
 	foundHello := false
-	for _, t := range allText {
-		if strings.Contains(t, "Hello") {
+	for _, txt := range allText {
+		if strings.Contains(txt, "Hello") {
 			foundHello = true
 		}
 	}
@@ -678,9 +693,9 @@ func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
 		t.Error("expected stream delta 'Hello ' in output")
 	}
 
-	// Tool use from AssistantMessage should still appear.
-	if !foundToolUse {
-		t.Error("expected [tool:Bash] from final AssistantMessage")
+	// Tool use from AssistantMessage should still appear as FunctionCall.
+	if !foundToolCall {
+		t.Error("expected FunctionCall for Bash from final AssistantMessage")
 	}
 
 	// The text "Let me check." from AssistantMessage should be deduped (not emitted)

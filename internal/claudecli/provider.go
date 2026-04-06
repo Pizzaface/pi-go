@@ -36,10 +36,6 @@ type Config struct {
 	// hitting the CanUseTool callback.
 	AllowedTools []string
 
-	// VerboseTools shows full tool input/output in the text stream
-	// instead of one-line summaries.
-	VerboseTools bool
-
 	// AppendSystemPrompt appends text to Claude CLI's default system prompt.
 	// This is the recommended way to inject go-pi context since the provider
 	// cannot replace Claude CLI's system prompt entirely.
@@ -65,7 +61,8 @@ type Provider struct {
 	session        *claude.Session
 	mu             sync.Mutex
 	closed         bool
-	sawStreamDelta bool // true once we've emitted any stream delta (for dedup)
+	sawStreamDelta bool              // true once we've emitted any stream delta (for dedup)
+	toolNames      map[string]string // tool_use ID → tool name, for matching results to calls
 }
 
 // New creates a new Claude CLI provider.
@@ -106,8 +103,9 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 			return
 		}
 
-		// Reset per-turn dedup state.
+		// Reset per-turn state.
 		p.sawStreamDelta = false
+		p.toolNames = nil
 
 		p.mu.Lock()
 		if p.closed {
@@ -326,13 +324,18 @@ func (p *Provider) assistantToResponses(m *claude.AssistantMessage) []*model.LLM
 				})
 			}
 		case *claude.ToolUseBlock:
-			parts = append(parts, genai.NewPartFromText(
-				p.formatToolUse(b),
-			))
+			fc := genai.NewPartFromFunctionCall(b.Name, b.Input)
+			fc.FunctionCall.ID = b.ID
+			parts = append(parts, fc)
+			// Track tool ID → name for matching results.
+			if p.toolNames == nil {
+				p.toolNames = make(map[string]string)
+			}
+			p.toolNames[b.ID] = b.Name
 		case *claude.ToolResultBlock:
-			parts = append(parts, genai.NewPartFromText(
-				p.formatToolResult(b),
-			))
+			// Skip tool results in assistant messages — they come through
+			// UserMessage which is handled by userToolResultToResponse.
+			continue
 		}
 	}
 
@@ -403,7 +406,7 @@ func (p *Provider) streamEventToResponses(m *claude.StreamEvent) []*model.LLMRes
 	}
 }
 
-// userToolResultToResponse converts a user message (tool results) to text.
+// userToolResultToResponse converts a user message (tool results) to FunctionResponse parts.
 func (p *Provider) userToolResultToResponse(m *claude.UserMessage) *model.LLMResponse {
 	if m.Message == nil {
 		return nil
@@ -413,9 +416,10 @@ func (p *Provider) userToolResultToResponse(m *claude.UserMessage) *model.LLMRes
 	for _, block := range m.Message.Content {
 		switch b := block.(type) {
 		case *claude.ToolResultBlock:
-			parts = append(parts, genai.NewPartFromText(
-				p.formatToolResult(b),
-			))
+			resp := p.toolResultToFunctionResponse(b)
+			if resp != nil {
+				parts = append(parts, resp)
+			}
 		}
 	}
 
@@ -430,6 +434,31 @@ func (p *Provider) userToolResultToResponse(m *claude.UserMessage) *model.LLMRes
 		},
 		Partial: true,
 	}
+}
+
+// toolResultToFunctionResponse converts a Claude ToolResultBlock to a genai FunctionResponse part.
+func (p *Provider) toolResultToFunctionResponse(b *claude.ToolResultBlock) *genai.Part {
+	// Build the response map from the content.
+	response := map[string]any{}
+	switch c := b.Content.(type) {
+	case string:
+		response["content"] = c
+	default:
+		response["content"] = fmt.Sprintf("%v", c)
+	}
+	if b.IsError {
+		response["is_error"] = true
+	}
+
+	// Resolve tool name from the tool_use ID.
+	name := p.toolNames[b.ToolUseID]
+	if name == "" {
+		name = b.ToolUseID // fallback to ID if name not tracked
+	}
+
+	part := genai.NewPartFromFunctionResponse(name, response)
+	part.FunctionResponse.ID = b.ToolUseID
+	return part
 }
 
 // resultToResponse converts the final result message to a model.LLMResponse
@@ -492,63 +521,7 @@ func (p *Provider) resultToResponse(m *claude.ResultMessage) *model.LLMResponse 
 	return resp
 }
 
-// formatToolUse formats a ToolUseBlock as structured text.
-func (p *Provider) formatToolUse(b *claude.ToolUseBlock) string {
-	if p.config.VerboseTools {
-		return fmt.Sprintf("[tool:%s] %v", b.Name, b.Input)
-	}
-	summary := toolUseSummary(b)
-	return fmt.Sprintf("[tool:%s] %s", b.Name, summary)
-}
 
-// formatToolResult formats a ToolResultBlock as structured text.
-func (p *Provider) formatToolResult(b *claude.ToolResultBlock) string {
-	prefix := "[tool-result]"
-	if b.IsError {
-		prefix = "[tool-error]"
-	}
-
-	if p.config.VerboseTools {
-		return fmt.Sprintf("%s %v", prefix, b.Content)
-	}
-
-	// Truncate content for summary.
-	content := fmt.Sprintf("%v", b.Content)
-	if len(content) > 200 {
-		content = content[:200] + "..."
-	}
-	return fmt.Sprintf("%s %s", prefix, content)
-}
-
-// toolUseSummary produces a one-line summary of tool input.
-func toolUseSummary(b *claude.ToolUseBlock) string {
-	switch b.Name {
-	case "Read":
-		if fp, ok := b.Input["file_path"].(string); ok {
-			return fp
-		}
-	case "Write":
-		if fp, ok := b.Input["file_path"].(string); ok {
-			return fp
-		}
-	case "Edit":
-		if fp, ok := b.Input["file_path"].(string); ok {
-			return fp
-		}
-	case "Bash":
-		if cmd, ok := b.Input["command"].(string); ok {
-			if len(cmd) > 80 {
-				return cmd[:80] + "..."
-			}
-			return cmd
-		}
-	case "Grep", "Glob":
-		if pattern, ok := b.Input["pattern"].(string); ok {
-			return pattern
-		}
-	}
-	return fmt.Sprintf("%v", b.Input)
-}
 
 // extractUserMessage finds the last user message text from ADK request contents.
 func extractUserMessage(req *model.LLMRequest) string {
