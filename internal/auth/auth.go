@@ -576,6 +576,30 @@ func SaveKey(envVar, apiKey string) error {
 	return nil
 }
 
+// LoadAuth reads OAuth credentials from ~/.pi-go/auth.json.
+func LoadAuth() (map[string]StoredAuth, error) {
+	home, err := resolveHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	path := filepath.Join(home, ".pi-go", "auth.json")
+	stored := map[string]StoredAuth{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return stored, nil
+		}
+		return nil, fmt.Errorf("reading auth.json: %w", err)
+	}
+	if len(data) == 0 {
+		return stored, nil
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return nil, fmt.Errorf("parsing auth.json: %w", err)
+	}
+	return stored, nil
+}
+
 // SaveAuth persists OAuth credentials to ~/.pi-go/auth.json.
 func SaveAuth(provider string, auth *StoredAuth) error {
 	if auth == nil {
@@ -590,15 +614,9 @@ func SaveAuth(provider string, auth *StoredAuth) error {
 		return fmt.Errorf("creating directory: %w", err)
 	}
 
-	existing := map[string]StoredAuth{}
-	if data, err := os.ReadFile(path); err == nil {
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &existing); err != nil {
-				return fmt.Errorf("parsing auth.json: %w", err)
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("reading auth.json: %w", err)
+	existing, err := LoadAuth()
+	if err != nil {
+		return err
 	}
 
 	existing[provider] = *auth

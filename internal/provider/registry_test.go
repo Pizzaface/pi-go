@@ -4,7 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
+
+	"github.com/dimetron/pi-go/internal/auth"
 )
 
 func TestRegistryBuiltinOpenAIBaseURLHasV1(t *testing.T) {
@@ -189,5 +192,29 @@ func TestRegistryListModelsPreservesQueriedProviderName(t *testing.T) {
 	}
 	if entries[0].Provider != "groq-test" {
 		t.Fatalf("provider = %q, want groq-test", entries[0].Provider)
+	}
+}
+
+func TestRegistryListModels_OpenAIFallsBackToStaticListWithCodexOAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
+
+	if err := auth.SaveAuth("codex", &auth.StoredAuth{Type: "oauth", Access: "jwt.access.token"}); err != nil {
+		t.Fatalf("SaveAuth() error: %v", err)
+	}
+
+	reg := NewRegistry()
+	reg.AddBuiltins()
+	entries, err := reg.ListModels(context.Background(), "openai", nil)
+	if err != nil {
+		t.Fatalf("ListModels() error: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected static openai model entries")
+	}
+	if entries[0].Provider != "openai" {
+		t.Fatalf("provider = %q, want openai", entries[0].Provider)
 	}
 }

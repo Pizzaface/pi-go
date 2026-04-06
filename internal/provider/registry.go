@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/dimetron/pi-go/internal/auth"
 )
 
 // MatchRule describes how a provider claims model names.
@@ -434,12 +437,45 @@ func (r *Registry) ListModels(ctx context.Context, providerName string, opts *LL
 	}
 	entries, err := ListModels(ctx, info, apiKey, baseURL, merged)
 	if err != nil {
+		if providerName == "openai" && hasCodexOAuth() {
+			return staticOpenAIModelEntries(providerName), nil
+		}
 		return nil, err
 	}
 	for i := range entries {
 		entries[i].Provider = def.Name
 	}
 	return entries, nil
+}
+
+func hasCodexOAuth() bool {
+	stored, err := auth.LoadAuth()
+	if err != nil {
+		return false
+	}
+	codex, ok := stored["codex"]
+	return ok && codex.Type == "oauth" && codex.Access != ""
+}
+
+func staticOpenAIModelEntries(providerName string) []ModelEntry {
+	now := time.Now()
+	ids := []string{
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.1",
+		"gpt-5.1-mini",
+		"gpt-4o",
+		"gpt-4o-mini",
+		"o4-mini",
+		"o3",
+		"o3-mini",
+		"o1",
+	}
+	entries := make([]ModelEntry, 0, len(ids))
+	for _, id := range ids {
+		entries = append(entries, ModelEntry{ID: id, DisplayName: id, Provider: providerName, Created: now})
+	}
+	return entries
 }
 
 func LoadRegistryDocuments(dirs ...string) ([]RegistryDocument, error) {
