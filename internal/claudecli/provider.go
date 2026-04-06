@@ -203,8 +203,10 @@ func (p *Provider) canUseTool(toolName string, input map[string]any) (string, er
 
 		// Check path patterns (file tools).
 		if filePath, ok := input["file_path"].(string); ok && len(rule.AllowPaths) > 0 {
+			// Normalize path separators for cross-platform matching.
+			normalized := filepath.ToSlash(filePath)
 			for _, pattern := range rule.AllowPaths {
-				if matched, _ := filepath.Match(pattern, filePath); matched {
+				if matchPath(pattern, normalized) {
 					return "allow", nil
 				}
 			}
@@ -440,6 +442,52 @@ func extractUserMessage(req *model.LLMRequest) string {
 		}
 	}
 	return ""
+}
+
+// matchPath matches a glob pattern against a forward-slash-normalized path.
+// Supports ** as a recursive wildcard (matches zero or more path segments).
+// Uses filepath.Match for single-segment patterns.
+func matchPath(pattern, path string) bool {
+	// Normalize separators.
+	pattern = filepath.ToSlash(pattern)
+
+	// Strip leading ./ from both pattern and path for consistent matching.
+	pattern = strings.TrimPrefix(pattern, "./")
+	path = strings.TrimPrefix(path, "./")
+
+	// Handle ** by splitting into segments.
+	if strings.Contains(pattern, "**") {
+		parts := strings.SplitN(pattern, "**", 2)
+		prefix := parts[0]
+		suffix := strings.TrimLeft(parts[1], "/")
+
+		if prefix != "" && !strings.HasPrefix(path, prefix) {
+			return false
+		}
+
+		remaining := strings.TrimPrefix(path, prefix)
+
+		if suffix == "" {
+			return true // "dir/**" matches everything under dir/
+		}
+
+		// Try matching the suffix against every tail of the remaining path.
+		segments := strings.Split(remaining, "/")
+		for i := range segments {
+			candidate := strings.Join(segments[i:], "/")
+			if matched, _ := filepath.Match(suffix, candidate); matched {
+				return true
+			}
+		}
+		// Try matching just the base name against the suffix.
+		if matched, _ := filepath.Match(suffix, filepath.Base(path)); matched {
+			return true
+		}
+		return false
+	}
+
+	matched, _ := filepath.Match(pattern, path)
+	return matched
 }
 
 // firstWord returns the first whitespace-delimited token from s.

@@ -2,6 +2,7 @@ package claudecli
 
 import (
 	"context"
+	"runtime"
 	"testing"
 
 	"google.golang.org/adk/model"
@@ -297,6 +298,91 @@ func toolUseSummaryFromInput(name string, input map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func TestMatchPath(t *testing.T) {
+	tests := []struct {
+		pattern string
+		path    string
+		want    bool
+	}{
+		// Simple globs
+		{"*.go", "main.go", true},
+		{"*.go", "main.rs", false},
+		{"*.md", "README.md", true},
+
+		// Doublestar
+		{"./**", "src/main.go", true},
+		{"./**/*.go", "src/pkg/main.go", true},
+		{"./**/*.go", "src/pkg/main.rs", false},
+		{"**/*.go", "deeply/nested/file.go", true},
+		{"**", "anything/at/all", true},
+
+		// Prefix matching with **
+		{"src/**/*.go", "src/pkg/main.go", true},
+		{"src/**/*.go", "other/main.go", false},
+		{"src/**", "src/any/file.txt", true},
+
+		// Windows-style paths (normalized to forward slash)
+		{"*.go", "main.go", true},
+		{"src/**/*.go", "src/pkg/main.go", true},
+
+		// No match
+		{"docs/**/*.md", "src/main.go", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pattern+"_"+tt.path, func(t *testing.T) {
+			if got := matchPath(tt.pattern, tt.path); got != tt.want {
+				t.Errorf("matchPath(%q, %q) = %v, want %v", tt.pattern, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanUseToolWindowsPaths(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		// On Unix, filepath.ToSlash is a no-op for backslashes (they're
+		// valid filename chars). This test only verifies Windows behavior.
+		t.Skip("backslash normalization only applies on Windows")
+	}
+
+	p := New(Config{
+		ApprovalRules: []ApprovalRule{
+			{
+				ToolName:   "Write",
+				AllowPaths: []string{"src/**/*.go"},
+			},
+		},
+	})
+
+	got, err := p.canUseTool("Write", map[string]any{"file_path": "src\\pkg\\main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "allow" {
+		t.Errorf("expected allow for Windows path, got %q", got)
+	}
+}
+
+func TestCanUseToolForwardSlashPaths(t *testing.T) {
+	// Forward-slash paths work on all platforms.
+	p := New(Config{
+		ApprovalRules: []ApprovalRule{
+			{
+				ToolName:   "Write",
+				AllowPaths: []string{"src/**/*.go"},
+			},
+		},
+	})
+
+	got, err := p.canUseTool("Write", map[string]any{"file_path": "src/pkg/main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "allow" {
+		t.Errorf("expected allow for forward-slash path, got %q", got)
+	}
 }
 
 func TestFindBinaryEnvOverride(t *testing.T) {
