@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dimetron/pi-go/internal/extension"
 )
 
 func TestRenderCompactTool_RegularTool(t *testing.T) {
@@ -101,5 +105,167 @@ func TestRenderCompactTool_NoContent(t *testing.T) {
 	// No checkmark when no content.
 	if strings.Contains(result, "✓") {
 		t.Error("expected no checkmark when content is empty")
+	}
+}
+
+func TestToolCallRow_UsesCustomRendererForSupportedType(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicTool("ext.demo", "demo_tool", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RegisterRenderer(
+		"ext.demo",
+		extension.RenderSurfaceToolCallRow,
+		[]extension.RenderKind{extension.RenderKindText},
+		func(_ context.Context, _ extension.RenderRequest) (extension.RenderResult, error) {
+			return extension.RenderResult{Kind: extension.RenderKindText, Content: "custom call row"}, nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	td := ToolDisplayModel{
+		Width:            80,
+		CompactTools:     false,
+		ExtensionManager: manager,
+	}
+	result := td.RenderToolMessage(message{
+		role:   "tool",
+		tool:   "demo_tool",
+		toolIn: "arg",
+	})
+	if !strings.Contains(result, "custom call row") {
+		t.Fatalf("expected custom renderer output, got %q", result)
+	}
+}
+
+func TestToolResult_FallsBackWhenExtensionRendererFails(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicTool("ext.demo", "demo_tool", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RegisterRenderer(
+		"ext.demo",
+		extension.RenderSurfaceToolResult,
+		[]extension.RenderKind{extension.RenderKindText},
+		func(_ context.Context, _ extension.RenderRequest) (extension.RenderResult, error) {
+			return extension.RenderResult{}, context.DeadlineExceeded
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	td := ToolDisplayModel{
+		Width:            80,
+		CompactTools:     false,
+		ExtensionManager: manager,
+	}
+	result := td.RenderToolMessage(message{
+		role:    "tool",
+		tool:    "demo_tool",
+		content: "line one\nline two",
+	})
+	if !strings.Contains(result, "line one") {
+		t.Fatalf("expected builtin fallback output, got %q", result)
+	}
+}
+
+func TestRenderer_FallsBackOnTimeout(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicTool("ext.demo", "demo_tool", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RegisterRenderer(
+		"ext.demo",
+		extension.RenderSurfaceToolResult,
+		[]extension.RenderKind{extension.RenderKindText},
+		func(_ context.Context, _ extension.RenderRequest) (extension.RenderResult, error) {
+			time.Sleep(200 * time.Millisecond)
+			return extension.RenderResult{Kind: extension.RenderKindText, Content: "slow custom"}, nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	td := ToolDisplayModel{
+		Width:            80,
+		CompactTools:     false,
+		ExtensionManager: manager,
+		RenderTimeout:    20 * time.Millisecond,
+	}
+
+	start := time.Now()
+	result := td.RenderToolMessage(message{
+		role:    "tool",
+		tool:    "demo_tool",
+		content: "fallback text",
+	})
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Fatalf("expected timeout fallback to return quickly, took %s", elapsed)
+	}
+	if !strings.Contains(result, "fallback text") {
+		t.Fatalf("expected builtin fallback content, got %q", result)
+	}
+}
+
+func TestRenderer_PlainTextAndMarkdownOnly(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicTool("ext.demo", "demo_tool", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RegisterRenderer(
+		"ext.demo",
+		extension.RenderSurfaceToolResult,
+		[]extension.RenderKind{extension.RenderKindText, extension.RenderKindMarkdown},
+		func(_ context.Context, _ extension.RenderRequest) (extension.RenderResult, error) {
+			return extension.RenderResult{Kind: extension.RenderKind("ansi"), Content: "unsupported"}, nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	td := ToolDisplayModel{
+		Width:            80,
+		CompactTools:     false,
+		ExtensionManager: manager,
+	}
+	fallback := td.RenderToolMessage(message{
+		role:    "tool",
+		tool:    "demo_tool",
+		content: "fallback content",
+	})
+	if !strings.Contains(fallback, "fallback content") {
+		t.Fatalf("expected fallback for unsupported kind, got %q", fallback)
+	}
+
+	manager2 := extension.NewManager(extension.ManagerOptions{})
+	if err := manager2.RegisterDynamicTool("ext.demo", "demo_tool", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager2.RegisterRenderer(
+		"ext.demo",
+		extension.RenderSurfaceToolResult,
+		[]extension.RenderKind{extension.RenderKindMarkdown},
+		func(_ context.Context, _ extension.RenderRequest) (extension.RenderResult, error) {
+			return extension.RenderResult{Kind: extension.RenderKindMarkdown, Content: "**md result**"}, nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	td2 := ToolDisplayModel{
+		Width:            80,
+		CompactTools:     false,
+		ExtensionManager: manager2,
+		RenderMarkdown: func(s string) string {
+			return "rendered:" + s
+		},
+	}
+	rendered := td2.RenderToolMessage(message{
+		role:    "tool",
+		tool:    "demo_tool",
+		content: "ignored fallback",
+	})
+	if !strings.Contains(rendered, "rendered:**md result**") {
+		t.Fatalf("expected markdown renderer output, got %q", rendered)
 	}
 }

@@ -44,6 +44,7 @@ type InputModel struct {
 	Skills            []extension.Skill
 	SkillDirs         []string
 	ExtensionCommands []extension.SlashCommand
+	ExtensionManager  *extension.Manager
 	WorkDir           string
 }
 
@@ -147,7 +148,7 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 				im.CyclingIdx = (im.CyclingIdx + 1) % len(allCmds)
 			}
 		} else {
-			im.CompletionResult = Complete(im.Text, im.Skills, im.WorkDir)
+			im.CompletionResult = Complete(im.Text, im.Skills, im.WorkDir, im.currentExtensionCommands()...)
 			if len(im.CompletionResult.Candidates) == 1 {
 				im.Text = im.CompletionResult.Candidates[0].Text
 				im.CursorPos = len(im.Text)
@@ -281,7 +282,7 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 
 	// Update ghost autocomplete.
 	if im.CursorPos == len(im.Text) {
-		result := Complete(im.Text, im.Skills, im.WorkDir)
+		result := Complete(im.Text, im.Skills, im.WorkDir, im.currentExtensionCommands()...)
 		if result != nil && len(result.Candidates) > 0 && len(result.Candidates) == 1 {
 			im.Completion = result.Candidates[0].Text
 		} else {
@@ -366,6 +367,7 @@ func (im *InputModel) View(running bool) string {
 		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 		sel := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 		descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+		extCommands := im.currentExtensionCommands()
 		var menu strings.Builder
 		for i, cmd := range allCmds {
 			desc := slashCommandDesc(cmd)
@@ -373,6 +375,15 @@ func (im *InputModel) View(running bool) string {
 				for _, skill := range im.Skills {
 					if "/"+skill.Name == cmd {
 						desc = skill.Description
+						break
+					}
+				}
+			}
+			if desc == "" {
+				for _, extCmd := range extCommands {
+					name := "/" + strings.TrimPrefix(extCmd.Name, "/")
+					if name == cmd {
+						desc = extCmd.Description
 						break
 					}
 				}
@@ -479,6 +490,13 @@ func (im *InputModel) ReloadSkills() {
 	}
 }
 
+func (im *InputModel) currentExtensionCommands() []extension.SlashCommand {
+	if im.ExtensionManager != nil {
+		return im.ExtensionManager.SlashCommands()
+	}
+	return im.ExtensionCommands
+}
+
 type slashCommandInventoryItem struct {
 	Name        string
 	Description string
@@ -541,7 +559,7 @@ func (im *InputModel) slashCommandInventory() slashCommandInventory {
 	for _, cmd := range inventory.BuiltIns {
 		seen[cmd.Name] = true
 	}
-	inventory.Extensions = extensionSlashCommandInventory(im.ExtensionCommands, seen)
+	inventory.Extensions = extensionSlashCommandInventory(im.currentExtensionCommands(), seen)
 	inventory.Skills = skillSlashCommandInventory(im.Skills, seen)
 	return inventory
 }
@@ -558,33 +576,8 @@ func (im *InputModel) AllCommandNames() []string {
 	return cmds
 }
 
-// slashCommands is the list of available slash commands for autocomplete.
-var slashCommands = []string{
-	"/help",
-	"/clear",
-	"/model",
-	"/session",
-	"/new",
-	"/resume",
-	"/fork",
-	"/tree",
-	"/settings",
-	"/context",
-	"/branch",
-	"/compact",
-	"/history",
-	"/login",
-	"/skills",
-	"/skill-create",
-	"/skill-load",
-	"/skill-list",
-	"/theme",
-	"/ping",
-	"/debug",
-	"/restart",
-	"/exit",
-	"/quit",
-}
+// slashCommands is the list of built-in slash commands for autocomplete.
+var slashCommands = extension.DefaultBuiltinSlashCommands()
 
 // slashCommandDesc returns the description for a slash command.
 func slashCommandDesc(cmd string) string {
@@ -641,12 +634,12 @@ func slashCommandDesc(cmd string) string {
 }
 
 // completeSlashCommand returns the best matching slash command for the current input.
-func completeSlashCommand(input string) string {
+func completeSlashCommand(input string, extensionCommands ...extension.SlashCommand) string {
 	if !strings.HasPrefix(input, "/") || len(input) < 2 {
 		return ""
 	}
 	prefix := strings.ToLower(input)
-	for _, cmd := range slashCommands {
+	for _, cmd := range matchingSlashCommands(input, extensionCommands...) {
 		if strings.HasPrefix(cmd, prefix) && cmd != prefix {
 			return cmd
 		}
@@ -655,12 +648,24 @@ func completeSlashCommand(input string) string {
 }
 
 // matchingSlashCommands returns all slash commands matching the given prefix.
-func matchingSlashCommands(input string) []string {
+func matchingSlashCommands(input string, extensionCommands ...extension.SlashCommand) []string {
 	prefix := strings.ToLower(input)
 	var matches []string
+	seen := map[string]bool{}
 	for _, cmd := range slashCommands {
 		if strings.HasPrefix(cmd, prefix) {
+			seen[cmd] = true
 			matches = append(matches, cmd)
+		}
+	}
+	for _, extCmd := range extensionCommands {
+		name := "/" + strings.TrimPrefix(strings.ToLower(extCmd.Name), "/")
+		if seen[name] {
+			continue
+		}
+		if strings.HasPrefix(name, prefix) {
+			seen[name] = true
+			matches = append(matches, name)
 		}
 	}
 	return matches

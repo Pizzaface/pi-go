@@ -11,6 +11,14 @@ import (
 	"github.com/dimetron/pi-go/internal/tui"
 )
 
+func setCLIHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+}
+
 // runGit is a helper that executes a git command in the given directory
 // and ignores the error (git may not be available in all environments).
 func runGit(dir string, args ...string) {
@@ -142,7 +150,7 @@ func TestCleanupNilResources(t *testing.T) {
 }
 
 func TestDeferredInitDoesNotReportLSPSubsystem(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setCLIHome(t, t.TempDir())
 
 	cwd := t.TempDir()
 	ch := make(chan tui.InitEvent, 32)
@@ -178,7 +186,7 @@ func TestDeferredInitDoesNotReportLSPSubsystem(t *testing.T) {
 }
 
 func TestDeferredInitDoesNotReportMCPSubsystem(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setCLIHome(t, t.TempDir())
 
 	cwd := t.TempDir()
 	ch := make(chan tui.InitEvent, 32)
@@ -217,6 +225,49 @@ func TestDeferredInitDoesNotReportMCPSubsystem(t *testing.T) {
 	}
 	if !sawFinal {
 		t.Fatal("expected deferred init to emit a final result")
+	}
+
+	res.cleanup()
+}
+
+func TestInteractive_BindsSessionToManager(t *testing.T) {
+	setCLIHome(t, t.TempDir())
+
+	cwd := t.TempDir()
+	ch := make(chan tui.InitEvent, 32)
+	res := &initResources{}
+
+	go func() {
+		deferredInit(context.Background(), config.Config{}, &cliMockLLM{name: "test-llm", response: "ok"}, cwd, cwd, ch, res)
+		close(ch)
+	}()
+
+	var final *tui.InitResult
+	for ev := range ch {
+		if ev.Err != nil {
+			t.Fatalf("deferredInit error: %v", ev.Err)
+		}
+		if ev.Result != nil {
+			final = ev.Result
+		}
+	}
+	if final == nil {
+		t.Fatal("expected final init result")
+	}
+	if final.ExtensionManager == nil {
+		t.Fatal("expected deferred init to return extension manager")
+	}
+
+	namespace := final.ExtensionManager.StateNamespace("ext.demo")
+	if err := namespace.Set(map[string]any{"bound": true}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := namespace.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got["bound"] != true {
+		t.Fatalf("expected bound session-backed state, got ok=%v value=%+v", ok, got)
 	}
 
 	res.cleanup()

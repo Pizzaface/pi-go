@@ -59,6 +59,13 @@ type model struct {
 	loadingItems map[string]bool // item name -> done?
 	initCh       <-chan InitEvent
 
+	// Extension bridge state.
+	extensionBridge      *extensionBridge
+	extensionIntentCh    <-chan extension.UIIntentEnvelope
+	extensionWidgetAbove *extensionWidgetState
+	extensionWidgetBelow *extensionWidgetState
+	extensionDialog      *extensionDialogState
+
 	// Git diff stats (refreshed after tool completions).
 	diffAdded   int
 	diffRemoved int
@@ -211,16 +218,23 @@ func Run(ctx context.Context, cfg Config) error {
 	im.ExtensionCommands = cfg.ExtensionCommands
 	im.ExtensionManager = cfg.ExtensionManager
 
+	chat := NewChatModel(renderer)
+	chat.ExtensionManager = cfg.ExtensionManager
+	chat.ToolDisplay.ExtensionManager = cfg.ExtensionManager
+	chat.ToolDisplay.RenderMarkdown = chat.RenderMarkdown
+	chat.ToolDisplay.RenderTimeout = chat.RenderTimeout
+
 	m := model{
 		cfg:          cfg,
 		ctx:          ctx,
 		cancel:       cancel,
 		inputModel:   im,
-		chatModel:    NewChatModel(renderer),
+		chatModel:    chat,
 		statusModel:  StatusModel{},
 		themeManager: tm,
 		face:         NewFaceRenderer(),
 	}
+	m.resetExtensionBridge(cfg.ExtensionManager)
 
 	if cfg.DeferredInit != nil {
 		m.loading = true
@@ -232,6 +246,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	p := tea.NewProgram(&m, tea.WithContext(ctx))
 	_, err := p.Run()
+	m.closeExtensionBridge()
 	drainTerminalResponses()
 	if m.initErr != nil {
 		return m.initErr
@@ -254,6 +269,9 @@ func (m *model) Init() tea.Cmd {
 	}
 	if m.cfg.DebugTracer != nil {
 		cmds = append(cmds, waitForProviderDebug(m.cfg.DebugTracer.Channel()))
+	}
+	if m.extensionIntentCh != nil {
+		cmds = append(cmds, waitForExtensionIntent(m.extensionIntentCh))
 	}
 	return tea.Batch(cmds...)
 }
@@ -326,6 +344,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case initEventMsg:
 		return m.handleInitEvent(msg)
+
+	case extensionIntentMsg:
+		return m.handleExtensionIntent(msg)
 
 	case providerDebugMsg:
 		return m.handleProviderDebug(msg)
@@ -459,6 +480,19 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+	}
+
+	// Handle extension dialog modal.
+	if m.extensionDialog != nil {
+		switch {
+		case key.Code == tea.KeyEsc:
+			m.extensionDialog = nil
+		case key.Code == tea.KeyEnter:
+			m.extensionDialog = nil
+		case key.Code == 'c' && key.Mod == tea.ModCtrl:
+			m.extensionDialog = nil
+		}
+		return m, nil
 	}
 
 	// Handle branch popup.
@@ -678,13 +712,24 @@ func (m *model) View() tea.View {
 	messagesView := m.chatModel.RenderMessages(m.running)
 	statusBar := m.statusModel.Render(m.statusRenderInput(showSidebar))
 	inputArea := m.inputModel.View(m.running || m.loading)
+	widgetAbove := m.renderExtensionWidget(m.extensionWidgetAbove)
+	widgetBelow := m.renderExtensionWidget(m.extensionWidgetBelow)
 
 	// Calculate available height for messages.
 	statusLines := strings.Count(statusBar, "\n") + 1
 	inputLines := strings.Count(inputArea, "\n") + 1
+	widgetAboveLines := 0
+	if widgetAbove != "" {
+		widgetAboveLines = strings.Count(widgetAbove, "\n") + 1
+	}
+	widgetBelowLines := 0
+	if widgetBelow != "" {
+		widgetBelowLines = strings.Count(widgetBelow, "\n") + 1
+	}
 
 	// Account for: 1 separator line + 1 newline between sections.
 	availableHeight := m.height - statusLines - inputLines - 2
+	availableHeight -= widgetAboveLines + widgetBelowLines
 	// Reserve a line for the scroll indicator when scrolled up.
 	if m.chatModel.Scroll > 0 {
 		availableHeight--
@@ -745,6 +790,9 @@ func (m *model) View() tea.View {
 			}
 		}
 	}
+	if m.extensionDialog != nil {
+		visibleMessages = overlaySlashCommandBlock(visibleMessages, m.renderExtensionDialog(mainWidth))
+	}
 
 	var b strings.Builder
 	b.WriteString(visibleMessages)
@@ -779,7 +827,15 @@ func (m *model) View() tea.View {
 
 	b.WriteString(statusBar)
 	b.WriteString("\n")
+	if widgetAbove != "" {
+		b.WriteString(widgetAbove)
+		b.WriteString("\n")
+	}
 	b.WriteString(inputArea)
+	if widgetBelow != "" {
+		b.WriteString("\n")
+		b.WriteString(widgetBelow)
+	}
 
 	leftPanel := b.String()
 
@@ -983,16 +1039,17 @@ func countUntrackedLines(cwd string) int {
 // statusRenderInput builds the StatusRenderInput from the current model state.
 func (m *model) statusRenderInput(showSidebar bool) StatusRenderInput {
 	return StatusRenderInput{
-		ProviderName: m.cfg.ProviderName,
-		ModelName:    m.cfg.ModelName,
-		Running:      m.running,
-		Eyes:         m.eyes(),
-		Messages:     m.chatModel.Messages,
-		TokenTracker: m.cfg.TokenTracker,
-		DiffAdded:    m.diffAdded,
-		DiffRemoved:  m.diffRemoved,
-		LoadingItems: m.loadingItems,
-		ShowSidebar:  showSidebar,
+		ProviderName:    m.cfg.ProviderName,
+		ModelName:       m.cfg.ModelName,
+		Running:         m.running,
+		Eyes:            m.eyes(),
+		Messages:        m.chatModel.Messages,
+		TokenTracker:    m.cfg.TokenTracker,
+		DiffAdded:       m.diffAdded,
+		DiffRemoved:     m.diffRemoved,
+		LoadingItems:    m.loadingItems,
+		ShowSidebar:     showSidebar,
+		ExtensionStatus: m.statusModel.ExtensionStatus,
 	}
 }
 
@@ -1127,10 +1184,18 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.inputModel.SkillDirs = r.SkillDirs
 		m.inputModel.ExtensionManager = r.ExtensionManager
 		m.inputModel.ExtensionCommands = r.ExtensionCommands
+		m.chatModel.ExtensionManager = r.ExtensionManager
+		m.chatModel.ToolDisplay.ExtensionManager = r.ExtensionManager
+		m.chatModel.ToolDisplay.RenderMarkdown = m.chatModel.RenderMarkdown
+		m.chatModel.ToolDisplay.RenderTimeout = m.chatModel.RenderTimeout
+		m.resetExtensionBridge(r.ExtensionManager)
 
 		var cmds []tea.Cmd
 		if r.RestartCh != nil {
 			cmds = append(cmds, waitForRestart(r.RestartCh))
+		}
+		if m.extensionIntentCh != nil {
+			cmds = append(cmds, waitForExtensionIntent(m.extensionIntentCh))
 		}
 		return m, tea.Batch(cmds...)
 	}

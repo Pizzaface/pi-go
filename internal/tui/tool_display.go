@@ -2,14 +2,17 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/dimetron/pi-go/internal/extension"
 
 	"charm.land/lipgloss/v2"
 )
@@ -22,6 +25,12 @@ type ToolDisplayModel struct {
 	Width int
 	// CompactTools when true shows one-line summaries instead of full output.
 	CompactTools bool
+	// ExtensionManager provides optional extension-owned renderers.
+	ExtensionManager *extension.Manager
+	// RenderTimeout bounds extension renderer calls.
+	RenderTimeout time.Duration
+	// RenderMarkdown renders markdown payloads when extensions return markdown.
+	RenderMarkdown func(string) string
 }
 
 // RenderToolMessage renders a tool message (role=="tool") into a styled string.
@@ -37,6 +46,15 @@ func (t *ToolDisplayModel) RenderToolMessage(msg message) string {
 
 // renderCompactTool renders a one-line tally for a tool message.
 func (t *ToolDisplayModel) renderCompactTool(msg message, dim lipgloss.Style) string {
+	if rendered, ok := t.renderWithExtension(msg, extension.RenderSurfaceToolCallRow, map[string]any{
+		"compact": true,
+		"tool":    msg.tool,
+		"tool_in": msg.toolIn,
+		"content": msg.content,
+	}); ok {
+		return ensureTrailingNewline(rendered)
+	}
+
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true)
 	checkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35"))
 	toolBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true).Render("● ")
@@ -76,24 +94,52 @@ func (t *ToolDisplayModel) renderCompactTool(msg message, dim lipgloss.Style) st
 // renderRegularTool renders a standard tool message with name, args, and
 // syntax-highlighted output.
 func (t *ToolDisplayModel) renderRegularTool(msg message, dim lipgloss.Style) string {
+	customHeader, customHeaderOK := t.renderWithExtension(msg, extension.RenderSurfaceToolCallRow, map[string]any{
+		"compact": false,
+		"tool":    msg.tool,
+		"tool_in": msg.toolIn,
+	})
+	customResult, customResultOK := t.renderWithExtension(msg, extension.RenderSurfaceToolResult, map[string]any{
+		"tool":    msg.tool,
+		"tool_in": msg.toolIn,
+		"content": msg.content,
+	})
+
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true)
 	argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	toolBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true).Render("● ")
 
 	var b strings.Builder
-	b.WriteString(toolBullet)
-	b.WriteString(toolStyle.Render(msg.tool))
-	if msg.toolIn != "" {
-		args := msg.toolIn
-		if len(args) > 80 {
-			args = args[:77] + "..."
+	if customHeaderOK {
+		b.WriteString(strings.TrimRight(customHeader, "\n"))
+	} else {
+		b.WriteString(toolBullet)
+		b.WriteString(toolStyle.Render(msg.tool))
+		if msg.toolIn != "" {
+			args := msg.toolIn
+			if len(args) > 80 {
+				args = args[:77] + "..."
+			}
+			b.WriteString(dim.Render("("))
+			b.WriteString(argStyle.Render(args))
+			b.WriteString(dim.Render(")"))
 		}
-		b.WriteString(dim.Render("("))
-		b.WriteString(argStyle.Render(args))
-		b.WriteString(dim.Render(")"))
 	}
 	b.WriteString("\n")
 	if msg.content != "" {
+		if customResultOK {
+			for _, line := range strings.Split(customResult, "\n") {
+				if strings.TrimSpace(line) == "" {
+					continue
+				}
+				b.WriteString("  ")
+				b.WriteString(dim.Render("â”‚ "))
+				b.WriteString(line)
+				b.WriteString("\n")
+			}
+			return b.String()
+		}
+
 		content := msg.content
 		lines := strings.Split(content, "\n")
 		maxLines := 15
@@ -126,6 +172,51 @@ func (t *ToolDisplayModel) renderRegularTool(msg message, dim lipgloss.Style) st
 		}
 	}
 	return b.String()
+}
+
+func (t *ToolDisplayModel) renderWithExtension(
+	msg message,
+	surface extension.RenderSurface,
+	payload map[string]any,
+) (string, bool) {
+	if t.ExtensionManager == nil {
+		return "", false
+	}
+	owner := strings.TrimSpace(msg.extensionOwner)
+	if owner == "" && msg.tool != "" {
+		if toolOwner, ok := t.ExtensionManager.ToolOwner(msg.tool); ok {
+			owner = strings.TrimSpace(toolOwner)
+		}
+	}
+	if owner == "" {
+		return "", false
+	}
+
+	timeout := t.RenderTimeout
+	if timeout <= 0 {
+		timeout = 250 * time.Millisecond
+	}
+	result, rendered, err := t.ExtensionManager.Render(
+		context.Background(),
+		owner,
+		surface,
+		payload,
+		timeout,
+	)
+	if !rendered || err != nil {
+		return "", false
+	}
+	if result.Kind == extension.RenderKindMarkdown && t.RenderMarkdown != nil {
+		return t.RenderMarkdown(result.Content), true
+	}
+	return result.Content, true
+}
+
+func ensureTrailingNewline(content string) string {
+	if strings.HasSuffix(content, "\n") {
+		return content
+	}
+	return content + "\n"
 }
 
 // toolCallSummary returns a short one-line summary of tool arguments.

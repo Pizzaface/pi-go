@@ -1,123 +1,189 @@
 # Extensions
 
-Extensions are the primary runtime customization surface for go-pi.
+Extensions are the runtime customization surface for go-pi.
 
-If you want to add behavior without growing the default core, prefer an extension.
+The runtime keeps `internal/extension.BuildRuntime()` as the assembly boundary and supports three extension runtime
+classes:
+
+- Declarative manifests (default)
+- Compiled-in extensions (`runtime.type = "compiled_in"`)
+- Hosted extensions over stdio JSON-RPC (`runtime.type = "hosted_stdio_jsonrpc"`)
 
 ## Resource discovery
 
-The runtime discovers resources across loose directories and installed packages.
-
-### Resource types
-
-- `extensions/` — manifest-driven runtime contributions
-- `skills/` — reusable `SKILL.md` folders
-- `prompts/` — markdown prompt templates exposed as slash commands
-- `themes/` — JSON themes layered on top of built-ins
-- `models/` — compatible provider/model registry documents
-
-### Loading order
-
-Later entries override earlier ones by resource name:
+Resource loading is layered and last-write-wins by name:
 
 1. `~/.pi-go/packages/*/<resource>/`
 2. `~/.pi-go/<resource>/`
 3. `.pi-go/packages/*/<resource>/`
 4. `.pi-go/<resource>/`
 
-Project-local compatibility skill directories still load after `.pi-go/skills/`:
+Resource types:
+
+- `extensions/`
+- `skills/`
+- `prompts/`
+- `themes/`
+- `models/`
+
+Project compatibility skills are also loaded from:
 
 - `.claude/skills/`
 - `.cursor/skills/`
 
-## Extension manifest discovery
+## Manifest basics
 
-Extension manifests are loaded from:
-
-1. `~/.pi-go/packages/*/extensions/*/extension.json`
-2. `~/.pi-go/extensions/*/extension.json`
-3. `.pi-go/packages/*/extensions/*/extension.json`
-4. `.pi-go/extensions/*/extension.json`
-
-## Minimal example
+Minimal declarative extension:
 
 ```json
 {
   "name": "demo",
   "description": "Demo extension",
-  "prompt": "You can use the demo extension when the user asks for demo behavior.",
-  "hooks": [
-    { "event": "before_tool", "command": "echo before read", "tools": ["read"] },
-    { "event": "after_tool", "command": "echo after write", "tools": ["write"] }
-  ],
-  "lifecycle": [
-    { "event": "startup", "command": "echo extension started >/tmp/demo-ext.log" },
-    { "event": "session_start", "command": "echo session ready >>/tmp/demo-ext.log" }
-  ],
-  "mcp_servers": [
-    { "name": "docs", "command": "node", "args": ["./server.js"] }
-  ],
+  "prompt": "Use this extension when requested.",
   "skills_dir": "skills",
   "tui": {
     "commands": [
       {
-        "name": "triage",
-        "description": "Summarize the current workspace",
-        "prompt": "Triage the current workspace. Extra context: {{args}}"
+        "name": "demo",
+        "description": "Run demo flow",
+        "prompt": "demo {{args}}"
       }
     ]
   }
 }
 ```
 
-## Supported contributions
+Backward compatibility: if `runtime` is omitted, the extension remains declarative and all existing fields (`prompt`,
+`hooks`, `lifecycle`, `mcp_servers`, `skills_dir`, `tui.commands`) keep working.
 
-### Prompt contributions
+## Runtime block
 
-Use `prompt` or `prompt_file` to append instruction text.
+`runtime` is optional:
 
-### Tool registration
+```json
+{
+  "runtime": {
+    "type": "hosted_stdio_jsonrpc",
+    "command": "go",
+    "args": ["run", "."],
+    "env": {
+      "LOG_LEVEL": "debug"
+    }
+  }
+}
+```
 
-Use `mcp_servers` to register external toolsets.
+Runtime rules:
 
-### Tool hooks
+- Omitted `runtime` means declarative extension.
+- `compiled_in` is resolved from the compiled registry (not executable paths).
+- `hosted_stdio_jsonrpc` requires `runtime.command`.
 
-Use `hooks` with:
+## Trust and approvals
 
-- `before_tool`
-- `after_tool`
+Approvals are app-owned and loaded from:
 
-### Lifecycle hooks
+- `~/.pi-go/extensions/approvals.json`
 
-Use `lifecycle` with:
+Trust classes:
 
-- `startup`
-- `session_start`
+- `declarative`
+- `compiled_in`
+- `hosted_first_party`
+- `hosted_third_party`
 
-### Skills
+Hosted extensions require explicit approval (`hosted_required: true`) and explicit capability grants.
 
-Use `skills_dir` for extension-local `SKILL.md` folders.
+Example approval entry:
 
-### Narrow TUI contributions
+```json
+{
+  "extension_id": "hosted-hello",
+  "trust_class": "hosted_third_party",
+  "hosted_required": true,
+  "granted_capabilities": [
+    "commands.register",
+    "ui.status",
+    "render.text"
+  ]
+}
+```
 
-The TUI seam is intentionally small.
+## Capabilities
 
-Today, extensions can contribute:
+Current capability keys:
 
-- slash commands via `tui.commands`
+- `commands.register`
+- `tools.register`
+- `tools.intercept`
+- `ui.status`
+- `ui.widget`
+- `ui.dialog`
+- `render.text`
+- `render.markdown`
 
-Those commands map onto the existing Bubble Tea chat flow rather than injecting arbitrary UI widgets.
+Policy notes:
 
-## Relationship to packages
+- `tools.intercept` is denied for hosted third-party by default unless explicitly approved.
+- Hosted capabilities are checked during registration/assembly, not deferred to TUI time.
 
-Extensions can live loose in `.pi-go/extensions/` or `~/.pi-go/extensions/`, but packages are often the better distribution format when you want to ship a reusable bundle.
+## Hosted protocol (stdio JSON-RPC)
 
-More: [packages](packages.md)
+Protocol package: `internal/extension/hostproto`.
 
-## Relationship to providers
+Current startup flow:
 
-Extensions are not the main provider customization mechanism.
+1. Host launches the extension process from manifest runtime config.
+2. Host sends `pi.extension/handshake`.
+3. Extension returns protocol compatibility and acceptance.
 
-For compatible provider/model aliases, prefer `models/*.json` resources and config-local `providers` / `models`.
+Method names currently defined include:
 
-More: [providers](providers.md)
+- `pi.extension/handshake`
+- `pi.extension/event`
+- `pi.extension/intent`
+- `pi.extension/register_command`
+- `pi.extension/register_tool`
+- `pi.extension/render`
+- `pi.extension/health`
+- `pi.extension/shutdown`
+- `pi.extension/reload`
+
+## Async TUI intents
+
+Extensions can emit UI intents through the manager; TUI consumes them asynchronously via Bubble Tea messages.
+
+Supported UI intents:
+
+- Status line update
+- Widget above editor
+- Widget below editor
+- Non-blocking notification
+- Dialog modal
+
+TUI applies these through app-owned rendering and ignores them when extension UI is disabled.
+
+## Renderer constraints
+
+Custom renderers are constrained:
+
+- Payload kinds: `text`, `markdown` only
+- Ownership: one extension per surface (conflicts are rejected)
+- Timeout/error behavior: fallback to built-in rendering
+- Cleanup: renderer ownership is removed on extension unload
+
+Built-in layout ownership stays in the app; extensions provide content only.
+
+## Example
+
+Hosted example extension:
+
+- `examples/extensions/hosted-hello/`
+
+See its `README.md` for setup.
+
+## Related docs
+
+- [customization](customization.md)
+- [packages](packages.md)
+- [providers](providers.md)

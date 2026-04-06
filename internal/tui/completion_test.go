@@ -53,6 +53,36 @@ func TestComplete_SkillCompletion(t *testing.T) {
 	}
 }
 
+func TestComplete_IncludesDynamicExtensionCommands(t *testing.T) {
+	result := Complete("/de", nil, "", extension.SlashCommand{
+		Name:        "demo",
+		Description: "Run demo",
+	})
+	if len(result.Candidates) == 0 {
+		t.Fatalf("expected dynamic extension command candidate, got %+v", result.Candidates)
+	}
+	found := false
+	for _, candidate := range result.Candidates {
+		if candidate.Text == "/demo" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected /demo in completion candidates, got %+v", result.Candidates)
+	}
+}
+
+func TestMatchingCommands_IncludesDynamicExtensions(t *testing.T) {
+	candidates := matchingCommands("/dem", []extension.SlashCommand{{
+		Name:        "demo",
+		Description: "Run demo",
+	}})
+	if len(candidates) != 1 || candidates[0].Text != "/demo" {
+		t.Fatalf("expected dynamic command match /demo, got %+v", candidates)
+	}
+}
+
 func TestComplete_CycleSelection(t *testing.T) {
 	result := Complete("/c", nil, "")
 	if len(result.Candidates) < 2 {

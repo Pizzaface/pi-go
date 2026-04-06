@@ -35,7 +35,7 @@ type CompleteResult struct {
 
 // Complete returns completion candidates for the given input.
 // It analyzes the input and returns all matching options for commands, skills, and specs.
-func Complete(input string, skills []extension.Skill, workDir string) *CompleteResult {
+func Complete(input string, skills []extension.Skill, workDir string, extensionCommands ...extension.SlashCommand) *CompleteResult {
 	if input == "" {
 		return &CompleteResult{}
 	}
@@ -53,7 +53,7 @@ func Complete(input string, skills []extension.Skill, workDir string) *CompleteR
 	switch completionType {
 	case CompletionTypeCommand:
 		// For command completion, include both built-in commands and skills
-		candidates = append(candidates, matchingCommands(input)...)
+		candidates = append(candidates, matchingCommands(input, extensionCommands)...)
 		candidates = append(candidates, matchingSkills(input, skills)...)
 	case CompletionTypeSkill:
 		candidates = matchingSkills(input, skills)
@@ -100,14 +100,16 @@ func detectCompletionType(input string) CompletionType {
 }
 
 // matchingCommands returns all command candidates matching the prefix.
-func matchingCommands(prefix string) []CompletionCandidate {
+func matchingCommands(prefix string, extensionCommands []extension.SlashCommand) []CompletionCandidate {
 	prefix = strings.ToLower(prefix)
 
 	var candidates []CompletionCandidate
+	seen := map[string]bool{}
 
 	// Check against slash commands
 	for _, cmd := range slashCommands {
 		if strings.HasPrefix(strings.ToLower(cmd), prefix) {
+			seen[cmd] = true
 			desc := slashCommandDesc(cmd)
 			candidates = append(candidates, CompletionCandidate{
 				Text:        cmd,
@@ -115,6 +117,19 @@ func matchingCommands(prefix string) []CompletionCandidate {
 				Type:        CompletionTypeCommand,
 			})
 		}
+	}
+	for _, cmd := range extensionCommands {
+		name := "/" + strings.TrimPrefix(strings.TrimSpace(cmd.Name), "/")
+		lowerName := strings.ToLower(name)
+		if seen[name] || !strings.HasPrefix(lowerName, prefix) {
+			continue
+		}
+		seen[name] = true
+		candidates = append(candidates, CompletionCandidate{
+			Text:        name,
+			Description: strings.TrimSpace(cmd.Description),
+			Type:        CompletionTypeCommand,
+		})
 	}
 
 	return candidates

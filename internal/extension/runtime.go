@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
@@ -17,78 +18,15 @@ import (
 	"github.com/dimetron/pi-go/internal/tools"
 )
 
-const (
-	LifecycleEventStartup      = "startup"
-	LifecycleEventSessionStart = "session_start"
-)
-
-// SlashCommand is a narrow TUI extension point backed by prompt rendering.
-type SlashCommand struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Prompt      string `json:"prompt,omitempty"`
-}
-
-// Render returns the prompt text for the command using a minimal args placeholder.
-func (c SlashCommand) Render(args []string) string {
-	tpl := PromptTemplate{Name: c.Name, Description: c.Description, Prompt: c.Prompt}
-	return tpl.Render(args)
-}
-
-// TUIConfig defines narrow, Bubble Tea-aligned TUI contribution points.
-type TUIConfig struct {
-	Commands []SlashCommand `json:"commands,omitempty"`
-}
-
-// Manifest describes a discovered extension instance.
-type Manifest struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Enabled     *bool             `json:"enabled,omitempty"`
-	Prompt      string            `json:"prompt,omitempty"`
-	PromptFile  string            `json:"prompt_file,omitempty"`
-	SkillsDir   string            `json:"skills_dir,omitempty"`
-	Hooks       []HookConfig      `json:"hooks,omitempty"`
-	Lifecycle   []HookConfig      `json:"lifecycle,omitempty"`
-	MCPServers  []MCPServerConfig `json:"mcp_servers,omitempty"`
-	TUI         TUIConfig         `json:"tui,omitempty"`
-
-	Dir string `json:"-"`
-}
-
-func (m Manifest) enabled() bool {
-	return m.Enabled == nil || *m.Enabled
-}
-
-func (m Manifest) resolvePrompt() (string, error) {
-	if strings.TrimSpace(m.PromptFile) == "" {
-		return strings.TrimSpace(m.Prompt), nil
-	}
-	data, err := os.ReadFile(filepath.Join(m.Dir, m.PromptFile))
-	if err != nil {
-		return "", fmt.Errorf("reading prompt file for extension %q: %w", m.Name, err)
-	}
-	if strings.TrimSpace(m.Prompt) == "" {
-		return strings.TrimSpace(string(data)), nil
-	}
-	return strings.TrimSpace(m.Prompt) + "\n\n" + strings.TrimSpace(string(data)), nil
-}
-
-func (m Manifest) resolveSkillsDir() string {
-	if strings.TrimSpace(m.SkillsDir) == "" {
-		return ""
-	}
-	return filepath.Join(m.Dir, m.SkillsDir)
-}
-
 // RuntimeConfig controls extension runtime bootstrap.
 type RuntimeConfig struct {
-	Config          config.Config
-	WorkDir         string
-	Sandbox         *tools.Sandbox
-	BaseInstruction string
-	ScreenProvider  tools.ScreenProvider
-	RestartFunc     tools.RestartFunc
+	Config           config.Config
+	WorkDir          string
+	Sandbox          *tools.Sandbox
+	BaseInstruction  string
+	CompiledRegistry *Registry
+	ScreenProvider   tools.ScreenProvider
+	RestartFunc      tools.RestartFunc
 }
 
 // Runtime is the assembled extension runtime output consumed by CLI/TUI startup.
@@ -101,6 +39,7 @@ type Runtime struct {
 	PromptTemplates     []PromptTemplate
 	ThemeDirs           []string
 	ProviderRegistry    *provider.Registry
+	Manager             *Manager
 	SlashCommands       []SlashCommand
 	BeforeToolCallbacks []llmagent.BeforeToolCallback
 	AfterToolCallbacks  []llmagent.AfterToolCallback
@@ -143,6 +82,23 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building provider registry: %w", err)
 	}
+	permissions, err := LoadPermissions(DefaultApprovalsPath())
+	if err != nil {
+		return nil, fmt.Errorf("loading extension approvals: %w", err)
+	}
+	manager := NewManager(ManagerOptions{
+		Permissions: permissions,
+		Registry:    cfg.CompiledRegistry,
+	})
+	if err := manager.RegisterManifests(manifests); err != nil {
+		return nil, fmt.Errorf("registering extension manifests: %w", err)
+	}
+	if err := manager.RegisterCompiledExtensions(); err != nil {
+		return nil, fmt.Errorf("registering compiled extensions: %w", err)
+	}
+	if err := manager.StartHostedExtensions(ctx, "startup"); err != nil {
+		return nil, fmt.Errorf("starting hosted extensions: %w", err)
+	}
 
 	before := BuildBeforeToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
 	after := BuildAfterToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
@@ -151,7 +107,6 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 
 	var lifecycle []HookConfig
 	var toolsets []tool.Toolset
-	var slashCommands []SlashCommand
 
 	for _, manifest := range manifests {
 		prompt, err := manifest.resolvePrompt()
@@ -167,7 +122,6 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		before = append(before, BuildBeforeToolCallbacks(manifest.Hooks)...)
 		after = append(after, BuildAfterToolCallbacks(manifest.Hooks)...)
 		lifecycle = append(lifecycle, manifest.Lifecycle...)
-		slashCommands = append(slashCommands, manifest.TUI.Commands...)
 
 		if len(manifest.MCPServers) > 0 {
 			ts, err := BuildMCPToolsets(manifest.MCPServers)
@@ -191,8 +145,11 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	}
 
 	for _, tpl := range promptTemplates {
-		slashCommands = append(slashCommands, tpl.SlashCommand())
+		if err := manager.RegisterBootstrapCommand("prompt_template:"+tpl.Name, tpl.SlashCommand()); err != nil {
+			return nil, fmt.Errorf("registering prompt template slash command %q: %w", tpl.Name, err)
+		}
 	}
+	coreTools = append(coreTools, manager.RuntimeTools()...)
 
 	rt := &Runtime{
 		Extensions:          manifests,
@@ -203,12 +160,18 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		PromptTemplates:     promptTemplates,
 		ThemeDirs:           resources.ThemeDirs,
 		ProviderRegistry:    providerRegistry,
-		SlashCommands:       normalizeSlashCommands(slashCommands),
+		Manager:             manager,
+		SlashCommands:       manager.SlashCommands(),
 		BeforeToolCallbacks: before,
 		AfterToolCallbacks:  after,
 		LifecycleHooks:      lifecycle,
 		Instruction:         instruction,
 	}
+	manager.EmitEvent(Event{
+		Type:      EventStartup,
+		Timestamp: time.Now(),
+		Data:      map[string]any{"workdir": cfg.WorkDir},
+	})
 
 	if err := rt.RunLifecycleHooks(ctx, LifecycleEventStartup, map[string]any{"workdir": cfg.WorkDir}); err != nil {
 		return nil, err
@@ -275,28 +238,6 @@ func LoadManifests(dirs ...string) ([]Manifest, error) {
 	}
 	sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
 	return manifests, nil
-}
-
-func normalizeSlashCommands(cmds []SlashCommand) []SlashCommand {
-	seen := make(map[string]SlashCommand, len(cmds))
-	order := make([]string, 0, len(cmds))
-	for _, cmd := range cmds {
-		name := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "/"))
-		if name == "" {
-			continue
-		}
-		cmd.Name = name
-		if _, ok := seen[name]; !ok {
-			order = append(order, name)
-		}
-		seen[name] = cmd
-	}
-	sort.Strings(order)
-	out := make([]SlashCommand, 0, len(order))
-	for _, name := range order {
-		out = append(out, seen[name])
-	}
-	return out
 }
 
 func convertConfigHooks(cfgHooks []config.HookConfig) []HookConfig {

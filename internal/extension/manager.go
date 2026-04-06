@@ -1,0 +1,869 @@
+package extension
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/dimetron/pi-go/internal/extension/hostruntime"
+	"google.golang.org/adk/tool"
+)
+
+type commandRegistration struct {
+	command   SlashCommand
+	owner     string
+	bootstrap bool
+}
+
+type toolRegistration struct {
+	owner     string
+	intercept bool
+}
+
+type extensionRegistration struct {
+	manifest Manifest
+	trust    TrustClass
+}
+
+type rendererRegistration struct {
+	owner        string
+	allowedKinds map[RenderKind]struct{}
+	renderer     RendererFunc
+}
+
+type ManagerOptions struct {
+	Permissions     *Permissions
+	Registry        *Registry
+	BuiltinCommands []string
+	HostedLauncher  HostedLauncher
+}
+
+type HostedClient interface {
+	Handshake(context.Context, hostproto.HandshakeRequest) (hostproto.HandshakeResponse, error)
+	Shutdown(context.Context) error
+	IsHealthy() bool
+}
+
+type HostedLauncher interface {
+	Launch(context.Context, Manifest) (HostedClient, error)
+}
+
+type defaultHostedLauncher struct{}
+
+type RendererFunc func(context.Context, RenderRequest) (RenderResult, error)
+
+func (defaultHostedLauncher) Launch(ctx context.Context, manifest Manifest) (HostedClient, error) {
+	process, err := hostruntime.StartProcess(ctx, hostruntime.ProcessConfig{
+		Command: manifest.Runtime.Command,
+		Args:    manifest.Runtime.Args,
+		Env:     manifest.Runtime.Env,
+		WorkDir: manifest.Dir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return hostruntime.NewClientFromProcess(process), nil
+}
+
+// Manager stores runtime extension registrations and ownership metadata.
+type Manager struct {
+	mu              sync.RWMutex
+	permissions     *Permissions
+	registry        *Registry
+	hostedLauncher  HostedLauncher
+	stateStore      *StateStore
+	builtins        map[string]struct{}
+	extensions      map[string]extensionRegistration
+	commands        map[string]commandRegistration
+	tools           map[string]toolRegistration
+	runtimeTools    map[string]tool.Tool
+	hostedClients   map[string]HostedClient
+	subscriptions   map[string]map[string]struct{} // event -> extension IDs
+	eventHandlers   map[string]func(Event)
+	intentSubs      map[int]chan UIIntentEnvelope
+	nextIntentSubID int
+	renderers       map[RenderSurface]rendererRegistration
+}
+
+// Registrar is passed to compiled extensions so they can register contributions.
+type Registrar struct {
+	manager     *Manager
+	extensionID string
+}
+
+func (r *Registrar) Subscribe(event EventType) error {
+	return r.manager.SubscribeEvent(r.extensionID, string(event))
+}
+
+func (r *Registrar) RegisterCommand(command SlashCommand) error {
+	return r.manager.RegisterDynamicCommand(r.extensionID, command)
+}
+
+func (r *Registrar) RegisterTool(name string, intercept bool) error {
+	return r.manager.RegisterDynamicTool(r.extensionID, name, intercept)
+}
+
+func (r *Registrar) RegisterRuntimeTool(runtimeTool tool.Tool, intercept bool) error {
+	return r.manager.RegisterRuntimeTool(r.extensionID, runtimeTool, intercept)
+}
+
+func (r *Registrar) RegisterRenderer(surface RenderSurface, allowedKinds []RenderKind, renderer RendererFunc) error {
+	return r.manager.RegisterRenderer(r.extensionID, surface, allowedKinds, renderer)
+}
+
+var defaultBuiltinSlashCommands = []string{
+	"/help",
+	"/clear",
+	"/model",
+	"/session",
+	"/new",
+	"/resume",
+	"/fork",
+	"/tree",
+	"/settings",
+	"/context",
+	"/branch",
+	"/compact",
+	"/history",
+	"/login",
+	"/skills",
+	"/skill-create",
+	"/skill-load",
+	"/skill-list",
+	"/theme",
+	"/ping",
+	"/debug",
+	"/restart",
+	"/exit",
+	"/quit",
+}
+
+func DefaultBuiltinSlashCommands() []string {
+	out := make([]string, len(defaultBuiltinSlashCommands))
+	copy(out, defaultBuiltinSlashCommands)
+	return out
+}
+
+func NewManager(opts ManagerOptions) *Manager {
+	permissions := opts.Permissions
+	if permissions == nil {
+		permissions = EmptyPermissions()
+	}
+	registry := opts.Registry
+	if registry == nil {
+		registry = NewRegistry()
+	}
+	builtinCommands := opts.BuiltinCommands
+	if len(builtinCommands) == 0 {
+		builtinCommands = DefaultBuiltinSlashCommands()
+	}
+	hostedLauncher := opts.HostedLauncher
+	if hostedLauncher == nil {
+		hostedLauncher = defaultHostedLauncher{}
+	}
+	builtins := make(map[string]struct{}, len(builtinCommands))
+	for _, cmd := range builtinCommands {
+		name := normalizeCommandName(cmd)
+		if name != "" {
+			builtins[name] = struct{}{}
+		}
+	}
+	return &Manager{
+		permissions:    permissions,
+		registry:       registry,
+		hostedLauncher: hostedLauncher,
+		stateStore:     nil,
+		builtins:       builtins,
+		extensions:     map[string]extensionRegistration{},
+		commands:       map[string]commandRegistration{},
+		tools:          map[string]toolRegistration{},
+		runtimeTools:   map[string]tool.Tool{},
+		hostedClients:  map[string]HostedClient{},
+		subscriptions:  map[string]map[string]struct{}{},
+		eventHandlers:  map[string]func(Event){},
+		intentSubs:     map[int]chan UIIntentEnvelope{},
+		renderers:      map[RenderSurface]rendererRegistration{},
+	}
+}
+
+func (m *Manager) BindSession(sessionID, sessionsDir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sessionID = strings.TrimSpace(sessionID)
+	sessionsDir = strings.TrimSpace(sessionsDir)
+	if sessionID == "" || sessionsDir == "" {
+		m.stateStore = nil
+		return
+	}
+	m.stateStore = NewStateStore(sessionsDir, sessionID)
+}
+
+func (m *Manager) StateNamespace(extensionID string) StateNamespace {
+	m.mu.RLock()
+	store := m.stateStore
+	m.mu.RUnlock()
+	if store == nil {
+		return StateNamespace{}
+	}
+	return store.Namespace(extensionID)
+}
+
+func (m *Manager) Permissions() *Permissions {
+	return m.permissions
+}
+
+// SubscribeUIIntents creates a non-blocking subscription channel for UI intents.
+func (m *Manager) SubscribeUIIntents(buffer int) (<-chan UIIntentEnvelope, func()) {
+	if buffer <= 0 {
+		buffer = 16
+	}
+	ch := make(chan UIIntentEnvelope, buffer)
+	m.mu.Lock()
+	id := m.nextIntentSubID
+	m.nextIntentSubID++
+	m.intentSubs[id] = ch
+	m.mu.Unlock()
+
+	cancel := func() {
+		m.mu.Lock()
+		subscriber, ok := m.intentSubs[id]
+		if ok {
+			delete(m.intentSubs, id)
+			close(subscriber)
+		}
+		m.mu.Unlock()
+	}
+	return ch, cancel
+}
+
+func (m *Manager) EmitUIIntent(extensionID string, intent UIIntent) error {
+	extensionID = strings.TrimSpace(extensionID)
+	if extensionID == "" {
+		return fmt.Errorf("extension id is required")
+	}
+	if err := intent.Validate(); err != nil {
+		return fmt.Errorf("invalid ui intent: %w", err)
+	}
+	requiredCapability := intent.RequiredCapability()
+
+	m.mu.RLock()
+	trust := TrustClassDeclarative
+	if reg, ok := m.extensions[extensionID]; ok {
+		trust = reg.trust
+	}
+	subscribers := make([]chan UIIntentEnvelope, 0, len(m.intentSubs))
+	for _, subscriber := range m.intentSubs {
+		subscribers = append(subscribers, subscriber)
+	}
+	m.mu.RUnlock()
+
+	if requiredCapability != "" && !m.permissions.AllowsCapability(extensionID, trust, requiredCapability) {
+		return fmt.Errorf("extension %q capability %q is not approved", extensionID, requiredCapability)
+	}
+
+	envelope := UIIntentEnvelope{
+		ExtensionID: extensionID,
+		Intent:      intent,
+	}
+	for _, subscriber := range subscribers {
+		select {
+		case subscriber <- envelope:
+		default:
+			// Subscriber is slow or stalled; keep runtime non-blocking.
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RegisterManifests(manifests []Manifest) error {
+	for _, manifest := range manifests {
+		if err := m.RegisterManifest(manifest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RegisterManifest(manifest Manifest) error {
+	manifest.Name = strings.TrimSpace(manifest.Name)
+	if manifest.Name == "" {
+		return fmt.Errorf("manifest name is required")
+	}
+	if err := validateRuntimeSpec(manifest); err != nil {
+		return fmt.Errorf("extension %q runtime: %w", manifest.Name, err)
+	}
+
+	trust := m.permissions.ResolveTrust(manifest.Name, ResolveManifestTrust(manifest))
+	if manifest.runtimeType() == RuntimeTypeHostedStdioJSONRPC && !m.permissions.HostedApproved(manifest.Name, trust) {
+		return fmt.Errorf("extension %q requires hosted approval", manifest.Name)
+	}
+	for _, capability := range manifest.Capabilities {
+		if !m.permissions.AllowsCapability(manifest.Name, trust, capability) {
+			return fmt.Errorf("extension %q capability %q is not approved", manifest.Name, capability)
+		}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.extensions[manifest.Name] = extensionRegistration{
+		manifest: manifest,
+		trust:    trust,
+	}
+	for _, command := range manifest.TUI.Commands {
+		if err := m.registerCommandLocked(manifest.Name, command, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) RegisterCompiledExtensions() error {
+	for _, ext := range m.registry.List() {
+		id := strings.TrimSpace(ext.ID())
+		if id == "" {
+			return fmt.Errorf("compiled extension has empty id")
+		}
+		manifest := Manifest{
+			Name:    id,
+			Runtime: RuntimeSpec{Type: RuntimeTypeCompiledIn},
+		}
+		if err := m.RegisterManifest(manifest); err != nil {
+			return err
+		}
+		if err := ext.Register(&Registrar{
+			manager:     m,
+			extensionID: id,
+		}); err != nil {
+			return fmt.Errorf("registering compiled extension %q: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error {
+	type hostedRegistration struct {
+		id       string
+		manifest Manifest
+		trust    TrustClass
+	}
+	var toStart []hostedRegistration
+
+	m.mu.RLock()
+	for id, reg := range m.extensions {
+		if reg.manifest.runtimeType() != RuntimeTypeHostedStdioJSONRPC {
+			continue
+		}
+		if _, started := m.hostedClients[id]; started {
+			continue
+		}
+		toStart = append(toStart, hostedRegistration{
+			id:       id,
+			manifest: reg.manifest,
+			trust:    reg.trust,
+		})
+	}
+	m.mu.RUnlock()
+
+	for _, reg := range toStart {
+		if !m.permissions.HostedApproved(reg.id, reg.trust) {
+			return fmt.Errorf("extension %q requires hosted approval", reg.id)
+		}
+		client, err := m.hostedLauncher.Launch(ctx, reg.manifest)
+		if err != nil {
+			return fmt.Errorf("launching hosted extension %q: %w", reg.id, err)
+		}
+		handshakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err = client.Handshake(handshakeCtx, hostproto.HandshakeRequest{
+			ProtocolVersion: hostproto.ProtocolVersion,
+			ExtensionID:     reg.id,
+			Mode:            mode,
+			CapabilityMask:  capabilitiesToStrings(reg.manifest.Capabilities),
+		})
+		cancel()
+		if err != nil {
+			_ = client.Shutdown(context.Background())
+			return fmt.Errorf("handshake with hosted extension %q failed: %w", reg.id, err)
+		}
+		m.mu.Lock()
+		m.hostedClients[reg.id] = client
+		m.mu.Unlock()
+	}
+	return nil
+}
+
+func (m *Manager) HostedClient(extensionID string) (HostedClient, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	client, ok := m.hostedClients[strings.TrimSpace(extensionID)]
+	return client, ok
+}
+
+func (m *Manager) ShutdownHostedExtensions(ctx context.Context) {
+	m.mu.Lock()
+	clients := make([]HostedClient, 0, len(m.hostedClients))
+	for _, client := range m.hostedClients {
+		clients = append(clients, client)
+	}
+	m.hostedClients = map[string]HostedClient{}
+	m.mu.Unlock()
+
+	for _, client := range clients {
+		_ = client.Shutdown(ctx)
+	}
+}
+
+func (m *Manager) RegisterBootstrapCommand(extensionID string, command SlashCommand) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.registerCommandLocked(extensionID, command, true)
+}
+
+func (m *Manager) RegisterDynamicCommand(extensionID string, command SlashCommand) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.registerCommandLocked(extensionID, command, false)
+}
+
+func (m *Manager) registerCommandLocked(extensionID string, command SlashCommand, bootstrap bool) error {
+	name := normalizeCommandName(command.Name)
+	if name == "" {
+		return fmt.Errorf("command name is required")
+	}
+	if _, reserved := m.builtins[name]; reserved {
+		return fmt.Errorf("command %q conflicts with built-in command", name)
+	}
+	command.Name = name
+	if existing, exists := m.commands[name]; exists {
+		if bootstrap && existing.bootstrap {
+			m.commands[name] = commandRegistration{
+				command:   command,
+				owner:     extensionID,
+				bootstrap: true,
+			}
+			return nil
+		}
+		return fmt.Errorf("command %q already registered by extension %q", name, existing.owner)
+	}
+	m.commands[name] = commandRegistration{
+		command:   command,
+		owner:     extensionID,
+		bootstrap: bootstrap,
+	}
+	return nil
+}
+
+func (m *Manager) RegisterDynamicTool(extensionID, toolName string, intercept bool) error {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return fmt.Errorf("tool name is required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.registerToolLocked(extensionID, toolName, nil, intercept)
+}
+
+func (m *Manager) RegisterRuntimeTool(extensionID string, runtimeTool tool.Tool, intercept bool) error {
+	if runtimeTool == nil {
+		return fmt.Errorf("runtime tool is required")
+	}
+	toolName := strings.TrimSpace(runtimeTool.Name())
+	if toolName == "" {
+		return fmt.Errorf("runtime tool name is required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.registerToolLocked(extensionID, toolName, runtimeTool, intercept)
+}
+
+func (m *Manager) registerToolLocked(extensionID, toolName string, runtimeTool tool.Tool, intercept bool) error {
+	if existing, exists := m.tools[toolName]; exists {
+		return fmt.Errorf("tool %q already registered by extension %q", toolName, existing.owner)
+	}
+	trust := TrustClassDeclarative
+	if reg, ok := m.extensions[extensionID]; ok {
+		trust = reg.trust
+	}
+	if !m.permissions.AllowsCapability(extensionID, trust, CapabilityToolRegister) {
+		return fmt.Errorf("extension %q capability %q is not approved", extensionID, CapabilityToolRegister)
+	}
+	if intercept && !m.permissions.AllowsCapability(extensionID, trust, CapabilityToolIntercept) {
+		return fmt.Errorf("extension %q capability %q is not approved", extensionID, CapabilityToolIntercept)
+	}
+	m.tools[toolName] = toolRegistration{
+		owner:     extensionID,
+		intercept: intercept,
+	}
+	if runtimeTool != nil {
+		m.runtimeTools[toolName] = runtimeTool
+	}
+	return nil
+}
+
+func (m *Manager) SubscribeEvent(extensionID, event string) error {
+	extensionID = strings.TrimSpace(extensionID)
+	event = strings.TrimSpace(event)
+	if extensionID == "" {
+		return fmt.Errorf("extension id is required")
+	}
+	if event == "" {
+		return fmt.Errorf("event name is required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	subscribers, ok := m.subscriptions[event]
+	if !ok {
+		subscribers = map[string]struct{}{}
+		m.subscriptions[event] = subscribers
+	}
+	subscribers[extensionID] = struct{}{}
+	return nil
+}
+
+func (m *Manager) Subscribers(event string) []string {
+	event = strings.TrimSpace(event)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	subscribers := m.subscriptions[event]
+	out := make([]string, 0, len(subscribers))
+	for extensionID := range subscribers {
+		out = append(out, extensionID)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (m *Manager) HasSubscription(extensionID, event string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if subscribers, ok := m.subscriptions[strings.TrimSpace(event)]; ok {
+		_, ok := subscribers[strings.TrimSpace(extensionID)]
+		return ok
+	}
+	return false
+}
+
+func (m *Manager) RegisterEventHandler(extensionID string, handler func(Event)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	extensionID = strings.TrimSpace(extensionID)
+	if extensionID == "" || handler == nil {
+		return
+	}
+	m.eventHandlers[extensionID] = handler
+}
+
+func (m *Manager) EmitEvent(event Event) {
+	subscribers := m.Subscribers(string(event.Type))
+	if len(subscribers) == 0 {
+		return
+	}
+	handlers := make([]func(Event), 0, len(subscribers))
+	m.mu.RLock()
+	for _, extensionID := range subscribers {
+		if handler, ok := m.eventHandlers[extensionID]; ok {
+			handlers = append(handlers, handler)
+		}
+	}
+	m.mu.RUnlock()
+	for _, handler := range handlers {
+		handler(event)
+	}
+}
+
+func (m *Manager) SlashCommands() []SlashCommand {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	names := make([]string, 0, len(m.commands))
+	for name := range m.commands {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]SlashCommand, 0, len(names))
+	for _, name := range names {
+		out = append(out, m.commands[name].command)
+	}
+	return out
+}
+
+func (m *Manager) FindCommand(name string) (SlashCommand, bool) {
+	name = normalizeCommandName(name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	reg, ok := m.commands[name]
+	if !ok {
+		return SlashCommand{}, false
+	}
+	return reg.command, true
+}
+
+func (m *Manager) CommandOwner(name string) (string, bool) {
+	name = normalizeCommandName(name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	reg, ok := m.commands[name]
+	if !ok {
+		return "", false
+	}
+	return reg.owner, true
+}
+
+func (m *Manager) ToolOwner(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	reg, ok := m.tools[name]
+	if !ok {
+		return "", false
+	}
+	return reg.owner, true
+}
+
+func (m *Manager) RuntimeTools() []tool.Tool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	names := make([]string, 0, len(m.runtimeTools))
+	for name := range m.runtimeTools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]tool.Tool, 0, len(names))
+	for _, name := range names {
+		out = append(out, m.runtimeTools[name])
+	}
+	return out
+}
+
+func (m *Manager) RegisterRenderer(extensionID string, surface RenderSurface, allowedKinds []RenderKind, renderer RendererFunc) error {
+	extensionID = strings.TrimSpace(extensionID)
+	if extensionID == "" {
+		return fmt.Errorf("extension id is required")
+	}
+	surface = normalizeRenderSurface(surface)
+	if surface == "" {
+		return fmt.Errorf("renderer surface is required")
+	}
+	if renderer == nil {
+		return fmt.Errorf("renderer callback is required")
+	}
+	if len(allowedKinds) == 0 {
+		allowedKinds = []RenderKind{RenderKindText}
+	}
+
+	m.mu.RLock()
+	trust := TrustClassDeclarative
+	if reg, ok := m.extensions[extensionID]; ok {
+		trust = reg.trust
+	}
+	m.mu.RUnlock()
+
+	kindSet := make(map[RenderKind]struct{}, len(allowedKinds))
+	for _, kind := range allowedKinds {
+		kind = normalizeRenderKind(kind)
+		capability, err := renderKindCapability(kind)
+		if err != nil {
+			return err
+		}
+		if !m.permissions.AllowsCapability(extensionID, trust, capability) {
+			return fmt.Errorf("extension %q capability %q is not approved", extensionID, capability)
+		}
+		kindSet[kind] = struct{}{}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if existing, ok := m.renderers[surface]; ok && existing.owner != extensionID {
+		return fmt.Errorf("renderer surface %q already registered by extension %q", surface, existing.owner)
+	}
+	m.renderers[surface] = rendererRegistration{
+		owner:        extensionID,
+		allowedKinds: kindSet,
+		renderer:     renderer,
+	}
+	return nil
+}
+
+func (m *Manager) RendererOwner(surface RenderSurface) (string, bool) {
+	surface = normalizeRenderSurface(surface)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	registration, ok := m.renderers[surface]
+	if !ok {
+		return "", false
+	}
+	return registration.owner, true
+}
+
+func (m *Manager) UnregisterRenderers(extensionID string) {
+	extensionID = strings.TrimSpace(extensionID)
+	if extensionID == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for surface, registration := range m.renderers {
+		if registration.owner == extensionID {
+			delete(m.renderers, surface)
+		}
+	}
+}
+
+func (m *Manager) UnregisterExtension(extensionID string) {
+	extensionID = strings.TrimSpace(extensionID)
+	if extensionID == "" {
+		return
+	}
+
+	var hostedClient HostedClient
+	m.mu.Lock()
+	for name, registration := range m.commands {
+		if registration.owner == extensionID {
+			delete(m.commands, name)
+		}
+	}
+	for name, registration := range m.tools {
+		if registration.owner == extensionID {
+			delete(m.tools, name)
+			delete(m.runtimeTools, name)
+		}
+	}
+	for surface, registration := range m.renderers {
+		if registration.owner == extensionID {
+			delete(m.renderers, surface)
+		}
+	}
+	for event, subscribers := range m.subscriptions {
+		delete(subscribers, extensionID)
+		if len(subscribers) == 0 {
+			delete(m.subscriptions, event)
+		}
+	}
+	delete(m.eventHandlers, extensionID)
+	delete(m.extensions, extensionID)
+	if client, ok := m.hostedClients[extensionID]; ok {
+		hostedClient = client
+		delete(m.hostedClients, extensionID)
+	}
+	m.mu.Unlock()
+
+	if hostedClient != nil {
+		_ = hostedClient.Shutdown(context.Background())
+	}
+}
+
+func (m *Manager) Render(
+	ctx context.Context,
+	extensionID string,
+	surface RenderSurface,
+	payload map[string]any,
+	timeout time.Duration,
+) (RenderResult, bool, error) {
+	extensionID = strings.TrimSpace(extensionID)
+	surface = normalizeRenderSurface(surface)
+	if extensionID == "" || surface == "" {
+		return RenderResult{}, false, nil
+	}
+
+	m.mu.RLock()
+	registration, ok := m.renderers[surface]
+	if !ok || registration.owner != extensionID || registration.renderer == nil {
+		m.mu.RUnlock()
+		return RenderResult{}, false, nil
+	}
+	allowedKinds := make(map[RenderKind]struct{}, len(registration.allowedKinds))
+	for kind := range registration.allowedKinds {
+		allowedKinds[kind] = struct{}{}
+	}
+	renderer := registration.renderer
+	m.mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 250 * time.Millisecond
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	renderCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	type renderOutcome struct {
+		result RenderResult
+		err    error
+	}
+	done := make(chan renderOutcome, 1)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				done <- renderOutcome{err: fmt.Errorf("renderer panic: %v", rec)}
+			}
+		}()
+		result, err := renderer(renderCtx, RenderRequest{
+			Surface: surface,
+			Payload: payload,
+		})
+		done <- renderOutcome{result: result, err: err}
+	}()
+
+	select {
+	case <-renderCtx.Done():
+		return RenderResult{}, true, renderCtx.Err()
+	case outcome := <-done:
+		if outcome.err != nil {
+			return RenderResult{}, true, outcome.err
+		}
+		if err := outcome.result.Validate(); err != nil {
+			return RenderResult{}, true, err
+		}
+		outcome.result.Kind = normalizeRenderKind(outcome.result.Kind)
+		if _, ok := allowedKinds[outcome.result.Kind]; !ok {
+			return RenderResult{}, true, fmt.Errorf("renderer returned kind %q which is not allowed", outcome.result.Kind)
+		}
+		return outcome.result, true, nil
+	}
+}
+
+func validateRuntimeSpec(manifest Manifest) error {
+	switch manifest.runtimeType() {
+	case RuntimeTypeDeclarative, RuntimeTypeCompiledIn:
+		return nil
+	case RuntimeTypeHostedStdioJSONRPC:
+		if strings.TrimSpace(manifest.Runtime.Command) == "" {
+			return fmt.Errorf("%s requires runtime.command", RuntimeTypeHostedStdioJSONRPC)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported runtime type %q", manifest.Runtime.Type)
+	}
+}
+
+func normalizeCommandName(name string) string {
+	return strings.TrimSpace(strings.TrimPrefix(name, "/"))
+}
+
+func capabilitiesToStrings(capabilities []Capability) []string {
+	out := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		out = append(out, string(capability))
+	}
+	return out
+}
+
+func renderKindCapability(kind RenderKind) (Capability, error) {
+	switch kind {
+	case RenderKindText:
+		return CapabilityRenderText, nil
+	case RenderKindMarkdown:
+		return CapabilityRenderMarkdown, nil
+	default:
+		return "", fmt.Errorf("unsupported render kind %q", kind)
+	}
+}
+
+func normalizeRenderSurface(surface RenderSurface) RenderSurface {
+	return RenderSurface(strings.TrimSpace(string(surface)))
+}

@@ -7,14 +7,18 @@ import (
 	"github.com/dimetron/pi-go/internal/extension"
 )
 
-func TestHandleSlashCommand_ExtensionCommandSubmitsPrompt(t *testing.T) {
+func TestHandleSlashCommand_UsesDynamicExtensionCommand(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicCommand("ext.demo", extension.SlashCommand{
+		Name:        "demo",
+		Description: "Run demo",
+		Prompt:      "demo {{args}}",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	m := &model{
 		cfg: Config{
-			ExtensionCommands: []extension.SlashCommand{{
-				Name:        "demo",
-				Description: "Run demo",
-				Prompt:      "demo {{args}}",
-			}},
+			ExtensionManager: manager,
 		},
 		chatModel: ChatModel{},
 	}
@@ -36,13 +40,17 @@ func TestHandleSlashCommand_ExtensionCommandSubmitsPrompt(t *testing.T) {
 	_ = cmd()
 }
 
-func TestFormatHelp_IncludesExtensionCommands(t *testing.T) {
+func TestHelp_IncludesManagerCommands(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicCommand("ext.demo", extension.SlashCommand{
+		Name:        "demo",
+		Description: "Run demo",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	m := &model{
 		cfg: Config{
-			ExtensionCommands: []extension.SlashCommand{{
-				Name:        "demo",
-				Description: "Run demo",
-			}},
+			ExtensionManager: manager,
 		},
 	}
 
@@ -53,8 +61,12 @@ func TestFormatHelp_IncludesExtensionCommands(t *testing.T) {
 }
 
 func TestAllCommandNames_IncludesExtensionCommands(t *testing.T) {
+	manager := extension.NewManager(extension.ManagerOptions{})
+	if err := manager.RegisterDynamicCommand("ext.demo", extension.SlashCommand{Name: "demo", Description: "Run demo"}); err != nil {
+		t.Fatal(err)
+	}
 	im := NewInputModel(nil, nil, nil, "")
-	im.ExtensionCommands = []extension.SlashCommand{{Name: "demo", Description: "Run demo"}}
+	im.ExtensionManager = manager
 
 	cmds := im.AllCommandNames()
 	found := false

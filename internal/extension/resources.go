@@ -49,7 +49,7 @@ func (t PromptTemplate) SlashCommand() SlashCommand {
 func DiscoverResourceDirs(workDir string) ResourceDirs {
 	var out ResourceDirs
 
-	if home, err := os.UserHomeDir(); err == nil {
+	if home, err := discoverHomeDir(); err == nil {
 		globalRoot := filepath.Join(home, ".pi-go")
 		out.ExtensionDirs = append(out.ExtensionDirs,
 			packageResourceDirs(globalRoot, "extensions")...,
@@ -106,6 +106,15 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 	out.ThemeDirs = dedupeStrings(out.ThemeDirs)
 	out.ModelDirs = dedupeStrings(out.ModelDirs)
 	return out
+}
+
+func discoverHomeDir() (string, error) {
+	for _, key := range []string{"PI_GO_HOME", "HOME", "USERPROFILE"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value, nil
+		}
+	}
+	return os.UserHomeDir()
 }
 
 func resolveResourceRoot(workDir string) string {

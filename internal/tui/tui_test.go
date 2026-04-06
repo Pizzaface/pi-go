@@ -723,6 +723,20 @@ func TestMatchingSlashCommands_NoMatch(t *testing.T) {
 	}
 }
 
+func TestCompleteSlashCommand_IncludesDynamicCommands(t *testing.T) {
+	result := completeSlashCommand("/dem", extension.SlashCommand{Name: "demo"})
+	if result != "/demo" {
+		t.Fatalf("expected dynamic slash completion /demo, got %q", result)
+	}
+}
+
+func TestMatchingSlashCommands_IncludesDynamicExtensions(t *testing.T) {
+	matches := matchingSlashCommands("/dem", extension.SlashCommand{Name: "demo"})
+	if len(matches) != 1 || matches[0] != "/demo" {
+		t.Fatalf("expected dynamic slash command match /demo, got %v", matches)
+	}
+}
+
 func TestShowCommandList(t *testing.T) {
 	m := &model{
 		chatModel: ChatModel{Messages: make([]message, 0)},

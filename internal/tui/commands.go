@@ -94,9 +94,15 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	default:
 		name := strings.TrimPrefix(cmd, "/")
-		for _, extCmd := range m.cfg.ExtensionCommands {
-			if strings.EqualFold(extCmd.Name, name) {
+		if m.cfg.ExtensionManager != nil {
+			if extCmd, ok := m.cfg.ExtensionManager.FindCommand(name); ok {
 				return m.submitPrompt(extCmd.Render(parts[1:]), nil)
+			}
+		} else {
+			for _, extCmd := range m.cfg.ExtensionCommands {
+				if strings.EqualFold(extCmd.Name, name) {
+					return m.submitPrompt(extCmd.Render(parts[1:]), nil)
+				}
 			}
 		}
 		// Check if it's a dynamic skill command.
@@ -110,6 +116,13 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *model) extensionCommands() []extension.SlashCommand {
+	if m.cfg.ExtensionManager != nil {
+		return m.cfg.ExtensionManager.SlashCommands()
+	}
+	return m.cfg.ExtensionCommands
 }
 
 // handleBranchCommand handles /branch subcommands: create, switch, list.
@@ -793,9 +806,10 @@ func (m *model) showCommandList() {
 		}
 		b.WriteString("\n")
 	}
-	if len(m.cfg.ExtensionCommands) > 0 {
+	extCommands := m.extensionCommands()
+	if len(extCommands) > 0 {
 		b.WriteString("\n**Extension commands:**\n")
-		for _, cmd := range m.cfg.ExtensionCommands {
+		for _, cmd := range extCommands {
 			fmt.Fprintf(&b, "  `/%s`", strings.TrimPrefix(cmd.Name, "/"))
 			if cmd.Description != "" {
 				b.WriteString(" — " + cmd.Description)
@@ -855,9 +869,10 @@ func (m *model) formatHelp() string {
 	b.WriteString("  `/skills create <n>`   — Create a new skill\n")
 	b.WriteString("  `/skills load`         — Reload skills from disk\n")
 
-	if len(m.cfg.ExtensionCommands) > 0 {
+	extCommands := m.extensionCommands()
+	if len(extCommands) > 0 {
 		b.WriteString("\n**Extension commands:**\n")
-		for _, cmd := range m.cfg.ExtensionCommands {
+		for _, cmd := range extCommands {
 			fmt.Fprintf(&b, "  `/%s`", strings.TrimPrefix(cmd.Name, "/"))
 			if cmd.Description != "" {
 				b.WriteString(" — " + cmd.Description)

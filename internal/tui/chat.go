@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/dimetron/pi-go/internal/extension"
 
 	"charm.land/lipgloss/v2"
 )
@@ -55,11 +57,12 @@ func renderWelcome() string {
 
 // message represents a chat message in the conversation.
 type message struct {
-	role      string // "user", "assistant", or "tool"
-	content   string
-	isWarning bool   // if true, render with warning style
-	tool      string // tool name (for role=="tool")
-	toolIn    string // tool input args (for role=="tool")
+	role           string // "user", "assistant", or "tool"
+	content        string
+	isWarning      bool   // if true, render with warning style
+	tool           string // tool name (for role=="tool")
+	toolIn         string // tool input args (for role=="tool")
+	extensionOwner string // optional extension id for custom render surfaces
 }
 
 // traceEntry represents a single entry in the debug trace log.
@@ -72,21 +75,24 @@ type traceEntry struct {
 
 // ChatModel manages the conversation message display, scrolling, and markdown rendering.
 type ChatModel struct {
-	Messages    []message
-	Scroll      int // scroll offset from bottom
-	Streaming   string
-	Thinking    string
-	Renderer    *glamour.TermRenderer
-	TraceLog    []traceEntry
-	Width       int
-	ToolDisplay ToolDisplayModel
+	Messages         []message
+	Scroll           int // scroll offset from bottom
+	Streaming        string
+	Thinking         string
+	Renderer         *glamour.TermRenderer
+	TraceLog         []traceEntry
+	Width            int
+	ToolDisplay      ToolDisplayModel
+	ExtensionManager *extension.Manager
+	RenderTimeout    time.Duration
 }
 
 // NewChatModel creates a ChatModel with the given markdown renderer.
 func NewChatModel(renderer *glamour.TermRenderer) ChatModel {
 	return ChatModel{
-		Messages: make([]message, 0),
-		Renderer: renderer,
+		Messages:      make([]message, 0),
+		Renderer:      renderer,
+		RenderTimeout: 250 * time.Millisecond,
 	}
 }
 
@@ -219,6 +225,11 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	if len(c.Messages) == 0 {
 		return renderWelcome()
 	}
+	c.ToolDisplay.ExtensionManager = c.ExtensionManager
+	c.ToolDisplay.RenderMarkdown = c.RenderMarkdown
+	if c.ToolDisplay.RenderTimeout <= 0 {
+		c.ToolDisplay.RenderTimeout = c.RenderTimeout
+	}
 
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	bullet := lipgloss.NewStyle().Foreground(lipgloss.Color("63")).Bold(true).Render("● ")
@@ -295,7 +306,10 @@ func (c *ChatModel) RenderMessages(running bool) string {
 					b.WriteString(warnStyle.Render(content))
 				} else {
 					b.WriteString(bullet)
-					rendered := c.RenderMarkdown(content)
+					rendered, ok := c.renderCustomAssistantMessage(msg, content)
+					if !ok {
+						rendered = c.RenderMarkdown(content)
+					}
 					b.WriteString(rendered)
 				}
 				b.WriteString("\n")
@@ -305,6 +319,37 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	}
 
 	return b.String()
+}
+
+func (c *ChatModel) renderCustomAssistantMessage(msg message, content string) (string, bool) {
+	if c.ExtensionManager == nil {
+		return "", false
+	}
+	owner := strings.TrimSpace(msg.extensionOwner)
+	if owner == "" {
+		return "", false
+	}
+	timeout := c.RenderTimeout
+	if timeout <= 0 {
+		timeout = 250 * time.Millisecond
+	}
+	result, rendered, err := c.ExtensionManager.Render(
+		context.Background(),
+		owner,
+		extension.RenderSurfaceChatMessage,
+		map[string]any{
+			"role":    msg.role,
+			"content": content,
+		},
+		timeout,
+	)
+	if !rendered || err != nil {
+		return "", false
+	}
+	if result.Kind == extension.RenderKindMarkdown {
+		return c.RenderMarkdown(result.Content), true
+	}
+	return result.Content, true
 }
 
 // RenderTracePanel renders the debug trace log as a color-coded panel.

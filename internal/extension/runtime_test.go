@@ -46,7 +46,7 @@ func TestLoadManifests_ProjectOverridesGlobal(t *testing.T) {
 func TestBuildRuntime_LoadsManifestContributions(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	extDir := filepath.Join(root, ".pi-go", "extensions", "demo")
 	writeManifest(t, extDir, `{
 		"name": "demo",
@@ -117,6 +117,9 @@ Review the current branch. Extra context: {{args}}
 	if len(rt.SlashCommands) != 2 {
 		t.Fatalf("expected demo + prompt-template slash commands, got %+v", rt.SlashCommands)
 	}
+	if rt.Manager == nil {
+		t.Fatal("expected extension manager to be initialized")
+	}
 	if rt.ThemeDirs == nil || len(rt.ThemeDirs) == 0 {
 		t.Fatalf("expected discovered theme dirs, got %+v", rt.ThemeDirs)
 	}
@@ -131,11 +134,14 @@ Review the current branch. Extra context: {{args}}
 func TestRuntimeRunLifecycleHooks(t *testing.T) {
 	root := t.TempDir()
 	marker := filepath.Join(root, "started.txt")
+	home := t.TempDir()
+	setTestHome(t, home)
+	markerJSON := filepath.ToSlash(marker)
 	extDir := filepath.Join(root, ".pi-go", "extensions", "demo")
 	writeManifest(t, extDir, `{
 		"name": "demo",
 		"lifecycle": [
-			{"event": "startup", "command": "echo started > `+marker+`"}
+			{"event": "startup", "command": "echo started > `+markerJSON+`"}
 		]
 	}`)
 
@@ -164,6 +170,59 @@ func TestRuntimeRunLifecycleHooks(t *testing.T) {
 	}
 	if strings.TrimSpace(string(data)) != "started" {
 		t.Fatalf("unexpected lifecycle hook output: %q", string(data))
+	}
+}
+
+func TestBuildRuntime_BackwardCompatibleDeclarativeExtension(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	extDir := filepath.Join(root, ".pi-go", "extensions", "legacy")
+	writeManifest(t, extDir, `{
+		"name": "legacy",
+		"prompt": "Legacy prompt.",
+		"hooks": [{"event": "before_tool", "command": "echo before"}],
+		"lifecycle": [{"event": "session_start", "command": "echo session"}],
+		"skills_dir": "skills",
+		"tui": {"commands": [{"name": "legacy", "description": "Legacy flow", "prompt": "legacy {{args}}"}]}
+	}`)
+	writeSkill(t, filepath.Join(extDir, "skills", "legacy-skill"), `---
+name: legacy-skill
+description: Legacy skill
+---
+Legacy body.`)
+
+	sandbox, err := tools.NewSandbox(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sandbox.Close() }()
+
+	rt, err := BuildRuntime(context.Background(), RuntimeConfig{
+		Config:          config.Config{},
+		WorkDir:         root,
+		Sandbox:         sandbox,
+		BaseInstruction: "Base instruction.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rt.SlashCommands) != 1 || rt.SlashCommands[0].Name != "legacy" {
+		t.Fatalf("expected legacy slash command preserved, got %+v", rt.SlashCommands)
+	}
+	if len(rt.BeforeToolCallbacks) != 1 {
+		t.Fatalf("expected legacy before_tool callback, got %d", len(rt.BeforeToolCallbacks))
+	}
+	if len(rt.LifecycleHooks) != 1 || rt.LifecycleHooks[0].Event != LifecycleEventSessionStart {
+		t.Fatalf("expected session_start lifecycle hook, got %+v", rt.LifecycleHooks)
+	}
+	if len(rt.Skills) != 1 || rt.Skills[0].Name != "legacy-skill" {
+		t.Fatalf("expected legacy skills to load, got %+v", rt.Skills)
+	}
+	if !strings.Contains(rt.Instruction, "Legacy prompt.") {
+		t.Fatalf("expected instruction to include legacy prompt, got %q", rt.Instruction)
 	}
 }
 

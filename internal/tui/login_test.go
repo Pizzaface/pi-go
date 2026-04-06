@@ -59,6 +59,20 @@ func withMockBrowser(t *testing.T) *mockBrowser {
 	return mb
 }
 
+func setLoginTestHome(t *testing.T, home string) {
+	t.Helper()
+	origHome := os.Getenv("HOME")
+	origUserProfile := os.Getenv("USERPROFILE")
+	_ = os.Setenv("HOME", home)
+	_ = os.Setenv("USERPROFILE", home)
+	_ = os.Setenv("HOMEDRIVE", "")
+	_ = os.Setenv("HOMEPATH", "")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", origHome)
+		_ = os.Setenv("USERPROFILE", origUserProfile)
+	})
+}
+
 func TestMaskKey_Long(t *testing.T) {
 	masked := maskKey("sk-ant-api03-xxxxxxxxxxxx")
 	if masked != "sk-a...xxxx" {
@@ -187,14 +201,12 @@ func TestHandleLoginCommand_OpenAIDeviceFlow(t *testing.T) {
 
 func TestHandleLoginSave(t *testing.T) {
 	tmpDir := t.TempDir()
-	piDir := filepath.Join(tmpDir, ".pi-go")
+	piDir := filepath.Join(tmpDir, ".pi")
 	if err := os.MkdirAll(piDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setLoginTestHome(t, tmpDir)
 
 	m := &model{
 		login: &loginState{phase: "waiting", provider: "anthropic"},
@@ -256,9 +268,7 @@ func TestHandleLoginCancel_DevicePhase(t *testing.T) {
 
 func TestHandleLoginSSOResult_Success(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	setLoginTestHome(t, tmpDir)
 
 	m := &model{
 		login: &loginState{phase: "sso", provider: "anthropic"},
@@ -362,14 +372,12 @@ func TestHandleLoginSSOResult_EmptyKey(t *testing.T) {
 }
 
 func TestHandleLoginSSOResult_SaveError(t *testing.T) {
-	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.pi-go.
+	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.pi.
 	homeFile := filepath.Join(t.TempDir(), "home-file")
 	if err := os.WriteFile(homeFile, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", homeFile)
-	defer os.Setenv("HOME", origHome)
+	setLoginTestHome(t, homeFile)
 
 	m := &model{
 		login: &loginState{phase: "sso", provider: "anthropic"},
@@ -416,9 +424,7 @@ func TestHandleLoginSave_SaveError(t *testing.T) {
 	if err := os.WriteFile(homeFile, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", homeFile)
-	defer os.Setenv("HOME", origHome)
+	setLoginTestHome(t, homeFile)
 
 	m := &model{
 		login: &loginState{phase: "waiting", provider: "anthropic"},

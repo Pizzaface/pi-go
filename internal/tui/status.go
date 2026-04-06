@@ -14,6 +14,8 @@ import (
 type StatusModel struct {
 	// GitBranch is the current git branch (detected at startup).
 	GitBranch string
+	// ExtensionStatus is an optional extension-owned status text.
+	ExtensionStatus string
 	// ActiveTool is the name of the currently executing tool (single).
 	ActiveTool string
 	// ActiveTools tracks parallel tool execution: name → start time.
@@ -30,13 +32,14 @@ type StatusRenderInput struct {
 	ModelName    string
 	Running      bool
 
-	Eyes         string       // mood eyes e.g. "◕ ◕"
-	Messages     []message    // for context estimate
-	TokenTracker TokenTracker // may be nil
-	DiffAdded    int
-	DiffRemoved  int
-	LoadingItems map[string]bool // item -> done; nil means not loading
-	ShowSidebar  bool            // true when the sidebar is visible (skip redundant info)
+	Eyes            string       // mood eyes e.g. "◕ ◕"
+	Messages        []message    // for context estimate
+	TokenTracker    TokenTracker // may be nil
+	DiffAdded       int
+	DiffRemoved     int
+	LoadingItems    map[string]bool // item -> done; nil means not loading
+	ShowSidebar     bool            // true when the sidebar is visible (skip redundant info)
+	ExtensionStatus string
 }
 
 // contextBarWidth is the number of characters used for the visual context bar.
@@ -91,7 +94,6 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 
 	var parts []string
 
-
 	// Loading progress (replaces normal status content during init).
 	if in.LoadingItems != nil {
 		var items []string
@@ -126,6 +128,9 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 			parts = append(parts, toolStyle.Render(fmt.Sprintf("⚡ %s", s.ActiveTool))+dim.Render(fmt.Sprintf(" %s", elapsed)))
 		} else if in.Running {
 			parts = append(parts, dim.Render("thinking..."))
+		}
+		if strings.TrimSpace(in.ExtensionStatus) != "" {
+			parts = append(parts, dim.Render(in.ExtensionStatus))
 		}
 		return bar.Render(strings.Join(parts, sep))
 	}
@@ -205,6 +210,9 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		parts = append(parts, bright.Render(fmt.Sprintf("⚡ %s (%s)", s.ActiveTool, elapsed)))
 	} else if in.Running {
 		parts = append(parts, dim.Render("thinking..."))
+	}
+	if strings.TrimSpace(in.ExtensionStatus) != "" {
+		parts = append(parts, dim.Render(in.ExtensionStatus))
 	}
 
 	return bar.Render(strings.Join(parts, sep))

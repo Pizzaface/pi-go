@@ -1,73 +1,106 @@
 # Customization philosophy
 
-The go-pi reboot is built around a simple rule:
+go-pi keeps core behavior small and stable, then layers product-specific behavior through explicit extension points.
 
-> keep the core small, and push product-specific behavior to discoverable resources or custom startup wiring.
+## Core owns
 
-## What belongs in core
-
-Core should own the durable primitives:
+Core should keep durable primitives:
 
 - agent loop
 - sandboxed tools
 - session persistence
 - terminal shell
 - resource discovery
-- compatible provider/model resolution
+- provider/model compatibility routing
 
-These are the pieces every downstream product or fork is likely to need.
+## Push out of core
 
-## What should usually stay out of core
+Prefer externalized customization for:
 
-Avoid baking these directly into the default product unless they are universally useful:
-
-- workflow engines
-- opinionated memory systems
-- project-specific policies
+- workflow-specific policies
+- org/project conventions
 - custom review pipelines
-- provider-specific one-offs that do not generalize
-- UI mechanisms that bypass the Charm ecosystem already in use
+- domain-specific UI behavior
+- provider-specific one-offs
 
 ## Preferred extension points
 
-Reach for these first:
+Use these in order:
 
-1. **extensions** — manifests, prompts, hooks, MCP toolsets, slash commands
-2. **packages** — installable bundles of resources
-3. **skills** — reusable instruction workflows
-4. **themes** — visual customization
-5. **models** — compatible provider/model aliases
-6. **custom startup code** — for intentionally productized integrations
+1. Extensions
+2. Packages
+3. Skills
+4. Themes
+5. Models
+6. Custom startup code (only when needed)
 
-## Bubble Tea / Charm guidance
+## Extension model: declarative vs hosted
 
-The TUI reboot should stay aligned with the Charm stack already in use.
+### Declarative extensions
 
-Prefer:
+Best for static contributions:
 
-- Bubble Tea update/render flow
-- Bubbles-style composition where it fits
-- Lip Gloss styling
-- small focused view-models
+- prompt text
+- hook commands
+- lifecycle hooks
+- MCP servers
+- skill directories
+- slash commands
 
-Avoid inventing a custom UI mechanism when a standard Charm pattern is already a good fit.
+They are low-friction and remain backward compatible when no `runtime` block is present.
 
-## Provider guidance
+### Compiled-in extensions
 
-The provider registry is a compatibility seam, not a universal plugin layer.
+Best for first-party behaviors that should ship in-process with strict ownership and testing.
 
-If a backend is compatible with an existing transport family, use `models/*.json` or config.
-If it is not, integrate it intentionally.
+### Hosted extensions
 
-## Session guidance
+Best for process-isolated integrations that need their own runtime.
 
-Sessions are part of the product surface, not just an implementation detail.
+Hosted extensions run over stdio JSON-RPC and are permission-gated through approvals.
 
-That means they should be:
+## Trust and permission posture
+
+Hosted extensions are not implicitly trusted.
+
+- Approval source: `~/.pi-go/extensions/approvals.json`
+- Trust class + capability grants are checked before registration/use
+- Intercept-style behavior (`tools.intercept`) is denied by default for hosted third-party extensions
+
+## TUI customization posture
+
+TUI remains app-owned.
+
+Extensions can request UI behavior through async intents, but do not take over layout/state directly.
+
+Supported intent surfaces:
+
+- status text
+- widgets above/below editor
+- notifications
+- dialog modal
+
+Renderer constraints:
+
+- kinds: text/markdown only
+- conflicts: deterministic single owner per surface
+- failures/timeouts: fallback to built-in rendering
+
+## Bubble Tea guidance
+
+Keep extension UI integration aligned with Bubble Tea patterns:
+
+- message-driven updates
+- explicit state transitions
+- app-owned rendering
+
+Avoid direct mutable cross-thread UI writes from extension runtimes.
+
+## Sessions remain a product surface
+
+Session UX is intentionally core:
 
 - resumable
 - branchable
-- named clearly enough to scan
-- reloadable in the TUI
-
-Pi-style session UX is a core product differentiator for go-pi, so improving session discoverability is worth doing in core.
+- inspectable in TUI
+- compatible with extension/session state namespaces

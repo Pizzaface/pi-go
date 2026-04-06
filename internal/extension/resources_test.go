@@ -10,7 +10,7 @@ import (
 func TestDiscoverResourceDirs_IncludesPackagesAndProjectOverrides(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	globalPkg := filepath.Join(home, ".pi-go", "packages", "alpha")
 	projectPkg := filepath.Join(project, ".pi-go", "packages", "beta")
@@ -45,7 +45,7 @@ func TestDiscoverResourceDirs_UsesProjectRootFromNestedDir(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	nested := filepath.Join(project, "sub", "dir")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	mustMkdirAll(t, nested)
 	mustMkdirAll(t, filepath.Join(project, ".pi-go", "models"))
 
@@ -120,7 +120,7 @@ func TestLoadPromptTemplates_AllowsHorizontalRuleWithoutFrontmatter(t *testing.T
 func TestPackageLifecycle_LocalInstallUpdateListRemove(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := t.TempDir()
 	mustWriteFile(t, filepath.Join(source, "prompts", "triage.md"), "First version")
@@ -172,7 +172,7 @@ func TestPackageLifecycle_LocalInstallUpdateListRemove(t *testing.T) {
 func TestPackageLifecycle_InvalidNamesRejected(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	source := t.TempDir()
 
 	if _, err := InstallPackage(project, PackageScopeProject, source, "../../escape"); err == nil {
@@ -186,7 +186,7 @@ func TestPackageLifecycle_InvalidNamesRejected(t *testing.T) {
 func TestPackageUpdateFailurePreservesExistingInstall(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := t.TempDir()
 	mustWriteFile(t, filepath.Join(source, "prompts", "triage.md"), "stable")

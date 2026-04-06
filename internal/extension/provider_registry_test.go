@@ -11,7 +11,7 @@ import (
 func TestBuildProviderRegistry_LoadOrderAndConfigOverride(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	mustWriteFile(t, filepath.Join(home, ".pi-go", "models", "openrouter.json"), `{
 		"providers": [{

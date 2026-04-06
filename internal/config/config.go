@@ -150,29 +150,6 @@ func (c *Config) ResolveRoleWithRegistry(role string, reg *provider.Registry) (m
 	return info.Model, info.Provider, nil
 }
 
-// autoDetectProvider detects the provider from model name prefix.
-func looksLikeLegacyRawModel(modelName string) bool {
-	lower := strings.ToLower(strings.TrimSpace(modelName))
-	switch {
-	case strings.HasPrefix(lower, "claude"):
-		return true
-	case strings.HasPrefix(lower, "gpt-") && len(lower) > 4 && lower[4] >= '0' && lower[4] <= '9':
-		return true
-	case strings.HasPrefix(lower, "o1") || strings.HasPrefix(lower, "o3") || strings.HasPrefix(lower, "o4"):
-		return true
-	case strings.HasPrefix(lower, "gemini"):
-		return true
-	case strings.HasPrefix(lower, "ollama/"):
-		return true
-	case strings.HasSuffix(lower, ":cloud") || strings.HasSuffix(lower, ":local"):
-		return true
-	case strings.HasPrefix(lower, "qwen"), strings.HasPrefix(lower, "minimax"), strings.HasPrefix(lower, "deepseek"), strings.HasPrefix(lower, "llama"), strings.HasPrefix(lower, "mistral"), strings.HasPrefix(lower, "phi"), strings.HasPrefix(lower, "codellama"), strings.HasPrefix(lower, "gemma"):
-		return true
-	default:
-		return false
-	}
-}
-
 func autoDetectProvider(modelName string) string {
 	// Ollama suffixes → native Ollama provider.
 	if strings.HasSuffix(modelName, ":cloud") || strings.HasSuffix(modelName, ":local") {
