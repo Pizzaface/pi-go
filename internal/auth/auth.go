@@ -35,6 +35,7 @@ type Provider struct {
 	UseDeviceFlow bool   // prefer device code flow over PKCE
 	TLSPreflight  bool   // run TLS preflight before OAuth (OpenAI Codex)
 	CallbackPort  int    // fixed callback port (0 = random)
+	RedirectURI   string // fixed redirect URI (empty = auto-generate from port)
 }
 
 // TokenResponse holds the OAuth token response.
@@ -123,6 +124,7 @@ func Providers() []Provider {
 			KeyPageURL:   "https://platform.openai.com/api-keys",
 			TLSPreflight: true,
 			CallbackPort: 1455,
+			RedirectURI:  "http://localhost:1455/auth/callback",
 		},
 		{
 			Name:     "gemini",
@@ -213,7 +215,10 @@ func PKCEFlow(ctx context.Context, prov Provider, openBrowser func(string) error
 	if prov.CallbackPort > 0 {
 		callbackPath = "/auth/callback"
 	}
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", port, callbackPath)
+	redirectURI := prov.RedirectURI
+	if redirectURI == "" {
+		redirectURI = fmt.Sprintf("http://127.0.0.1:%d%s", port, callbackPath)
+	}
 
 	state := generateState()
 
@@ -561,7 +566,7 @@ type TLSPreflightResult struct {
 	Message string
 }
 
-const openAIAuthProbeURL = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access"
+const openAIAuthProbeURL = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access&codex_cli_simplified_flow=true"
 
 // RunTLSPreflight probes the OpenAI auth endpoint to detect TLS certificate issues.
 func RunTLSPreflight(timeoutMs int) *TLSPreflightResult {
