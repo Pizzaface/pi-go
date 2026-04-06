@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/dimetron/pi-go/internal/claudecli"
 	"google.golang.org/adk/model"
 )
 
@@ -161,6 +163,8 @@ func ListModels(ctx context.Context, info Info, apiKey, baseURL string, opts *LL
 		return listOpenAIModels(ctx, apiKey, baseURL, opts)
 	case "anthropic":
 		return listAnthropicModels(ctx, apiKey, baseURL, opts)
+	case "claudecli":
+		return listClaudeCLIModels()
 	default:
 		return nil, fmt.Errorf("listing models: unsupported provider family %q", family)
 	}
@@ -226,7 +230,35 @@ func NewLLM(ctx context.Context, info Info, apiKey, baseURL, thinkingLevel strin
 		return NewOpenAI(ctx, info.Model, apiKey, baseURL, opts)
 	case "anthropic":
 		return NewAnthropic(ctx, info.Model, apiKey, baseURL, thinkingLevel, opts)
+	case "claudecli":
+		return newClaudeCLI()
 	default:
 		return nil, fmt.Errorf("unsupported provider family: %s", family)
 	}
+}
+
+// newClaudeCLI creates a Claude CLI provider using the SDK.
+// The CLI binary is resolved from $CLAUDE_CLI_PATH or exec.LookPath.
+func newClaudeCLI() (model.LLM, error) {
+	binaryPath, err := claudecli.FindBinary()
+	if err != nil {
+		return nil, fmt.Errorf("claude CLI not found: %w (set CLAUDE_CLI_PATH or install claude)", err)
+	}
+	cwd, _ := os.Getwd()
+	return claudecli.New(claudecli.Config{
+		BinaryPath: binaryPath,
+		WorkDir:    cwd,
+	}), nil
+}
+
+// listClaudeCLIModels returns a static model list for the Claude CLI provider.
+// The actual model is determined by the CLI's own configuration.
+func listClaudeCLIModels() ([]ModelEntry, error) {
+	return []ModelEntry{
+		{
+			ID:          "claude-cli",
+			DisplayName: "Claude Code CLI",
+			Provider:    "claudecli",
+		},
+	}, nil
 }

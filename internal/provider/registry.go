@@ -98,6 +98,12 @@ func (r *Registry) AddBuiltins() {
 				Match:          []MatchRule{{Prefix: "gemini"}},
 			},
 			{
+				Name:   "claudecli",
+				Family: "claudecli",
+				// No API key needed — Claude CLI handles its own auth.
+				Match: []MatchRule{{Prefix: "cli/", StripPrefix: true}},
+			},
+			{
 				Name:           "ollama",
 				Family:         "ollama",
 				DefaultBaseURL: "http://localhost:11434",
@@ -116,6 +122,10 @@ func (r *Registry) AddBuiltins() {
 					{Prefix: "gemma"},
 				},
 			},
+		},
+		Models: []ModelDefinition{
+			{Name: "claude-cli", Provider: "claudecli", Target: "claude-cli"},
+			{Name: "claude-code", Provider: "claudecli", Target: "claude-cli"},
 		},
 	})
 	r.hasCustomizations = false
@@ -336,7 +346,7 @@ func (r *Registry) RequiresAPIKey(providerName string) bool {
 		return false
 	}
 	switch def.Family {
-	case "ollama":
+	case "ollama", "claudecli":
 		return false
 	case "anthropic", "openai":
 		return true

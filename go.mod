@@ -14,6 +14,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/ollama/ollama v0.20.2
 	github.com/openai/openai-go/v3 v3.30.0
+	github.com/partio-io/claude-agent-sdk-go v0.1.1
 	github.com/spf13/cobra v1.10.2
 	google.golang.org/adk v1.0.0
 	google.golang.org/genai v1.52.1
