@@ -1,6 +1,9 @@
 package provider
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -151,5 +154,40 @@ func TestRegistryLookupEnvAndDefaults(t *testing.T) {
 	}
 	if got := reg.DefaultHeaders("openrouter"); got["HTTP-Referer"] != "https://example.com" {
 		t.Fatalf("DefaultHeaders() = %#v", got)
+	}
+}
+
+func TestRegistryListModelsPreservesQueriedProviderName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"gpt-4o","object":"model","created":123}]}`))
+	}))
+	defer srv.Close()
+
+	reg := NewRegistry()
+	reg.AddBuiltins()
+	reg.AddDocument(RegistryDocument{
+		Providers: []Definition{{
+			Name:           "groq-test",
+			Family:         "openai",
+			APIKeyEnv:      []string{"GROQ_API_KEY"},
+			DefaultBaseURL: srv.URL + "/v1",
+		}},
+	})
+	t.Setenv("GROQ_API_KEY", "test-key")
+
+	entries, err := reg.ListModels(context.Background(), "groq-test", nil)
+	if err != nil {
+		t.Fatalf("ListModels() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Provider != "groq-test" {
+		t.Fatalf("provider = %q, want groq-test", entries[0].Provider)
 	}
 }

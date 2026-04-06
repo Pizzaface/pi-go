@@ -432,7 +432,14 @@ func (r *Registry) ListModels(ctx context.Context, providerName string, opts *LL
 			}
 		}
 	}
-	return ListModels(ctx, info, apiKey, baseURL, merged)
+	entries, err := ListModels(ctx, info, apiKey, baseURL, merged)
+	if err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		entries[i].Provider = def.Name
+	}
+	return entries, nil
 }
 
 func LoadRegistryDocuments(dirs ...string) ([]RegistryDocument, error) {
