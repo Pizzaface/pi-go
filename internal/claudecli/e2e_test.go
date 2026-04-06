@@ -497,6 +497,249 @@ func TestE2E_RealCLI(t *testing.T) {
 	}
 }
 
+// Stream event NDJSON fixtures — simulates --include-partial-messages output.
+const (
+	streamTextDelta1 = `{"type":"stream_event","uuid":"evt_01","session_id":"test-session","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello "}}}`
+	streamTextDelta2 = `{"type":"stream_event","uuid":"evt_02","session_id":"test-session","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world!"}}}`
+
+	streamThinkingDelta1 = `{"type":"stream_event","uuid":"evt_03","session_id":"test-session","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me "}}}`
+	streamThinkingDelta2 = `{"type":"stream_event","uuid":"evt_04","session_id":"test-session","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"consider..."}}}`
+
+	// Final assistant message that repeats the streamed content (for dedup testing).
+	assistantTextFull = `{"type":"assistant","uuid":"msg_05","session_id":"test-session","message":{"id":"msg_05","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello world!"}],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":20}}}`
+
+	assistantThinkingAndTextFull = `{"type":"assistant","uuid":"msg_06","session_id":"test-session","message":{"id":"msg_06","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"thinking","thinking":"Let me consider...","signature":"sig_123"},{"type":"text","text":"Hello world!"}],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":20}}}`
+
+	assistantToolUseAfterStream = `{"type":"assistant","uuid":"msg_07","session_id":"test-session","message":{"id":"msg_07","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"text","text":"Let me check."},{"type":"tool_use","id":"toolu_02","name":"Bash","input":{"command":"ls"}}],"stop_reason":"tool_use","usage":{"input_tokens":200,"output_tokens":50}}}`
+)
+
+// TestE2E_StreamingTextDeltas verifies token-level streaming via StreamEvent.
+func TestE2E_StreamingTextDeltas(t *testing.T) {
+	script := mockCLIScript(t,
+		[]string{systemInit},
+		[]string{streamTextDelta1, streamTextDelta2, assistantTextFull, resultEmpty},
+	)
+
+	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	t.Cleanup(func() { p.Close() })
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{genai.NewPartFromText("say hello")}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var responses []*model.LLMResponse
+	for resp, err := range p.GenerateContent(ctx, req, true) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp != nil {
+			responses = append(responses, resp)
+		}
+	}
+
+	// Should have: 2 stream deltas + result (no duplicate from AssistantMessage).
+	var textParts []string
+	for _, resp := range responses {
+		if resp.Content != nil && resp.Content.Role == "model" {
+			for _, part := range resp.Content.Parts {
+				if part.Text != "" {
+					textParts = append(textParts, part.Text)
+				}
+			}
+		}
+	}
+
+	t.Logf("Text parts: %v", textParts)
+
+	// We should see "Hello " and "world!" from streaming but NOT a duplicate
+	// "Hello world!" from the final AssistantMessage.
+	joined := strings.Join(textParts, "")
+	if joined != "Hello world!" {
+		t.Errorf("expected concatenated text 'Hello world!', got %q", joined)
+	}
+	if len(textParts) != 2 {
+		t.Errorf("expected 2 text parts (from stream deltas), got %d: %v", len(textParts), textParts)
+	}
+}
+
+// TestE2E_StreamingThinkingDeltas verifies thinking deltas are streamed with Role="thinking".
+func TestE2E_StreamingThinkingDeltas(t *testing.T) {
+	script := mockCLIScript(t,
+		[]string{systemInit},
+		[]string{streamThinkingDelta1, streamThinkingDelta2, streamTextDelta1, streamTextDelta2, assistantThinkingAndTextFull, resultEmpty},
+	)
+
+	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	t.Cleanup(func() { p.Close() })
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{genai.NewPartFromText("think about it")}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var thinkingParts []string
+	var textParts []string
+	for resp, err := range p.GenerateContent(ctx, req, true) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.Content == nil {
+			continue
+		}
+		for _, part := range resp.Content.Parts {
+			if part.Text == "" {
+				continue
+			}
+			switch resp.Content.Role {
+			case "thinking":
+				thinkingParts = append(thinkingParts, part.Text)
+			case "model":
+				textParts = append(textParts, part.Text)
+			}
+		}
+	}
+
+	t.Logf("Thinking parts: %v", thinkingParts)
+	t.Logf("Text parts: %v", textParts)
+
+	// Thinking deltas should come through with Role="thinking".
+	if len(thinkingParts) != 2 {
+		t.Errorf("expected 2 thinking parts, got %d: %v", len(thinkingParts), thinkingParts)
+	}
+	thinkingJoined := strings.Join(thinkingParts, "")
+	if thinkingJoined != "Let me consider..." {
+		t.Errorf("expected thinking 'Let me consider...', got %q", thinkingJoined)
+	}
+
+	// Text should NOT be duplicated from the final AssistantMessage.
+	if len(textParts) != 2 {
+		t.Errorf("expected 2 text parts (from stream), got %d: %v", len(textParts), textParts)
+	}
+}
+
+// TestE2E_StreamingDedupKeepsToolUse verifies that tool_use blocks from the
+// final AssistantMessage are preserved even when text was already streamed.
+func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
+	script := mockCLIScript(t,
+		[]string{systemInit},
+		[]string{streamTextDelta1, assistantToolUseAfterStream, resultEmpty},
+	)
+
+	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	t.Cleanup(func() { p.Close() })
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{genai.NewPartFromText("check files")}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var allText []string
+	foundToolUse := false
+	for resp, err := range p.GenerateContent(ctx, req, true) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.Content == nil {
+			continue
+		}
+		for _, part := range resp.Content.Parts {
+			if part.Text != "" {
+				allText = append(allText, part.Text)
+				if strings.Contains(part.Text, "[tool:Bash]") {
+					foundToolUse = true
+				}
+			}
+		}
+	}
+
+	t.Logf("All text: %v", allText)
+
+	// Stream delta "Hello " should appear.
+	foundHello := false
+	for _, t := range allText {
+		if strings.Contains(t, "Hello") {
+			foundHello = true
+		}
+	}
+	if !foundHello {
+		t.Error("expected stream delta 'Hello ' in output")
+	}
+
+	// Tool use from AssistantMessage should still appear.
+	if !foundToolUse {
+		t.Error("expected [tool:Bash] from final AssistantMessage")
+	}
+
+	// The text "Let me check." from AssistantMessage should be deduped (not emitted)
+	// since we saw stream deltas.
+	for _, txt := range allText {
+		if txt == "Let me check." {
+			t.Error("text 'Let me check.' should have been deduped from final AssistantMessage")
+		}
+	}
+}
+
+// TestE2E_NoStreamDeltas_FallsBackToAssistantMessage verifies that when no
+// stream events are present (e.g. older CLI without partial message support),
+// text and thinking still come through from AssistantMessage.
+func TestE2E_NoStreamDeltas_FallsBackToAssistantMessage(t *testing.T) {
+	script := mockCLIScript(t,
+		[]string{systemInit},
+		[]string{assistantThinking, resultEmpty},
+	)
+
+	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	t.Cleanup(func() { p.Close() })
+
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{genai.NewPartFromText("analyze")}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	foundThinking := false
+	foundText := false
+	for resp, err := range p.GenerateContent(ctx, req, true) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.Content == nil {
+			continue
+		}
+		if resp.Content.Role == "thinking" {
+			foundThinking = true
+		}
+		for _, part := range resp.Content.Parts {
+			if strings.Contains(part.Text, "analysis") {
+				foundText = true
+			}
+		}
+	}
+
+	if !foundThinking {
+		t.Error("expected thinking block from AssistantMessage (no stream deltas)")
+	}
+	if !foundText {
+		t.Error("expected text from AssistantMessage (no stream deltas)")
+	}
+}
+
 type eventSummary struct {
 	author       string
 	hasContent   bool

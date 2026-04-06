@@ -768,14 +768,12 @@ func TestAgentText_ThinkingThenToolThenText(t *testing.T) {
 	mm = newM.(*model)
 	// Should be: [user, assistant(""), thinking("let me think"), tool(read)]
 
-	// 3. Text arrives — should relocate assistant to tail, remove thinking.
+	// 3. Text arrives — should relocate assistant to tail, keep thinking.
 	newM, _ = mm.Update(agentTextMsg{text: "Done!", partial: false})
 	mm = newM.(*model)
 
 	msgs := mm.chatModel.Messages
-	// Expected: [user, tool(read), assistant("Done!")]
-	// Thinking was at end → removed. Assistant relocated to tail.
-	// But thinking is NOT at end (tool is), so thinking stays in history.
+	// Thinking persists in history, assistant relocated to tail.
 	// Expected: [user, thinking("let me think"), tool(read), assistant("Done!")]
 
 	lastMsg := msgs[len(msgs)-1]
@@ -792,6 +790,55 @@ func TestAgentText_ThinkingThenToolThenText(t *testing.T) {
 	}
 	if assistantCount != 1 {
 		t.Errorf("expected exactly 1 assistant message, got %d; messages: %+v", assistantCount, msgs)
+	}
+}
+
+// TestAgentText_ThinkingThenTextPersists verifies that thinking messages
+// remain in the chat history when text arrives directly after them.
+func TestAgentText_ThinkingThenTextPersists(t *testing.T) {
+	m := &model{
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "hi"},
+			{role: "assistant", content: ""},
+		}},
+		running: true,
+		agentCh: make(chan agentMsg, 64),
+	}
+
+	// 1. Thinking arrives.
+	newM, _ := m.Update(agentThinkingMsg{text: "Let me analyze..."})
+	mm := newM.(*model)
+
+	// 2. Text arrives directly — thinking should persist.
+	newM, _ = mm.Update(agentTextMsg{text: "Here's the answer.", partial: false})
+	mm = newM.(*model)
+
+	msgs := mm.chatModel.Messages
+	// Expected: [user, thinking("Let me analyze..."), assistant("Here's the answer.")]
+
+	// Thinking message should still be present.
+	thinkingCount := 0
+	for _, msg := range msgs {
+		if msg.role == "thinking" {
+			thinkingCount++
+			if msg.content != "Let me analyze..." {
+				t.Errorf("thinking content = %q, want %q", msg.content, "Let me analyze...")
+			}
+		}
+	}
+	if thinkingCount != 1 {
+		t.Errorf("expected 1 thinking message, got %d; messages: %+v", thinkingCount, msgs)
+	}
+
+	// Assistant should be at the tail.
+	lastMsg := msgs[len(msgs)-1]
+	if lastMsg.role != "assistant" || lastMsg.content != "Here's the answer." {
+		t.Errorf("last message should be assistant/'Here's the answer.', got %q/%q", lastMsg.role, lastMsg.content)
+	}
+
+	// Thinking accumulator should be cleared.
+	if mm.chatModel.Thinking != "" {
+		t.Errorf("Thinking accumulator should be empty, got %q", mm.chatModel.Thinking)
 	}
 }
 

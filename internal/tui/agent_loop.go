@@ -232,12 +232,9 @@ func (m *model) handleAgentText(msg agentTextMsg) (tea.Model, tea.Cmd) {
 		m.face.SetMood(MoodSpeaking)
 	}
 	if m.chatModel.Thinking != "" {
+		// Clear the streaming accumulator but keep the thinking message in
+		// the chat history so it renders persistently above the response.
 		m.chatModel.Thinking = ""
-		// Remove the trailing thinking message (don't replace it with an empty
-		// assistant — that would create a duplicate since one already exists).
-		if n := len(m.chatModel.Messages); n > 0 && m.chatModel.Messages[n-1].role == "thinking" {
-			m.chatModel.Messages = m.chatModel.Messages[:n-1]
-		}
 	}
 
 	if msg.partial {

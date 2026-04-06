@@ -61,12 +61,11 @@ type ApprovalRule struct {
 
 // Provider implements model.LLM by delegating to Claude Code CLI.
 type Provider struct {
-	config  Config
-	session *claude.Session
-	mu      sync.Mutex
-	closed  bool
-
-
+	config         Config
+	session        *claude.Session
+	mu             sync.Mutex
+	closed         bool
+	sawStreamDelta bool // true once we've emitted any stream delta (for dedup)
 }
 
 // New creates a new Claude CLI provider.
@@ -106,6 +105,9 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 			yield(nil, fmt.Errorf("claudecli: no user message in request"))
 			return
 		}
+
+		// Reset per-turn dedup state.
+		p.sawStreamDelta = false
 
 		p.mu.Lock()
 		if p.closed {
@@ -197,6 +199,10 @@ func (p *Provider) buildOptions() []claude.Option {
 	// Claude CLI requires --verbose when using --print --output-format=stream-json.
 	opts = append(opts, claude.WithVerbose(true))
 
+	// Enable token-level streaming so the TUI gets incremental text/thinking
+	// deltas instead of waiting for the full response.
+	opts = append(opts, claude.WithIncludePartialMessages(true))
+
 	// Capture stderr — only surface errors/warnings, not routine verbose output.
 	opts = append(opts, claude.WithStderrCallback(func(line string) {
 		if strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") {
@@ -278,8 +284,7 @@ func (p *Provider) messageToResponses(msg claude.Message) []*model.LLMResponse {
 		// Skip system init messages.
 		return nil
 	case *claude.StreamEvent:
-		// Skip raw stream events.
-		return nil
+		return p.streamEventToResponses(m)
 	default:
 		return nil
 	}
@@ -288,10 +293,18 @@ func (p *Provider) messageToResponses(msg claude.Message) []*model.LLMResponse {
 // assistantToResponses converts an assistant message's content blocks to LLM responses.
 // Thinking blocks are emitted as separate responses with Role "thinking" so the TUI
 // renders them with the collapsible thinking UI, matching the Anthropic provider behavior.
+//
+// When includePartialMessages is enabled, text and thinking content has already been
+// streamed via StreamEvent deltas. In that case we skip text/thinking blocks here to
+// avoid duplication, but still emit tool use/result blocks which aren't streamed.
 func (p *Provider) assistantToResponses(m *claude.AssistantMessage) []*model.LLMResponse {
 	if m.Message == nil {
 		return nil
 	}
+
+	// If we already streamed text/thinking via deltas, skip those block types
+	// from the final AssistantMessage to avoid duplicate content.
+	skipTextAndThinking := p.sawStreamDelta
 
 	var responses []*model.LLMResponse
 	var parts []*genai.Part
@@ -299,11 +312,11 @@ func (p *Provider) assistantToResponses(m *claude.AssistantMessage) []*model.LLM
 	for _, block := range m.Message.Content {
 		switch b := block.(type) {
 		case *claude.TextBlock:
-			if b.Text != "" {
+			if !skipTextAndThinking && b.Text != "" {
 				parts = append(parts, genai.NewPartFromText(b.Text))
 			}
 		case *claude.ThinkingBlock:
-			if b.Thinking != "" {
+			if !skipTextAndThinking && b.Thinking != "" {
 				responses = append(responses, &model.LLMResponse{
 					Content: &genai.Content{
 						Role:  "thinking",
@@ -334,6 +347,60 @@ func (p *Provider) assistantToResponses(m *claude.AssistantMessage) []*model.LLM
 	}
 
 	return responses
+}
+
+// streamEventToResponses converts a StreamEvent (token-level delta) to an LLM response.
+// Only emitted when WithIncludePartialMessages is enabled. Extracts text_delta and
+// thinking_delta from content_block_delta events.
+func (p *Provider) streamEventToResponses(m *claude.StreamEvent) []*model.LLMResponse {
+	evt := m.Event
+	if evt == nil {
+		return nil
+	}
+
+	// We only care about content_block_delta events.
+	evtType, _ := evt["type"].(string)
+	if evtType != "content_block_delta" {
+		return nil
+	}
+
+	delta, ok := evt["delta"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	deltaType, _ := delta["type"].(string)
+	switch deltaType {
+	case "text_delta":
+		text, _ := delta["text"].(string)
+		if text == "" {
+			return nil
+		}
+		p.sawStreamDelta = true
+		return []*model.LLMResponse{{
+			Content: &genai.Content{
+				Role:  "model",
+				Parts: []*genai.Part{genai.NewPartFromText(text)},
+			},
+			Partial: true,
+		}}
+	case "thinking_delta":
+		text, _ := delta["thinking"].(string)
+		if text == "" {
+			return nil
+		}
+		p.sawStreamDelta = true
+		return []*model.LLMResponse{{
+			Content: &genai.Content{
+				Role:  "thinking",
+				Parts: []*genai.Part{genai.NewPartFromText(text)},
+			},
+			Partial: true,
+		}}
+	default:
+		// input_json_delta, etc. — skip.
+		return nil
+	}
 }
 
 // userToolResultToResponse converts a user message (tool results) to text.
