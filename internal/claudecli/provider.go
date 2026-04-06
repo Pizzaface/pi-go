@@ -317,17 +317,30 @@ func (p *Provider) userToolResultToResponse(m *claude.UserMessage) *model.LLMRes
 
 // resultToResponse converts the final result message to a model.LLMResponse
 // with usage metadata and completion signal.
+//
+// Content is ALWAYS non-nil. The ADK flow skips events with nil Content
+// (base_flow.go line ~170), so a nil Content here would cause the final
+// turn-complete signal to be dropped, leaving the last event as Partial=true
+// and triggering "TODO: last event is not final".
 func (p *Provider) resultToResponse(m *claude.ResultMessage) *model.LLMResponse {
 	resp := &model.LLMResponse{
 		TurnComplete: true,
 		FinishReason: genai.FinishReasonStop,
 	}
 
-	// Add the final result text if present.
+	// Always set Content — even if Result is empty, we need a non-nil Content
+	// so the ADK flow doesn't skip this event.
 	if m.Result != nil && *m.Result != "" {
 		resp.Content = &genai.Content{
 			Role:  "model",
 			Parts: []*genai.Part{genai.NewPartFromText(*m.Result)},
+		}
+	} else {
+		// Empty sentinel content — the ADK flow requires non-nil Content
+		// to process the turn-complete signal.
+		resp.Content = &genai.Content{
+			Role:  "model",
+			Parts: []*genai.Part{genai.NewPartFromText("")},
 		}
 	}
 

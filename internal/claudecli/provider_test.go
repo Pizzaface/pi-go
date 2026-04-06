@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	claude "github.com/partio-io/claude-agent-sdk-go"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 )
@@ -387,6 +388,60 @@ func TestCanUseToolForwardSlashPaths(t *testing.T) {
 	if got != "allow" {
 		t.Errorf("expected allow for forward-slash path, got %q", got)
 	}
+}
+
+func TestResultToResponseAlwaysHasContent(t *testing.T) {
+	p := New(Config{})
+
+	t.Run("nil result", func(t *testing.T) {
+		resp := p.resultToResponse(&claude.ResultMessage{
+			Subtype: claude.ResultSuccess,
+		})
+		if resp.Content == nil {
+			t.Fatal("Content must not be nil — ADK flow skips nil-content events")
+		}
+		if !resp.TurnComplete {
+			t.Error("expected TurnComplete=true")
+		}
+	})
+
+	t.Run("empty result", func(t *testing.T) {
+		empty := ""
+		resp := p.resultToResponse(&claude.ResultMessage{
+			Subtype: claude.ResultSuccess,
+			Result:  &empty,
+		})
+		if resp.Content == nil {
+			t.Fatal("Content must not be nil — ADK flow skips nil-content events")
+		}
+	})
+
+	t.Run("non-empty result", func(t *testing.T) {
+		text := "The answer is 42."
+		resp := p.resultToResponse(&claude.ResultMessage{
+			Subtype: claude.ResultSuccess,
+			Result:  &text,
+		})
+		if resp.Content == nil {
+			t.Fatal("Content must not be nil")
+		}
+		if len(resp.Content.Parts) == 0 || resp.Content.Parts[0].Text != text {
+			t.Errorf("expected text %q in parts", text)
+		}
+	})
+
+	t.Run("error result", func(t *testing.T) {
+		resp := p.resultToResponse(&claude.ResultMessage{
+			Subtype: claude.ResultErrorMaxTurns,
+			IsError: true,
+		})
+		if resp.Content == nil {
+			t.Fatal("Content must not be nil even on error")
+		}
+		if resp.FinishReason != genai.FinishReasonOther {
+			t.Error("expected FinishReasonOther for error result")
+		}
+	})
 }
 
 func TestFindBinaryEnvOverride(t *testing.T) {
