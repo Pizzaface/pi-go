@@ -946,7 +946,7 @@ func TestRenderStatusBar_WithTokenTracker(t *testing.T) {
 		percentUsed: 80.0,
 		totalUsed:   80000,
 	}
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
@@ -960,7 +960,7 @@ func TestRenderStatusBar_WithTokenTrackerOverLimit(t *testing.T) {
 		percentUsed: 105.0,
 		totalUsed:   105000,
 	}
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
@@ -972,7 +972,7 @@ func TestRenderStatusBar_WithTokenTrackerNoLimit(t *testing.T) {
 		limit:     0,
 		totalUsed: 5000,
 	}
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
@@ -981,7 +981,7 @@ func TestRenderStatusBar_WithTokenTrackerNoLimit(t *testing.T) {
 func TestRenderStatusBar_WithGitBranch(t *testing.T) {
 	m := newTestModel(t)
 	m.statusModel.GitBranch = "feature-x"
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
@@ -991,7 +991,7 @@ func TestRenderStatusBar_WithActiveTool(t *testing.T) {
 	m := newTestModel(t)
 	m.statusModel.ActiveTool = "read"
 	m.statusModel.ToolStart = time.Now()
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
@@ -1003,7 +1003,7 @@ func TestRenderStatusBar_WithMultipleActiveTools(t *testing.T) {
 		"read": time.Now(),
 		"grep": time.Now(),
 	}
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
@@ -1012,12 +1012,11 @@ func TestRenderStatusBar_WithMultipleActiveTools(t *testing.T) {
 func TestRenderStatusBar_Running(t *testing.T) {
 	m := newTestModel(t)
 	m.running = true
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}
 }
-
 
 func TestRenderStatusBar_ContextBar(t *testing.T) {
 	m := newTestModel(t)
@@ -1029,7 +1028,7 @@ func TestRenderStatusBar_ContextBar(t *testing.T) {
 		contextUsed:  40000,
 		contextLimit: 100000,
 	}
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	// Should show the visual bar with percentage.
 	if !strings.Contains(out, "40%") {
 		t.Error("expected context bar with 40% in status bar")
@@ -1046,7 +1045,7 @@ func TestRenderStatusBar_ContextBarHighUsage(t *testing.T) {
 		contextUsed:  90000,
 		contextLimit: 100000,
 	}
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	// Should show 90% in bar.
 	if !strings.Contains(out, "90%") {
 		t.Error("expected context bar with 90% in status bar")
@@ -1084,7 +1083,7 @@ func TestRenderStatusBar_LargeContext(t *testing.T) {
 		role:    "assistant",
 		content: strings.Repeat("x", 8000), // ~2k tokens
 	})
-	out := m.statusModel.Render(m.statusRenderInput(false))
+	out := m.statusModel.Render(m.statusRenderInput())
 	if out == "" {
 		t.Error("expected non-empty status bar")
 	}

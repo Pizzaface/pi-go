@@ -28,8 +28,8 @@ func TestUpdateWindowSizeWide(t *testing.T) {
 	if mm.height != 24 {
 		t.Errorf("expected height 24, got %d", mm.height)
 	}
-	// When width > 80, statusModel.Width should be mainWidth = width - SidebarWidth
-	expectedStatusWidth := 120 - SidebarWidth
+	// With the sidebar removed, wide terminals now use the full width.
+	expectedStatusWidth := 120
 	if mm.statusModel.Width != expectedStatusWidth {
 		t.Errorf("expected statusModel.Width %d, got %d", expectedStatusWidth, mm.statusModel.Width)
 	}

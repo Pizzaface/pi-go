@@ -739,20 +739,13 @@ func (m *model) View() tea.View {
 		return tea.NewView("Loading...")
 	}
 
-	// Layout: sidebar on the right, chat+status+input on the left.
-	// When the debug panel is active it replaces the sidebar with a wider pane.
-	// When a popup picker is open, the sidebar is suppressed for full-width display.
-	showSidebar := m.width > 80 && !m.debugPanel && m.modelPicker == nil && m.loginPicker == nil
-	sidebarWidth := 0
-	if showSidebar {
-		sidebarWidth = SidebarWidth
-	}
+	// Layout: a single full-width main pane, with the optional debug panel on the right.
 	debugTraceWidth := m.debugTraceWidth()
 	mainWidth := m.layoutMainWidth()
 
 	// Render components.
 	messagesView := m.chatModel.RenderMessages(m.running)
-	statusBar := m.statusModel.Render(m.statusRenderInput(showSidebar))
+	statusBar := m.statusModel.Render(m.statusRenderInput())
 	inputArea := m.inputModel.View(m.running || m.loading)
 	widgetAbove := m.renderExtensionWidget(m.extensionWidgetAbove)
 	widgetBelow := m.renderExtensionWidget(m.extensionWidgetBelow)
@@ -919,23 +912,6 @@ func (m *model) View() tea.View {
 			BorderForeground(borderFg)
 
 		final = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, traceBox.Render(traceContent))
-	} else if showSidebar {
-		sidebar := RenderSidebar(SidebarRenderInput{
-			Width:        sidebarWidth,
-			Height:       m.height,
-			Eyes:         m.eyes(),
-			ProviderName: m.cfg.ProviderName,
-			ModelName:    m.cfg.ModelName,
-			GitBranch:    m.statusModel.GitBranch,
-			DiffAdded:    m.diffAdded,
-			DiffRemoved:  m.diffRemoved,
-			Running:      m.running,
-			TokenTracker: m.cfg.TokenTracker,
-			Messages:     m.chatModel.Messages,
-			ActiveTool:   m.statusModel.ActiveTool,
-			LoadingItems: m.loadingItems,
-		})
-		final = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, sidebar)
 	} else {
 		final = leftPanel
 	}
@@ -1137,12 +1113,8 @@ func (m *model) debugTraceWidth() int {
 
 func (m *model) layoutMainWidth() int {
 	mainWidth := m.width
-	if m.modelPicker != nil {
-		// Full width when the model picker is open — sidebar is suppressed.
-	} else if m.debugPanel {
+	if m.debugPanel {
 		mainWidth -= m.debugTraceWidth()
-	} else if m.width > 80 {
-		mainWidth -= SidebarWidth
 	}
 	if mainWidth < 20 {
 		mainWidth = 20
@@ -1206,19 +1178,17 @@ func countUntrackedLines(cwd string) int {
 }
 
 // statusRenderInput builds the StatusRenderInput from the current model state.
-func (m *model) statusRenderInput(showSidebar bool) StatusRenderInput {
+func (m *model) statusRenderInput() StatusRenderInput {
 	return StatusRenderInput{
 		ProviderName:    m.cfg.ProviderName,
 		ModelName:       m.cfg.ModelName,
 		Running:         m.running,
 		EffortLevel:     m.effortLevel.String(),
-		Eyes:            m.eyes(),
 		Messages:        m.chatModel.Messages,
 		TokenTracker:    m.cfg.TokenTracker,
 		DiffAdded:       m.diffAdded,
 		DiffRemoved:     m.diffRemoved,
 		LoadingItems:    m.loadingItems,
-		ShowSidebar:     showSidebar,
 		ExtensionStatus: m.statusModel.ExtensionStatus,
 	}
 }

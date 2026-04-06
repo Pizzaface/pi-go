@@ -18,38 +18,22 @@ func renderWelcome() string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	cmd := lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
 
-	face := accent.Render(
-		"   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n" +
-			"   ███████████████████████████████████\n" +
-			"   ▀▀▀▀▀▀▀▀████▀▀▀▀▀▀▀▀▀▀▀████▀▀▀▀▀▀▀▀\n" +
-			"           ████           ████\n" +
-			"           ████           ████\n" +
-			"           ████           ████\n" +
-			"           ████           ████\n" +
-			"           ████           ████\n" +
-			"          █████           ████\n" +
-			"         ██████          █████\n" +
-			"       ████████        ███████\n" +
-			"      ██████████     █████████")
-
 	lines := []string{
-		face,
+		accent.Render("Welcome to go-pi") + dim.Render(" — a minimal coding agent harness"),
 		"",
-		accent.Render("  Welcome to go-pi") + dim.Render(" — a minimal coding agent harness"),
+		dim.Render("Describe a task, ask a question, or point me at code to change."),
+		dim.Render(`  "research this codebase and explain the architecture"`),
+		dim.Render(`  "fix the failing test in auth_test.go"`),
+		dim.Render(`  "add error handling to the upload endpoint"`),
+		dim.Render(`  "explain how the session middleware works"`),
+		dim.Render(`  "refactor this function to use channels"`),
 		"",
-		dim.Render("  Ask me anything or describe a task:"),
-		dim.Render("    - ") + dim.Render(`"research this codebase and explain the architecture"`),
-		dim.Render("    - ") + dim.Render(`"fix the failing test in auth_test.go"`),
-		dim.Render("    - ") + dim.Render(`"add error handling to the upload endpoint"`),
-		dim.Render("    - ") + dim.Render(`"explain how the session middleware works"`),
-		dim.Render("    - ") + dim.Render(`"refactor this function to use channels"`),
-		"",
-		dim.Render("  Commands: ") +
+		dim.Render("Commands: ") +
 			cmd.Render("/help") + dim.Render(" ") +
 			cmd.Render("/resume") + dim.Render(" ") +
 			cmd.Render("/fork") + dim.Render(" ") +
 			cmd.Render("/settings"),
-		dim.Render("  Press ") + cmd.Render("Tab") + dim.Render(" to cycle commands, ") +
+		dim.Render("Press ") + cmd.Render("Tab") + dim.Render(" to cycle commands, ") +
 			cmd.Render("@") + dim.Render(" to mention files"),
 	}
 	return strings.Join(lines, "\n")
@@ -231,13 +215,7 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		c.ToolDisplay.RenderTimeout = c.RenderTimeout
 	}
 
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	bullet := lipgloss.NewStyle().Foreground(lipgloss.Color("63")).Bold(true).Render("● ")
-	sepWidth := c.Width - 4
-	if sepWidth < 20 {
-		sepWidth = 20
-	}
-	separator := dim.Render(strings.Repeat("─", sepWidth))
 
 	var b strings.Builder
 	prevRole := ""
@@ -246,8 +224,6 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		case "user":
 			if i > 0 {
 				b.WriteString("\n")
-				b.WriteString(separator)
-				b.WriteString("\n\n")
 			}
 			label := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("39")).

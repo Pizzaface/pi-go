@@ -393,6 +393,26 @@ func TestViewLoading(t *testing.T) {
 	}
 }
 
+func TestViewWideDoesNotRenderSidebar(t *testing.T) {
+	m := &model{
+		cfg:       Config{ProviderName: "openai", ModelName: "gpt-4o"},
+		chatModel: ChatModel{Messages: make([]message, 0)},
+	}
+
+	newM, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	mm := newM.(*model)
+	v := mm.View()
+
+	if !strings.Contains(v.Content, "openai") || !strings.Contains(v.Content, "gpt-4o") {
+		t.Fatalf("expected footer metadata in view, got %q", v.Content)
+	}
+	for _, unexpected := range []string{"\n  Context", "\n  Model", "\n  Git"} {
+		if strings.Contains(v.Content, unexpected) {
+			t.Errorf("did not expect sidebar section %q in wide view", unexpected)
+		}
+	}
+}
+
 func TestMaxScrollEmpty(t *testing.T) {
 	m := &model{
 		chatModel: ChatModel{Messages: make([]message, 0)},
@@ -919,7 +939,7 @@ func TestRenderStatusBar_WithProvider(t *testing.T) {
 		width:       120,
 		statusModel: StatusModel{Width: 120},
 	}
-	bar := m.statusModel.Render(m.statusRenderInput(false))
+	bar := m.statusModel.Render(m.statusRenderInput())
 	if !strings.Contains(bar, "ollama") {
 		t.Errorf("status bar should contain provider, got %q", bar)
 	}
@@ -934,7 +954,7 @@ func TestRenderStatusBar_WithoutProvider(t *testing.T) {
 		width:       120,
 		statusModel: StatusModel{Width: 120},
 	}
-	bar := m.statusModel.Render(m.statusRenderInput(false))
+	bar := m.statusModel.Render(m.statusRenderInput())
 	if !strings.Contains(bar, "gpt-4o") {
 		t.Errorf("status bar should contain model, got %q", bar)
 	}
@@ -951,7 +971,7 @@ func TestRenderStatusBar_ContextEstimate(t *testing.T) {
 			},
 		},
 	}
-	bar := m.statusModel.Render(m.statusRenderInput(false))
+	bar := m.statusModel.Render(m.statusRenderInput())
 	if !strings.Contains(bar, "ctx:") {
 		t.Errorf("status bar should show context estimate, got %q", bar)
 	}
