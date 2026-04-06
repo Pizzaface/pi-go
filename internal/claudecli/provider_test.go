@@ -2,7 +2,11 @@ package claudecli
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"google.golang.org/adk/model"
@@ -386,15 +390,21 @@ func TestCanUseToolForwardSlashPaths(t *testing.T) {
 }
 
 func TestFindBinaryEnvOverride(t *testing.T) {
-	// Override lookupEnv for testing.
-	orig := lookupEnv
-	defer func() { lookupEnv = orig }()
+	origLookup := lookupEnv
+	origStat := statFile
+	defer func() { lookupEnv = origLookup; statFile = origStat }()
 
 	lookupEnv = func(key string) (string, bool) {
 		if key == "CLAUDE_CLI_PATH" {
 			return "/custom/path/claude", true
 		}
 		return "", false
+	}
+	statFile = func(path string) (os.FileInfo, error) {
+		if path == "/custom/path/claude" {
+			return nil, nil // exists
+		}
+		return nil, os.ErrNotExist
 	}
 
 	path, err := FindBinary()
@@ -403,5 +413,172 @@ func TestFindBinaryEnvOverride(t *testing.T) {
 	}
 	if path != "/custom/path/claude" {
 		t.Errorf("FindBinary() = %q, want /custom/path/claude", path)
+	}
+}
+
+func TestFindBinaryWellKnownPaths(t *testing.T) {
+	origLookup := lookupEnv
+	origStat := statFile
+	origIsWin := isWindows
+	origLookPath := lookPath
+	defer func() { lookupEnv = origLookup; statFile = origStat; isWindows = origIsWin; lookPath = origLookPath }()
+
+	// Simulate: no env override, not in PATH, but found at ~/.local/bin/claude
+	lookupEnv = func(key string) (string, bool) { return "", false }
+	lookPath = func(file string) (string, error) { return "", exec.ErrNotFound }
+	isWindows = func() bool { return false }
+
+	home, _ := os.UserHomeDir()
+	expectedPath := home + "/.local/bin/claude"
+
+	statFile = func(path string) (os.FileInfo, error) {
+		if path == expectedPath {
+			return nil, nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	path, err := FindBinary()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != expectedPath {
+		t.Errorf("FindBinary() = %q, want %q", path, expectedPath)
+	}
+}
+
+func TestFindBinaryWindowsPaths(t *testing.T) {
+	origLookup := lookupEnv
+	origStat := statFile
+	origIsWin := isWindows
+	origLookPath := lookPath
+	defer func() { lookupEnv = origLookup; statFile = origStat; isWindows = origIsWin; lookPath = origLookPath }()
+
+	lookupEnv = func(key string) (string, bool) {
+		if key == "APPDATA" {
+			return `C:\Users\test\AppData\Roaming`, true
+		}
+		return "", false
+	}
+	lookPath = func(file string) (string, error) { return "", exec.ErrNotFound }
+	isWindows = func() bool { return true }
+
+	home, _ := os.UserHomeDir()
+	// filepath.Join uses the current OS separator, so on macOS/Linux
+	// it produces forward slashes even though we're simulating Windows.
+	// We match on what filepath.Join actually produces.
+	winNative := filepath.Join(home, ".local", "bin", "claude.exe")
+
+	statFile = func(path string) (os.FileInfo, error) {
+		if path == winNative {
+			return nil, nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	path, err := FindBinary()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != winNative {
+		t.Errorf("FindBinary() = %q, want %q", path, winNative)
+	}
+}
+
+func TestFindBinaryNotFound(t *testing.T) {
+	origLookup := lookupEnv
+	origStat := statFile
+	origIsWin := isWindows
+	origLookPath := lookPath
+	defer func() { lookupEnv = origLookup; statFile = origStat; isWindows = origIsWin; lookPath = origLookPath }()
+
+	lookupEnv = func(key string) (string, bool) { return "", false }
+	lookPath = func(file string) (string, error) { return "", exec.ErrNotFound }
+	isWindows = func() bool { return false }
+	statFile = func(path string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+
+	_, err := FindBinary()
+	if err == nil {
+		t.Fatal("expected error when claude not found")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestWellKnownPathsWindows(t *testing.T) {
+	origIsWin := isWindows
+	origLookup := lookupEnv
+	defer func() { isWindows = origIsWin; lookupEnv = origLookup }()
+
+	isWindows = func() bool { return true }
+	lookupEnv = func(key string) (string, bool) {
+		if key == "APPDATA" {
+			return `C:\Users\test\AppData\Roaming`, true
+		}
+		return "", false
+	}
+
+	paths := wellKnownPaths(`C:\Users\test`)
+
+	if len(paths) < 2 {
+		t.Fatalf("expected at least 2 Windows paths, got %d: %v", len(paths), paths)
+	}
+
+	// Check that the native installer path is included.
+	found := false
+	for _, p := range paths {
+		if strings.Contains(p, "claude.exe") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected claude.exe in Windows paths: %v", paths)
+	}
+
+	// Check that the npm path is included.
+	foundNpm := false
+	for _, p := range paths {
+		if strings.Contains(p, "claude.cmd") {
+			foundNpm = true
+			break
+		}
+	}
+	if !foundNpm {
+		t.Errorf("expected claude.cmd in Windows paths: %v", paths)
+	}
+}
+
+func TestWellKnownPathsUnix(t *testing.T) {
+	origIsWin := isWindows
+	origLookup := lookupEnv
+	defer func() { isWindows = origIsWin; lookupEnv = origLookup }()
+
+	isWindows = func() bool { return false }
+	lookupEnv = func(key string) (string, bool) { return "", false }
+
+	paths := wellKnownPaths("/home/user")
+
+	if len(paths) < 2 {
+		t.Fatalf("expected at least 2 Unix paths, got %d: %v", len(paths), paths)
+	}
+
+	// Should include ~/.local/bin/claude and ~/.claude/local/claude
+	hasLocal := false
+	hasDotClaude := false
+	for _, p := range paths {
+		if strings.Contains(p, ".local/bin/claude") {
+			hasLocal = true
+		}
+		if strings.Contains(p, ".claude/local/claude") {
+			hasDotClaude = true
+		}
+	}
+	if !hasLocal {
+		t.Errorf("expected .local/bin/claude in Unix paths: %v", paths)
+	}
+	if !hasDotClaude {
+		t.Errorf("expected .claude/local/claude in Unix paths: %v", paths)
 	}
 }

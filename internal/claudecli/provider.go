@@ -499,14 +499,77 @@ func firstWord(s string) string {
 	return s
 }
 
-// FindBinary locates the claude CLI binary.
-// Checks $CLAUDE_CLI_PATH first, then exec.LookPath.
+// FindBinary locates the claude CLI binary by checking, in order:
+//  1. $CLAUDE_CLI_PATH environment variable (explicit override)
+//  2. System PATH (exec.LookPath)
+//  3. Platform-specific well-known install locations
+//
+// On Windows, the native installer places claude.exe at %USERPROFILE%\.local\bin\.
+// On macOS/Linux, it may be at ~/.local/bin/ or ~/.claude/local/.
 func FindBinary() (string, error) {
+	// 1. Explicit override.
 	if path, ok := lookupEnv("CLAUDE_CLI_PATH"); ok && path != "" {
+		if _, err := statFile(path); err == nil {
+			return path, nil
+		}
+	}
+
+	// 2. System PATH.
+	if path, err := lookPath("claude"); err == nil {
 		return path, nil
 	}
-	return exec.LookPath("claude")
+
+	// 3. Well-known install locations.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("claude CLI not found in PATH and cannot determine home directory: %w", err)
+	}
+
+	candidates := wellKnownPaths(home)
+	for _, candidate := range candidates {
+		if _, err := statFile(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("claude CLI not found (searched: PATH, %s); install from https://code.claude.com or set CLAUDE_CLI_PATH",
+		strings.Join(candidates, ", "))
+}
+
+// wellKnownPaths returns platform-specific paths where Claude CLI may be installed.
+func wellKnownPaths(home string) []string {
+	var paths []string
+
+	if isWindows() {
+		// Native Windows installer: %USERPROFILE%\.local\bin\claude.exe
+		paths = append(paths, filepath.Join(home, ".local", "bin", "claude.exe"))
+		// npm global on Windows: %APPDATA%\npm\claude.cmd
+		if appData, ok := lookupEnv("APPDATA"); ok {
+			paths = append(paths, filepath.Join(appData, "npm", "claude.cmd"))
+		}
+	} else {
+		// Native installer (macOS/Linux): ~/.local/bin/claude
+		paths = append(paths, filepath.Join(home, ".local", "bin", "claude"))
+		// Claude's own local directory
+		paths = append(paths, filepath.Join(home, ".claude", "local", "claude"))
+	}
+
+	return paths
+}
+
+// isWindows reports whether the current OS is Windows.
+// Extracted as a var for testing.
+var isWindows = func() bool {
+	return os.PathSeparator == '\\'
 }
 
 // lookupEnv is a variable for testing.
 var lookupEnv = os.LookupEnv
+
+// lookPath is exec.LookPath, extracted for testing.
+var lookPath = exec.LookPath
+
+// statFile is os.Stat, extracted for testing.
+var statFile = func(path string) (os.FileInfo, error) {
+	return os.Stat(path)
+}
