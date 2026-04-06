@@ -482,13 +482,33 @@ func (m *model) renderModelPicker() string {
 	return style.Render(b.String())
 }
 
-// loadHiddenModels reads the "hiddenModels" array from ~/.pi-go/config.json.
-func loadHiddenModels() map[string]bool {
+// piGoDir returns the ~/.pi-go directory path, or "" on error.
+func piGoDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".pi-go")
+}
+
+// loadHiddenModels reads the hidden model IDs from ~/.pi-go/hidden_models.json.
+// On first run, migrates from the legacy "hiddenModels" key in config.json.
+func loadHiddenModels() map[string]bool {
+	dir := piGoDir()
+	if dir == "" {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".pi-go", "config.json"))
+
+	hiddenPath := filepath.Join(dir, "hidden_models.json")
+
+	// Try the new dedicated file first.
+	if data, err := os.ReadFile(hiddenPath); err == nil {
+		return parseHiddenModelsJSON(data)
+	}
+
+	// Migrate from legacy config.json "hiddenModels" key.
+	configPath := filepath.Join(dir, "config.json")
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil
 	}
@@ -506,17 +526,93 @@ func loadHiddenModels() map[string]bool {
 			out[s] = true
 		}
 	}
+
+	// Write to the new file and remove from config.json.
+	saveHiddenModels(out)
+	delete(raw, "hiddenModels")
+	if updated, err := json.MarshalIndent(raw, "", "  "); err == nil {
+		_ = os.WriteFile(configPath, updated, 0o644)
+	}
+
 	return out
 }
 
-// saveHiddenModels writes the "hiddenModels" array to ~/.pi-go/config.json.
+// parseHiddenModelsJSON parses a JSON array of strings into a bool map.
+func parseHiddenModelsJSON(data []byte) map[string]bool {
+	var ids []string
+	if err := json.Unmarshal(data, &ids); err != nil || len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// saveHiddenModels writes hidden model IDs to ~/.pi-go/hidden_models.json.
 func saveHiddenModels(hidden map[string]bool) {
-	home, err := os.UserHomeDir()
+	dir := piGoDir()
+	if dir == "" {
+		return
+	}
+
+	hiddenPath := filepath.Join(dir, "hidden_models.json")
+
+	if len(hidden) == 0 {
+		_ = os.Remove(hiddenPath)
+		return
+	}
+
+	// Build sorted list for deterministic output.
+	ids := make([]string, 0, len(hidden))
+	for id := range hidden {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	out, err := json.MarshalIndent(ids, "", "  ")
 	if err != nil {
 		return
 	}
-	configDir := filepath.Join(home, ".pi-go")
-	configPath := filepath.Join(configDir, "config.json")
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(hiddenPath, out, 0o644)
+}
+
+// LastModelSelection holds the persisted last-selected model.
+type LastModelSelection struct {
+	Model    string `json:"lastModel"`
+	Provider string `json:"lastProvider"`
+}
+
+// LoadLastModel reads the last-selected model from ~/.pi-go/config.json.
+func LoadLastModel() (modelID, providerName string) {
+	dir := piGoDir()
+	if dir == "" {
+		return "", ""
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return "", ""
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "", ""
+	}
+	m, _ := raw["lastModel"].(string)
+	p, _ := raw["lastProvider"].(string)
+	return m, p
+}
+
+// saveLastSelectedModel persists the last-selected model to ~/.pi-go/config.json.
+func saveLastSelectedModel(modelID, providerName string) {
+	dir := piGoDir()
+	if dir == "" {
+		return
+	}
+	configPath := filepath.Join(dir, "config.json")
 
 	var raw map[string]any
 	data, err := os.ReadFile(configPath)
@@ -528,24 +624,14 @@ func saveHiddenModels(hidden map[string]bool) {
 		}
 	}
 
-	// Build sorted list.
-	ids := make([]string, 0, len(hidden))
-	for id := range hidden {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-
-	if len(ids) == 0 {
-		delete(raw, "hiddenModels")
-	} else {
-		raw["hiddenModels"] = ids
-	}
+	raw["lastModel"] = modelID
+	raw["lastProvider"] = providerName
 
 	out, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(dir, 0o755)
 	_ = os.WriteFile(configPath, out, 0o644)
 }
 

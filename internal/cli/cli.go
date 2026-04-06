@@ -22,6 +22,7 @@ import (
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
+	"github.com/dimetron/pi-go/internal/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -106,6 +107,20 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// Resolve model: CLI flag overrides the selected active role.
 	applyModelOverride(&cfg, activeRole, flagModel)
+
+	// If no explicit model flag was given and the user last selected a
+	// model via the TUI picker, use that as the default.
+	if flagModel == "" && activeRole == "default" {
+		if lastModel, lastProvider := tui.LoadLastModel(); lastModel != "" {
+			ensureRolesMap(&cfg)
+			role := cfg.Roles["default"]
+			role.Model = lastModel
+			if lastProvider != "" {
+				role.Provider = lastProvider
+			}
+			cfg.Roles["default"] = role
+		}
+	}
 
 	info, err := cfg.ResolveRoleInfoWithRegistry(activeRole, reg)
 	if err != nil {

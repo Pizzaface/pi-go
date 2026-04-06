@@ -605,6 +605,9 @@ func (m *model) handleModelSelect() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Persist last-selected model for next TUI launch.
+	saveLastSelectedModel(selected.ID, info.Provider)
+
 	m.appendAssistant(fmt.Sprintf("Switched to model **%s** (%s)", selected.ID, info.Provider))
 	m.modelPicker = nil
 	return m, nil
