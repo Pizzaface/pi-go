@@ -34,6 +34,7 @@ type Provider struct {
 	DeviceURL     string // device authorization endpoint (optional)
 	UseDeviceFlow bool   // prefer device code flow over PKCE
 	TLSPreflight  bool   // run TLS preflight before OAuth (OpenAI Codex)
+	CallbackPort  int    // fixed callback port (0 = random)
 }
 
 // TokenResponse holds the OAuth token response.
@@ -104,12 +105,14 @@ func Providers() []Provider {
 		{
 			Name:     "codex",
 			EnvVar:   "OPENAI_API_KEY",
-			AuthURL:  "https://auth.openai.com/authorize",
+			AuthURL:  "https://auth.openai.com/oauth/authorize",
 			TokenURL: "https://auth.openai.com/oauth/token",
-			ClientID: "pi-go-cli",
+			ClientID: "app_EMoamEEZ73f0CkXaXp7hrann",
 			Scopes:   []string{"openid", "profile", "email", "offline_access"},
 			ExtraParams: map[string]string{
-				"audience": "https://api.openai.com/v1",
+				"id_token_add_organizations":  "true",
+				"codex_cli_simplified_flow":   "true",
+				"originator":                  "pi",
 			},
 			TokenToKey: func(tok *TokenResponse) string {
 				if tok.APIKey != "" {
@@ -119,6 +122,7 @@ func Providers() []Provider {
 			},
 			KeyPageURL:   "https://platform.openai.com/api-keys",
 			TLSPreflight: true,
+			CallbackPort: 1455,
 		},
 		{
 			Name:     "gemini",
@@ -195,13 +199,21 @@ func FindProvider(name string) (Provider, bool) {
 func PKCEFlow(ctx context.Context, prov Provider, openBrowser func(string) error) (*Result, error) {
 	verifier, challenge := generatePKCE()
 
-	// Start local callback server on a random port.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Start local callback server.
+	listenAddr := "127.0.0.1:0"
+	if prov.CallbackPort > 0 {
+		listenAddr = fmt.Sprintf("127.0.0.1:%d", prov.CallbackPort)
+	}
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("starting callback server: %w", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port //nolint:errcheck // type assertion is guaranteed for TCP listener
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+	callbackPath := "/callback"
+	if prov.CallbackPort > 0 {
+		callbackPath = "/auth/callback"
+	}
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", port, callbackPath)
 
 	state := generateState()
 
@@ -212,7 +224,7 @@ func PKCEFlow(ctx context.Context, prov Provider, openBrowser func(string) error
 	codeCh := make(chan codeResult, 1)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
 		handleCallback(w, r, state, codeCh)
 	})
 
@@ -549,7 +561,7 @@ type TLSPreflightResult struct {
 	Message string
 }
 
-const openAIAuthProbeURL = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=pi-go-preflight&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email"
+const openAIAuthProbeURL = "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access"
 
 // RunTLSPreflight probes the OpenAI auth endpoint to detect TLS certificate issues.
 func RunTLSPreflight(timeoutMs int) *TLSPreflightResult {

@@ -426,8 +426,26 @@ func TestCodexProviderConfig(t *testing.T) {
 			t.Errorf("expected scope %q in codex scopes", expected)
 		}
 	}
-	// Verify audience extra param.
-	if p.ExtraParams["audience"] != "https://api.openai.com/v1" {
-		t.Errorf("expected audience extra param, got %v", p.ExtraParams)
+	// Verify Codex-specific extra params.
+	if p.ExtraParams["codex_cli_simplified_flow"] != "true" {
+		t.Errorf("expected codex_cli_simplified_flow extra param, got %v", p.ExtraParams)
+	}
+	if p.ExtraParams["id_token_add_organizations"] != "true" {
+		t.Errorf("expected id_token_add_organizations extra param, got %v", p.ExtraParams)
+	}
+	if p.ExtraParams["originator"] != "pi" {
+		t.Errorf("expected originator=pi extra param, got %v", p.ExtraParams)
+	}
+	// Verify correct client ID.
+	if p.ClientID != "app_EMoamEEZ73f0CkXaXp7hrann" {
+		t.Errorf("expected OpenAI Codex client ID, got %q", p.ClientID)
+	}
+	// Verify correct auth URL path.
+	if p.AuthURL != "https://auth.openai.com/oauth/authorize" {
+		t.Errorf("expected auth URL with /oauth/authorize path, got %q", p.AuthURL)
+	}
+	// Verify fixed callback port.
+	if p.CallbackPort != 1455 {
+		t.Errorf("expected callback port 1455, got %d", p.CallbackPort)
 	}
 }
