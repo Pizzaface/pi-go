@@ -487,6 +487,22 @@ func TestRenderMessages_AssistantTextAlignsWithUserText(t *testing.T) {
 	}
 }
 
+func TestRenderMessages_UserMessageWrapsWithinChatWidth(t *testing.T) {
+	m := &model{
+		width: 34,
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "This is a long user message that should wrap cleanly within the chat column."},
+		}},
+	}
+	m.chatModel.UpdateRenderer(m.width)
+
+	output := stripANSIEscapeCodes(m.chatModel.RenderMessages(m.running))
+	lines := nonEmptyLines(output)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped user message output, got %q", output)
+	}
+}
+
 func visualColumn(line, text string) int {
 	idx := strings.Index(line, text)
 	if idx == -1 {

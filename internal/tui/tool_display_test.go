@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -268,4 +269,53 @@ func TestRenderer_PlainTextAndMarkdownOnly(t *testing.T) {
 	if !strings.Contains(rendered, "rendered:**md result**") {
 		t.Fatalf("expected markdown renderer output, got %q", rendered)
 	}
+}
+
+func TestRenderToolMessage_CollapsedShowsHeaderOnly(t *testing.T) {
+	td := ToolDisplayModel{Width: 60, CollapsedTools: true}
+	msg := message{
+		role:    "tool",
+		tool:    "read",
+		toolIn:  "internal/tui/chat.go",
+		content: "line one\nline two",
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	if !strings.Contains(result, "read") {
+		t.Fatalf("expected tool header in collapsed output, got %q", result)
+	}
+	if strings.Contains(result, "line one") || strings.Contains(result, "line two") {
+		t.Fatalf("expected collapsed output to hide tool result body, got %q", result)
+	}
+}
+
+func TestRenderToolMessage_WrapsLongHeaderAtWidth(t *testing.T) {
+	td := ToolDisplayModel{Width: 36}
+	msg := message{
+		role:   "tool",
+		tool:   "read",
+		toolIn: "C:/Users/Jordan/Documents/Projects/pi-go/internal/tui/really/long/path/to/file_with_long_name.go",
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	lines := nonEmptyToolLines(result)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped multi-line header, got %q", result)
+	}
+}
+
+func stripToolANSI(s string) string {
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return ansi.ReplaceAllString(s, "")
+}
+
+func nonEmptyToolLines(s string) []string {
+	raw := strings.Split(s, "\n")
+	lines := make([]string, 0, len(raw))
+	for _, line := range raw {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }

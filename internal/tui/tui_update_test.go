@@ -414,6 +414,22 @@ func TestHandleKey_TabMultipleMatches(t *testing.T) {
 	}
 }
 
+func TestHandleKey_CtrlOTogglesCollapsedTools(t *testing.T) {
+	m := &model{
+		chatModel: ChatModel{ToolDisplay: ToolDisplayModel{CollapsedTools: true}},
+	}
+
+	newM, cmd := m.handleKey(tea.KeyPressMsg(tea.Key{Code: 'o', Mod: tea.ModCtrl}))
+	mm := newM.(*model)
+
+	if cmd != nil {
+		t.Fatal("expected no command for Ctrl+O toggle")
+	}
+	if mm.chatModel.ToolDisplay.CollapsedTools {
+		t.Fatal("expected Ctrl+O to expand tool results")
+	}
+}
+
 func TestHandleKey_EscapeDismissesCompletion(t *testing.T) {
 	m := &model{
 		running:    false,

@@ -635,6 +635,53 @@ func saveLastSelectedModel(modelID, providerName string) {
 	_ = os.WriteFile(configPath, out, 0o644)
 }
 
+func loadCollapsedTools() bool {
+	dir := piGoDir()
+	if dir == "" {
+		return true
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return true
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return true
+	}
+	collapsed, ok := raw["collapsedTools"].(bool)
+	if !ok {
+		return true
+	}
+	return collapsed
+}
+
+func saveCollapsedTools(collapsed bool) {
+	dir := piGoDir()
+	if dir == "" {
+		return
+	}
+	configPath := filepath.Join(dir, "config.json")
+
+	var raw map[string]any
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		raw = make(map[string]any)
+	} else {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			raw = make(map[string]any)
+		}
+	}
+
+	raw["collapsedTools"] = collapsed
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(configPath, out, 0o644)
+}
+
 // formatTokenLimits returns a compact human-readable string like "128k in / 8k out".
 // Returns "" if both values are zero (unknown).
 func formatTokenLimits(maxIn, maxOut int64) string {

@@ -25,6 +25,8 @@ type ToolDisplayModel struct {
 	Width int
 	// CompactTools when true shows one-line summaries instead of full output.
 	CompactTools bool
+	// CollapsedTools when true keeps tool headers visible but hides result bodies.
+	CollapsedTools bool
 	// ExtensionManager provides optional extension-owned renderers.
 	ExtensionManager *extension.Manager
 	// RenderTimeout bounds extension renderer calls.
@@ -40,6 +42,9 @@ func (t *ToolDisplayModel) RenderToolMessage(msg message) string {
 
 	if t.CompactTools {
 		return t.renderCompactTool(msg, dim)
+	}
+	if t.CollapsedTools {
+		return t.renderCollapsedTool(msg, dim)
 	}
 	return t.renderRegularTool(msg, dim)
 }
@@ -91,9 +96,17 @@ func (t *ToolDisplayModel) renderCompactTool(msg message, dim lipgloss.Style) st
 	return b.String()
 }
 
+func (t *ToolDisplayModel) renderCollapsedTool(msg message, dim lipgloss.Style) string {
+	return t.renderTool(msg, dim, true)
+}
+
 // renderRegularTool renders a standard tool message with name, args, and
 // syntax-highlighted output.
 func (t *ToolDisplayModel) renderRegularTool(msg message, dim lipgloss.Style) string {
+	return t.renderTool(msg, dim, false)
+}
+
+func (t *ToolDisplayModel) renderTool(msg message, dim lipgloss.Style, collapsed bool) string {
 	customHeader, customHeaderOK := t.renderWithExtension(msg, extension.RenderSurfaceToolCallRow, map[string]any{
 		"compact": false,
 		"tool":    msg.tool,
@@ -105,73 +118,83 @@ func (t *ToolDisplayModel) renderRegularTool(msg message, dim lipgloss.Style) st
 		"content": msg.content,
 	})
 
-	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true)
-	argStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	toolBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true).Render("● ")
+	panelWidth := t.Width
+	if panelWidth < 24 {
+		panelWidth = 24
+	}
+	innerWidth := panelWidth - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
 
-	var b strings.Builder
-	if customHeaderOK {
-		b.WriteString(strings.TrimRight(customHeader, "\n"))
-	} else {
-		b.WriteString(toolBullet)
-		b.WriteString(toolStyle.Render(msg.tool))
+	panelStyle := lipgloss.NewStyle().Background(lipgloss.Color("236")).Padding(0, 1)
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true)
+	dividerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	header := strings.TrimRight(customHeader, "\n")
+	if !customHeaderOK {
+		header = "● " + msg.tool
 		if msg.toolIn != "" {
-			args := msg.toolIn
-			if len(args) > 80 {
-				args = args[:77] + "..."
-			}
-			b.WriteString(dim.Render("("))
-			b.WriteString(argStyle.Render(args))
-			b.WriteString(dim.Render(")"))
+			header += " (" + msg.toolIn + ")"
 		}
+		header = headerStyle.Render(wrapPlainText(header, innerWidth))
 	}
-	b.WriteString("\n")
-	if msg.content != "" {
-		if customResultOK {
-			for _, line := range strings.Split(customResult, "\n") {
-				if strings.TrimSpace(line) == "" {
-					continue
-				}
-				b.WriteString("  ")
-				b.WriteString(dim.Render("â”‚ "))
-				b.WriteString(line)
-				b.WriteString("\n")
-			}
-			return b.String()
-		}
+	if customHeaderOK {
+		header = wrapPlainText(header, innerWidth)
+	}
 
-		content := msg.content
-		lines := strings.Split(content, "\n")
-		maxLines := 15
-		if len(lines) > maxLines {
-			lines = append(lines[:maxLines], dim.Render(fmt.Sprintf("... (%d more lines)", len(lines)-maxLines)))
-		}
-		var styled []string
-		switch {
-		case msg.tool == "read" && msg.toolIn != "":
-			styled = highlightReadOutput(lines, msg.toolIn)
-		case msg.tool == "grep":
-			styled = highlightGrepOutput(lines)
-		case msg.tool == "find":
-			styled = highlightFindOutput(lines)
-		}
-		if styled != nil {
-			for _, line := range styled {
-				b.WriteString("  ")
-				b.WriteString(dim.Render("│ "))
-				b.WriteString(line)
-				b.WriteString("\n")
-			}
-		} else {
-			for _, line := range lines {
-				b.WriteString("  ")
-				b.WriteString(dim.Render("│ "))
-				b.WriteString(dim.Render(line))
-				b.WriteString("\n")
-			}
-		}
+	sections := []string{header}
+	body := ""
+	if !collapsed && msg.content != "" {
+		body = t.renderToolBody(msg, dim, customResult, customResultOK, innerWidth)
 	}
-	return b.String()
+	if body != "" {
+		sections = append(sections, dividerStyle.Render(strings.Repeat("─", innerWidth)), body)
+	}
+
+	return panelStyle.Width(panelWidth).Render(strings.Join(sections, "\n")) + "\n"
+}
+
+func (t *ToolDisplayModel) renderToolBody(msg message, dim lipgloss.Style, customResult string, customResultOK bool, width int) string {
+	if customResultOK {
+		var lines []string
+		for _, line := range strings.Split(customResult, "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			lines = append(lines, prefixBlockLines(line, "│ "))
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	content := msg.content
+	lines := strings.Split(content, "\n")
+	maxLines := 15
+	if len(lines) > maxLines {
+		lines = append(lines[:maxLines], fmt.Sprintf("... (%d more lines)", len(lines)-maxLines))
+	}
+	var styled []string
+	switch {
+	case msg.tool == "read" && msg.toolIn != "":
+		styled = highlightReadOutput(lines, msg.toolIn)
+	case msg.tool == "grep":
+		styled = highlightGrepOutput(lines)
+	case msg.tool == "find":
+		styled = highlightFindOutput(lines)
+	}
+	if styled != nil {
+		for i, line := range styled {
+			styled[i] = prefixBlockLines(line, "│ ")
+		}
+		return strings.Join(styled, "\n")
+	}
+
+	bodyLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		wrapped := renderWrappedPrefixBlock(line, "│ ", width)
+		bodyLines = append(bodyLines, dim.Render(wrapped))
+	}
+	return strings.Join(bodyLines, "\n")
 }
 
 func (t *ToolDisplayModel) renderWithExtension(

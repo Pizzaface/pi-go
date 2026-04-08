@@ -13,9 +13,14 @@ import (
 func withTempHome(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
-	orig := os.Getenv("HOME")
+	origHome := os.Getenv("HOME")
+	origUserProfile := os.Getenv("USERPROFILE")
 	t.Setenv("HOME", tmp)
-	t.Cleanup(func() { os.Setenv("HOME", orig) })
+	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(func() {
+		os.Setenv("HOME", origHome)
+		os.Setenv("USERPROFILE", origUserProfile)
+	})
 	return tmp
 }
 
@@ -165,5 +170,61 @@ func TestSaveLastSelectedModelPreservesExistingConfig(t *testing.T) {
 	}
 	if raw["lastModel"] != "gpt-4o" {
 		t.Errorf("expected lastModel=gpt-4o, got %v", raw["lastModel"])
+	}
+}
+
+func TestLoadCollapsedToolsDefaultsToTrue(t *testing.T) {
+	withTempHome(t)
+	if collapsed := loadCollapsedTools(); !collapsed {
+		t.Fatal("expected collapsed tools to default to true")
+	}
+}
+
+func TestSaveAndLoadCollapsedTools(t *testing.T) {
+	home := withTempHome(t)
+	saveCollapsedTools(false)
+
+	data, err := os.ReadFile(filepath.Join(home, ".pi-go", "config.json"))
+	if err != nil {
+		t.Fatalf("expected config.json to exist: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("invalid JSON in config.json: %v", err)
+	}
+	if raw["collapsedTools"] != false {
+		t.Fatalf("expected collapsedTools=false, got %v", raw["collapsedTools"])
+	}
+	if collapsed := loadCollapsedTools(); collapsed {
+		t.Fatal("expected persisted collapsedTools=false to be loaded")
+	}
+}
+
+func TestSaveCollapsedToolsPreservesExistingConfig(t *testing.T) {
+	home := withTempHome(t)
+	dir := filepath.Join(home, ".pi-go")
+	_ = os.MkdirAll(dir, 0o755)
+	existing := map[string]any{"theme": "tokyo-night", "lastModel": "claude-sonnet-4"}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	_ = os.WriteFile(filepath.Join(dir, "config.json"), data, 0o644)
+
+	saveCollapsedTools(true)
+
+	cfgData, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatalf("expected config.json to exist: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(cfgData, &raw); err != nil {
+		t.Fatalf("invalid JSON in config.json: %v", err)
+	}
+	if raw["theme"] != "tokyo-night" {
+		t.Fatalf("expected theme to be preserved, got %v", raw["theme"])
+	}
+	if raw["lastModel"] != "claude-sonnet-4" {
+		t.Fatalf("expected lastModel to be preserved, got %v", raw["lastModel"])
+	}
+	if raw["collapsedTools"] != true {
+		t.Fatalf("expected collapsedTools=true, got %v", raw["collapsedTools"])
 	}
 }

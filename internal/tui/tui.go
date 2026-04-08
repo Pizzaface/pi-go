@@ -150,6 +150,7 @@ func Run(ctx context.Context, cfg Config) error {
 	chat.ToolDisplay.ExtensionManager = cfg.ExtensionManager
 	chat.ToolDisplay.RenderMarkdown = chat.RenderMarkdown
 	chat.ToolDisplay.RenderTimeout = chat.RenderTimeout
+	chat.ToolDisplay.CollapsedTools = loadCollapsedTools()
 
 	m := model{
 		cfg:          cfg,

@@ -49,7 +49,8 @@ func (m *model) handleGlobalKey(msg tea.KeyPressMsg, key tea.Key) (tea.Model, te
 	}
 
 	if key.Code == 'o' && key.Mod == tea.ModCtrl {
-		m.chatModel.ToolDisplay.CompactTools = !m.chatModel.ToolDisplay.CompactTools
+		m.chatModel.ToolDisplay.CollapsedTools = !m.chatModel.ToolDisplay.CollapsedTools
+		saveCollapsedTools(m.chatModel.ToolDisplay.CollapsedTools)
 		return m, nil
 	}
 	if key.Code == 'b' && key.Mod == tea.ModCtrl {

@@ -149,6 +149,7 @@ func (c *ChatModel) UpdateRenderer(width int) {
 		glamour.WithWordWrap(contentWidth),
 		glamour.WithEmoji(),
 	)
+	c.ToolDisplay.Width = width
 }
 
 // RenderMarkdown renders text as markdown using the glamour renderer.
@@ -215,7 +216,8 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		c.ToolDisplay.RenderTimeout = c.RenderTimeout
 	}
 
-	bullet := lipgloss.NewStyle().Foreground(lipgloss.Color("63")).Bold(true).Render("● ")
+	const assistantPrefix = "● "
+	const userPrefix = "> "
 
 	var b strings.Builder
 	prevRole := ""
@@ -225,12 +227,7 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			if i > 0 {
 				b.WriteString("\n")
 			}
-			label := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("39")).
-				Bold(true).
-				Render("> ")
-			b.WriteString(label)
-			b.WriteString(msg.content)
+			b.WriteString(renderWrappedPrefixBlock(msg.content, userPrefix, c.Width))
 			b.WriteString("\n")
 
 		case "tool":
@@ -277,16 +274,14 @@ func (c *ChatModel) RenderMessages(running bool) string {
 				b.WriteString("\n")
 				if msg.isWarning {
 					warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
-					warnBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true).Render("⚠ ")
-					b.WriteString(warnBullet)
-					b.WriteString(warnStyle.Render(content))
+					warnContent := prefixBlockLines(warnStyle.Render(content), "⚠ ")
+					b.WriteString(warnContent)
 				} else {
-					b.WriteString(bullet)
 					rendered, ok := c.renderCustomAssistantMessage(msg, content)
 					if !ok {
 						rendered = c.RenderMarkdown(content)
 					}
-					b.WriteString(rendered)
+					b.WriteString(prefixBlockLines(rendered, assistantPrefix))
 				}
 				b.WriteString("\n")
 			}

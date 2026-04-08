@@ -483,6 +483,25 @@ func TestView_EmptyMessages(t *testing.T) {
 	}
 }
 
+func TestView_RunningInputLinePadsToTerminalWidth(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 40
+	m.height = 12
+	m.running = true
+	m.statusModel.Width = 40
+	m.chatModel.UpdateRenderer(40)
+
+	v := m.View()
+	lines := strings.Split(v.Content, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines in view, got %q", v.Content)
+	}
+	inputLine := lines[len(lines)-1]
+	if got := lipgloss.Width(inputLine); got != 40 {
+		t.Fatalf("expected padded input line width 40, got %d: %q", got, inputLine)
+	}
+}
+
 func TestView_SlashOverlayDoesNotChangeRenderedLineCount(t *testing.T) {
 	m := newTestModel(t)
 	m.chatModel.Messages = append(m.chatModel.Messages,

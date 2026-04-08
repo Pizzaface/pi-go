@@ -1009,7 +1009,7 @@ func (m *model) formatHelp() string {
 	}
 
 	b.WriteString("\n**Keyboard shortcuts:**\n")
-	b.WriteString("  `Enter` — Submit  `Ctrl+C`/`Esc` — Cancel  `Up/Down` — History  `PgUp/PgDn` — Scroll\n")
+	b.WriteString("  `Enter` — Submit  `Ctrl+C`/`Esc` — Cancel  `Ctrl+O` — Hide/show tool results  `Up/Down` — History  `PgUp/PgDn` — Scroll\n")
 
 	return b.String()
 }

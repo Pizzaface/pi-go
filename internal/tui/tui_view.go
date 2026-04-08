@@ -40,10 +40,10 @@ func (m *model) View() tea.View {
 	mainWidth := m.layoutMainWidth()
 
 	messagesView := m.chatModel.RenderMessages(m.running)
-	statusBar := m.statusModel.Render(m.statusRenderInput())
-	inputArea := m.inputModel.View(m.running || m.loading)
-	widgetAbove := m.renderExtensionWidget(m.extensionWidgetAbove)
-	widgetBelow := m.renderExtensionWidget(m.extensionWidgetBelow)
+	statusBar := padBlockWidth(m.statusModel.Render(m.statusRenderInput()), mainWidth)
+	inputArea := padBlockWidth(m.inputModel.View(m.running || m.loading), mainWidth)
+	widgetAbove := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetAbove), mainWidth)
+	widgetBelow := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetBelow), mainWidth)
 
 	statusLines := strings.Count(statusBar, "\n") + 1
 	inputLines := strings.Count(inputArea, "\n") + 1
