@@ -10,6 +10,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
 // agentMsg wraps messages coming from the agent goroutine via a channel.
@@ -169,7 +171,18 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 			m.agentCh <- agentDoneMsg{err: err}
 			return
 		}
-		if ev == nil || ev.Content == nil {
+		if ev == nil {
+			continue
+		}
+		if ev.ErrorCode != "" {
+			errMsg := fmt.Errorf("%s", llmutil.ResponseErrorText(ev.ErrorCode, ev.ErrorMessage))
+			if log != nil {
+				log.Error(errMsg.Error())
+			}
+			m.agentCh <- agentDoneMsg{err: errMsg}
+			return
+		}
+		if ev.Content == nil {
 			continue
 		}
 		for _, part := range ev.Content.Parts {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/llmutil"
 	"github.com/dimetron/pi-go/internal/provider"
 )
 
@@ -415,7 +416,7 @@ func runPing(cmd *cobra.Command, args []string) error {
 // Used for cloud providers (Anthropic, OpenAI, Gemini).
 // Tests both non-streaming and streaming modes with detailed event tracing.
 func modelPing(ctx context.Context, llm llmmodel.LLM, prompt string, isPingPong bool) (string, error) {
-	w := func(format string, a ...any) { fmt.Fprintf(os.Stderr, format, a...) }
+	w := func(format string, a ...any) { _, _ = fmt.Fprintf(os.Stderr, format, a...) }
 
 	systemMsg := "You are a connectivity test. Reply briefly and concisely."
 	if isPingPong {
@@ -445,7 +446,10 @@ func modelPing(ctx context.Context, llm llmmodel.LLM, prompt string, isPingPong 
 		w("*   [non-stream] event %d: partial=%v turnComplete=%v finish=%v",
 			nsEvents, resp.Partial, resp.TurnComplete, resp.FinishReason)
 		if resp.ErrorCode != "" {
-			w(" errorCode=%s errorMsg=%s", resp.ErrorCode, resp.ErrorMessage)
+			msg := llmutil.ResponseErrorText(resp.ErrorCode, resp.ErrorMessage)
+			w(" errorCode=%s errorMsg=%s", resp.ErrorCode, msg)
+			w("\n")
+			return "", fmt.Errorf("%s", msg)
 		}
 		if resp.UsageMetadata != nil {
 			w(" tokens(in=%d out=%d)", resp.UsageMetadata.PromptTokenCount, resp.UsageMetadata.CandidatesTokenCount)
@@ -489,8 +493,9 @@ func modelPing(ctx context.Context, llm llmmodel.LLM, prompt string, isPingPong 
 			return nsResult.String(), fmt.Errorf("streaming LLM error: %w", err)
 		}
 		if resp.ErrorCode != "" {
-			w("*   [stream] event %d: errorCode=%s errorMsg=%s\n", sEvents, resp.ErrorCode, resp.ErrorMessage)
-			continue
+			msg := llmutil.ResponseErrorText(resp.ErrorCode, resp.ErrorMessage)
+			w("*   [stream] event %d: errorCode=%s errorMsg=%s\n", sEvents, resp.ErrorCode, msg)
+			return nsResult.String(), fmt.Errorf("%s", msg)
 		}
 		if resp.Content != nil {
 			role := resp.Content.Role

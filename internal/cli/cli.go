@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	adkmodel "google.golang.org/adk/model"
 	"google.golang.org/adk/session"
 
@@ -18,13 +19,12 @@ import (
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/jsonrpc"
+	"github.com/dimetron/pi-go/internal/llmutil"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
 	"github.com/dimetron/pi-go/internal/tools"
 	"github.com/dimetron/pi-go/internal/tui"
-
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -219,10 +219,10 @@ func runRoot(cmd *cobra.Command, args []string) error {
 // runNonInteractive performs synchronous initialization and runs print/json/rpc modes.
 func runNonInteractive(
 	parentCtx context.Context,
-	cmd *cobra.Command,
+	_ *cobra.Command,
 	cfg config.Config,
 	llm adkmodel.LLM,
-	info provider.Info,
+	_ provider.Info,
 	cwd, sandboxRoot, mode, prompt string,
 ) error {
 	sandbox, err := tools.NewSandbox(sandboxRoot)
@@ -300,7 +300,7 @@ func runNonInteractive(
 			return fmt.Errorf("no previous session found to continue")
 		}
 		sessionID = lastID
-		fmt.Fprintf(os.Stderr, "go-pi: continuing session %s\n", sessionID)
+		_, _ = fmt.Fprintf(os.Stderr, "go-pi: continuing session %s\n", sessionID)
 	}
 	if sessionID == "" {
 		sessionID, err = ag.CreateSession(ctx)
@@ -314,7 +314,7 @@ func runNonInteractive(
 
 	sessionLog, err := logger.New()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "go-pi: warning: could not create session log: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "go-pi: warning: could not create session log: %v\n", err)
 	}
 	defer func() { _ = sessionLog.Close() }()
 	sessionLog.SessionStart(sessionID, llm.Name(), mode)
@@ -328,13 +328,13 @@ func runNonInteractive(
 		return srv.Run(ctx)
 	case "json":
 		if prompt == "" {
-			fmt.Fprintf(os.Stderr, "go-pi: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
+			_, _ = fmt.Fprintf(os.Stderr, "go-pi: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
 			return nil
 		}
 		return runJSON(ctx, ag, sessionID, prompt, sessionLog)
 	default:
 		if prompt == "" {
-			fmt.Fprintf(os.Stderr, "go-pi: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
+			_, _ = fmt.Fprintf(os.Stderr, "go-pi: no prompt provided (model: %s, mode: %s)\n", llm.Name(), mode)
 			return nil
 		}
 		return runPrint(ctx, ag, sessionID, prompt, sessionLog)
@@ -377,18 +377,26 @@ func runPrint(ctx context.Context, ag *agent.Agent, sessionID, prompt string, lo
 	}) {
 		if err != nil {
 			if ctx.Err() != nil {
-				fmt.Fprintln(os.Stderr, "\ninterrupted")
+				_, _ = fmt.Fprintln(os.Stderr, "\ninterrupted")
 				return nil
 			}
 			log.Error(err.Error())
 			return fmt.Errorf("agent run: %w", err)
 		}
-		if ev == nil || ev.Content == nil {
+		if ev == nil {
+			continue
+		}
+		if ev.ErrorCode != "" {
+			msg := llmutil.ResponseErrorText(ev.ErrorCode, ev.ErrorMessage)
+			log.Error(msg)
+			return fmt.Errorf("agent error: %s", msg)
+		}
+		if ev.Content == nil {
 			continue
 		}
 		for _, part := range ev.Content.Parts {
 			if part.Text != "" && ev.Content.Role == "thinking" {
-				fmt.Fprintf(os.Stderr, "\033[2m%s\033[0m", part.Text)
+				_, _ = fmt.Fprintf(os.Stderr, "\033[2m%s\033[0m", part.Text)
 				continue
 			}
 			if part.Text != "" {
@@ -403,12 +411,12 @@ func runPrint(ctx context.Context, ag *agent.Agent, sessionID, prompt string, lo
 			}
 			if part.FunctionCall != nil {
 				sawStreamedText = false
-				fmt.Fprintf(os.Stderr, "⚙ tool: %s\n", part.FunctionCall.Name)
+				_, _ = fmt.Fprintf(os.Stderr, "⚙ tool: %s\n", part.FunctionCall.Name)
 				log.ToolCall(ev.Author, part.FunctionCall.Name, part.FunctionCall.Args)
 			}
 			if part.FunctionResponse != nil {
 				sawStreamedText = false
-				fmt.Fprintf(os.Stderr, "✓ tool: %s done\n", part.FunctionResponse.Name)
+				_, _ = fmt.Fprintf(os.Stderr, "✓ tool: %s done\n", part.FunctionResponse.Name)
 				log.ToolResult(ev.Author, part.FunctionResponse.Name, fmt.Sprintf("%v", part.FunctionResponse.Response))
 			}
 		}
@@ -449,7 +457,16 @@ func runJSON(ctx context.Context, ag *agent.Agent, sessionID, prompt string, log
 			log.Error(err.Error())
 			return fmt.Errorf("agent run: %w", err)
 		}
-		if ev == nil || ev.Content == nil {
+		if ev == nil {
+			continue
+		}
+		if ev.ErrorCode != "" {
+			msg := llmutil.ResponseErrorText(ev.ErrorCode, ev.ErrorMessage)
+			log.Error(msg)
+			_ = enc.Encode(jsonEvent{Type: "message_end"})
+			return fmt.Errorf("agent error: %s", msg)
+		}
+		if ev.Content == nil {
 			continue
 		}
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	claude "github.com/partio-io/claude-agent-sdk-go"
+	"github.com/partio-io/claude-agent-sdk-go"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 )
@@ -23,9 +23,9 @@ func TestName(t *testing.T) {
 
 func TestExtractUserMessage(t *testing.T) {
 	tests := []struct {
-		name     string
-		req      *model.LLMRequest
-		want     string
+		name string
+		req  *model.LLMRequest
+		want string
 	}{
 		{
 			name: "nil request",
@@ -124,10 +124,10 @@ func TestCanUseTool(t *testing.T) {
 	})
 
 	tests := []struct {
-		name     string
-		tool     string
-		input    map[string]any
-		want     string
+		name  string
+		tool  string
+		input map[string]any
+		want  string
 	}{
 		{
 			name:  "bash allowed command",
@@ -431,15 +431,29 @@ func TestResultToResponseAlwaysHasContent(t *testing.T) {
 	})
 
 	t.Run("error result", func(t *testing.T) {
+		text := "session failed to start"
 		resp := p.resultToResponse(&claude.ResultMessage{
 			Subtype: claude.ResultErrorMaxTurns,
 			IsError: true,
+			Result:  &text,
 		})
 		if resp.Content == nil {
 			t.Fatal("Content must not be nil even on error")
 		}
 		if resp.FinishReason != genai.FinishReasonOther {
 			t.Error("expected FinishReasonOther for error result")
+		}
+		if resp.ErrorCode != "CLI_ERROR" {
+			t.Fatalf("expected CLI_ERROR, got %q", resp.ErrorCode)
+		}
+		if resp.ErrorMessage == "" {
+			t.Fatal("expected non-empty ErrorMessage")
+		}
+		if resp.ErrorMessage != text {
+			t.Fatalf("expected result text to be preserved, got %q", resp.ErrorMessage)
+		}
+		if len(resp.Content.Parts) == 0 || resp.Content.Parts[0].Text == "" {
+			t.Fatal("expected visible error content")
 		}
 	})
 }

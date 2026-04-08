@@ -14,6 +14,8 @@ import (
 	anthropicopt "github.com/anthropics/anthropic-sdk-go/option"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
+
+	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
 const defaultMaxTokens int64 = 8192
@@ -331,8 +333,9 @@ func buildAntFinalResponse(s *antStreamState) *model.LLMResponse {
 
 func antRunStreaming(ctx context.Context, client *anthropic.Client, params anthropic.MessageNewParams, yield func(*model.LLMResponse, error) bool) {
 	stream := client.Messages.NewStreaming(ctx, params)
-	//nolint:errcheck // Close() may return error but we can't recover from it in defer
-	defer stream.Close()
+	defer func() {
+		_ = stream.Close()
+	}()
 
 	state := &antStreamState{toolUse: make(map[int]antToolUseAcc)}
 
@@ -392,7 +395,13 @@ func antRunStreaming(ctx context.Context, client *anthropic.Client, params anthr
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		_ = yield(&model.LLMResponse{ErrorCode: "STREAM_ERROR", ErrorMessage: err.Error()}, nil)
+		_ = yield(&model.LLMResponse{
+			ErrorCode:    "STREAM_ERROR",
+			ErrorMessage: llmutil.ResponseErrorText("STREAM_ERROR", err.Error()),
+			TurnComplete: true,
+			FinishReason: genai.FinishReasonOther,
+			Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("STREAM_ERROR", err.Error()), genai.RoleModel),
+		}, nil)
 		return
 	}
 

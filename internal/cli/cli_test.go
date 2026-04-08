@@ -74,6 +74,21 @@ func (m *cliErrorLLM) GenerateContent(_ context.Context, _ *model.LLMRequest, _ 
 	}
 }
 
+// cliResponseErrorLLM returns an LLMResponse with ErrorCode/ErrorMessage set.
+type cliResponseErrorLLM struct {
+	name    string
+	code    string
+	message string
+}
+
+func (m *cliResponseErrorLLM) Name() string { return m.name }
+
+func (m *cliResponseErrorLLM) GenerateContent(_ context.Context, _ *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		yield(&model.LLMResponse{ErrorCode: m.code, ErrorMessage: m.message}, nil)
+	}
+}
+
 // cliToolCallingLLM returns a FunctionCall on first call, then text.
 type cliToolCallingLLM struct {
 	name         string
@@ -123,11 +138,15 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	fn()
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close write end: %v", err)
+	}
 	os.Stdout = origStdout
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read captured stdout: %v", err)
+	}
 	return buf.String()
 }
 
@@ -143,11 +162,15 @@ func captureStderr(t *testing.T, fn func()) string {
 
 	fn()
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close write end: %v", err)
+	}
 	os.Stderr = origStderr
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read captured stderr: %v", err)
+	}
 	return buf.String()
 }
 
@@ -237,8 +260,7 @@ func TestPackageCommandLifecycle(t *testing.T) {
 
 func TestRootCmdNoPromptExitsCleanly(t *testing.T) {
 	// With API key set but no prompt in print mode, the CLI should exit cleanly.
-	os.Setenv("OPENAI_API_KEY", "test-key")
-	defer os.Unsetenv("OPENAI_API_KEY")
+	t.Setenv("OPENAI_API_KEY", "test-key")
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--model", "gpt-4o", "--mode", "print"})
@@ -257,13 +279,17 @@ func TestCLI_SmolFlag(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 	cfgDir := filepath.Join(tmpDir, ".pi-go")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
 		"roles": {
 			"default": {"model": "claude-sonnet-4-6"},
 			"smol": {"model": "gpt-4o-mini", "provider": "openai"}
 		}
-	}`), 0o644)
+	}`), 0o644); err != nil {
+		t.Fatalf("WriteFile config.json: %v", err)
+	}
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--smol", "--mode", "print"})
@@ -338,13 +364,11 @@ func TestRootCmdMissingAPIKey(t *testing.T) {
 
 func TestContinueNoSessionError(t *testing.T) {
 	// --continue with no previous sessions should error.
-	os.Setenv("OPENAI_API_KEY", "test-key")
-	defer os.Unsetenv("OPENAI_API_KEY")
+	t.Setenv("OPENAI_API_KEY", "test-key")
 
 	// Use a temp dir so there are no existing sessions.
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
-	defer os.Unsetenv("HOME")
+	t.Setenv("HOME", tmpDir)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--model", "gpt-4o", "--continue", "hello"})
@@ -387,7 +411,9 @@ func TestContinueResumesLastSession(t *testing.T) {
 func TestSessionFlagValue(t *testing.T) {
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--session", "my-session-id"})
-	_ = cmd.ParseFlags([]string{"--session", "my-session-id"})
+	if err := cmd.ParseFlags([]string{"--session", "my-session-id"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
 
 	val, err := cmd.Flags().GetString("session")
 	if err != nil {
@@ -432,7 +458,9 @@ func TestRunPrintTextOutput(t *testing.T) {
 func TestRunPrintToolStatusToStderr(t *testing.T) {
 	dir := t.TempDir()
 	testFile := filepath.Join(dir, "test.txt")
-	os.WriteFile(testFile, []byte("content"), 0o644)
+	if err := os.WriteFile(testFile, []byte("content"), 0o644); err != nil {
+		t.Fatalf("WriteFile test.txt: %v", err)
+	}
 
 	llm := &cliToolCallingLLM{
 		name: "test-print-tool",
@@ -448,7 +476,11 @@ func TestRunPrintToolStatusToStderr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSandbox: %v", err)
 	}
-	t.Cleanup(func() { sb.Close() })
+	t.Cleanup(func() {
+		if err := sb.Close(); err != nil {
+			t.Errorf("close sandbox: %v", err)
+		}
+	})
 
 	coreTools, err := tools.CoreTools(sb)
 	if err != nil {
@@ -490,6 +522,37 @@ func TestRunPrintStreamingFinalReplayDoesNotDuplicate(t *testing.T) {
 
 	if strings.Count(stdout, "Hello world") != 1 {
 		t.Fatalf("expected exactly one rendered reply, got %q", stdout)
+	}
+}
+
+func TestRunPrintReturnsErrorForErrorResponse(t *testing.T) {
+	llm := &cliResponseErrorLLM{name: "test-print-error-response", code: "STREAM_ERROR", message: "codex request failed"}
+	ag, sessionID := newTestAgent(t, llm)
+
+	err := runPrint(context.Background(), ag, sessionID, "Hello", nil)
+	if err == nil {
+		t.Fatal("expected runPrint to return an error")
+	}
+	if !strings.Contains(err.Error(), "codex request failed") {
+		t.Fatalf("expected codex error in %q", err)
+	}
+}
+
+func TestRunJSONReturnsErrorForErrorResponse(t *testing.T) {
+	llm := &cliResponseErrorLLM{name: "test-json-error-response", code: "STREAM_ERROR", message: "codex request failed"}
+	ag, sessionID := newTestAgent(t, llm)
+
+	stdout := captureStdout(t, func() {
+		err := runJSON(context.Background(), ag, sessionID, "Hello", nil)
+		if err == nil {
+			t.Fatal("expected runJSON to return an error")
+		}
+		if !strings.Contains(err.Error(), "codex request failed") {
+			t.Fatalf("expected codex error in %q", err)
+		}
+	})
+	if !strings.Contains(stdout, `"type":"message_end"`) {
+		t.Fatalf("expected message_end in JSON output, got %q", stdout)
 	}
 }
 
@@ -580,7 +643,9 @@ func TestRunJSONTextDelta(t *testing.T) {
 func TestRunJSONToolCallEvents(t *testing.T) {
 	dir := t.TempDir()
 	testFile := filepath.Join(dir, "test.txt")
-	os.WriteFile(testFile, []byte("file content"), 0o644)
+	if err := os.WriteFile(testFile, []byte("file content"), 0o644); err != nil {
+		t.Fatalf("WriteFile test.txt: %v", err)
+	}
 
 	llm := &cliToolCallingLLM{
 		name: "test-json-tool",
@@ -596,7 +661,11 @@ func TestRunJSONToolCallEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSandbox: %v", err)
 	}
-	t.Cleanup(func() { sb2.Close() })
+	t.Cleanup(func() {
+		if err := sb2.Close(); err != nil {
+			t.Errorf("close sandbox: %v", err)
+		}
+	})
 
 	coreTools, err := tools.CoreTools(sb2)
 	if err != nil {

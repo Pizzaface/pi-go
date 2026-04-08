@@ -82,6 +82,9 @@ func TestWrapModel_BlocksWhenLimitExceeded(t *testing.T) {
 		if !strings.Contains(resp.ErrorMessage, "daily token limit exceeded") {
 			t.Errorf("expected limit message, got %q", resp.ErrorMessage)
 		}
+		if resp.Content == nil || len(resp.Content.Parts) == 0 || !strings.Contains(resp.Content.Parts[0].Text, "daily token limit exceeded") {
+			t.Fatalf("expected visible error content, got %#v", resp.Content)
+		}
 	}
 }
 

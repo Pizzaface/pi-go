@@ -20,6 +20,8 @@ import (
 	"github.com/openai/openai-go/v3/shared/constant"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
+
+	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
 // openaiModel implements model.LLM for OpenAI-compatible APIs.
@@ -352,8 +354,9 @@ func oaiRunStreaming(ctx context.Context, client *openai.Client, params openai.C
 		IncludeUsage: param.NewOpt(true),
 	}
 	stream := client.Chat.Completions.NewStreaming(ctx, params)
-	//nolint:errcheck // Close() may return error but we can't recover from it in defer
-	defer stream.Close()
+	defer func() {
+		_ = stream.Close()
+	}()
 
 	state := &oaiStreamState{toolCalls: make(map[int64]map[string]any)}
 
@@ -390,7 +393,13 @@ func oaiRunStreaming(ctx context.Context, client *openai.Client, params openai.C
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		_ = yield(&model.LLMResponse{ErrorCode: "STREAM_ERROR", ErrorMessage: err.Error()}, nil)
+		_ = yield(&model.LLMResponse{
+			ErrorCode:    "STREAM_ERROR",
+			ErrorMessage: llmutil.ResponseErrorText("STREAM_ERROR", err.Error()),
+			TurnComplete: true,
+			FinishReason: genai.FinishReasonOther,
+			Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("STREAM_ERROR", err.Error()), genai.RoleModel),
+		}, nil)
 		return
 	}
 
@@ -404,7 +413,13 @@ func oaiRunNonStreaming(ctx context.Context, client *openai.Client, params opena
 		return
 	}
 	if len(completion.Choices) == 0 {
-		yield(&model.LLMResponse{ErrorCode: "API_ERROR", ErrorMessage: "no choices in response"}, nil)
+		yield(&model.LLMResponse{
+			ErrorCode:    "API_ERROR",
+			ErrorMessage: llmutil.ResponseErrorText("API_ERROR", "no choices in response"),
+			TurnComplete: true,
+			FinishReason: genai.FinishReasonOther,
+			Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("API_ERROR", "no choices in response"), genai.RoleModel),
+		}, nil)
 		return
 	}
 	choice := completion.Choices[0]

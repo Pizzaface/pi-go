@@ -12,6 +12,8 @@ import (
 	ollamaapi "github.com/ollama/ollama/api"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
+
+	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
 // ollamaModel implements model.LLM for the native Ollama API.
@@ -83,8 +85,6 @@ func (m *ollamaModel) GenerateContent(ctx context.Context, req *model.LLMRequest
 		}
 	}
 }
-
-
 
 // ollamaFinishReasonToGenai maps Ollama done_reason to genai.FinishReason.
 func ollamaFinishReasonToGenai(reason string) genai.FinishReason {
@@ -326,7 +326,13 @@ func ollamaRunStreaming(ctx context.Context, client *ollamaapi.Client, chatReq *
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		_ = yield(&model.LLMResponse{ErrorCode: "STREAM_ERROR", ErrorMessage: err.Error()}, nil)
+		_ = yield(&model.LLMResponse{
+			ErrorCode:    "STREAM_ERROR",
+			ErrorMessage: llmutil.ResponseErrorText("STREAM_ERROR", err.Error()),
+			TurnComplete: true,
+			FinishReason: genai.FinishReasonOther,
+			Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("STREAM_ERROR", err.Error()), genai.RoleModel),
+		}, nil)
 		return
 	}
 

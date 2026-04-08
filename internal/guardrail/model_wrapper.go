@@ -5,6 +5,9 @@ import (
 	"iter"
 
 	"google.golang.org/adk/model"
+	"google.golang.org/genai"
+
+	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
 // WrapModel wraps an LLM model to track token usage via the guardrail tracker.
@@ -32,7 +35,10 @@ func (g *guardedModel) GenerateContent(ctx context.Context, req *model.LLMReques
 		return func(yield func(*model.LLMResponse, error) bool) {
 			yield(&model.LLMResponse{
 				ErrorCode:    "DAILY_LIMIT_EXCEEDED",
-				ErrorMessage: err.Error(),
+				ErrorMessage: llmutil.ResponseErrorText("DAILY_LIMIT_EXCEEDED", err.Error()),
+				TurnComplete: true,
+				FinishReason: genai.FinishReasonOther,
+				Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("DAILY_LIMIT_EXCEEDED", err.Error()), genai.RoleModel),
 			}, nil)
 		}
 	}

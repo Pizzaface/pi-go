@@ -15,9 +15,11 @@ import (
 	"strings"
 	"sync"
 
-	claude "github.com/partio-io/claude-agent-sdk-go"
+	"github.com/partio-io/claude-agent-sdk-go"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
+
+	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
 // Config holds configuration for the Claude CLI provider.
@@ -509,9 +511,9 @@ func (p *Provider) resultToResponse(m *claude.ResultMessage) *model.LLMResponse 
 	// Store cost in custom metadata.
 	if m.TotalCostUSD != nil {
 		resp.CustomMetadata = map[string]any{
-			"total_cost_usd": *m.TotalCostUSD,
-			"num_turns":      m.NumTurns,
-			"duration_ms":    m.DurationMs,
+			"total_cost_usd":  *m.TotalCostUSD,
+			"num_turns":       m.NumTurns,
+			"duration_ms":     m.DurationMs,
 			"duration_api_ms": m.DurationAPIMs,
 		}
 		if m.Subtype != claude.ResultSuccess {
@@ -522,13 +524,17 @@ func (p *Provider) resultToResponse(m *claude.ResultMessage) *model.LLMResponse 
 	// Map error results.
 	if m.IsError {
 		resp.FinishReason = genai.FinishReasonOther
-		resp.ErrorMessage = fmt.Sprintf("Claude CLI error: %s", m.Subtype)
+		resp.ErrorCode = "CLI_ERROR"
+		msg := fmt.Sprintf("Claude CLI error: %s", m.Subtype)
+		if m.Result != nil && strings.TrimSpace(*m.Result) != "" {
+			msg = strings.TrimSpace(*m.Result)
+		}
+		resp.ErrorMessage = llmutil.ResponseErrorText("CLI_ERROR", msg)
+		resp.Content = genai.NewContentFromText(llmutil.ResponseErrorDisplayText("CLI_ERROR", resp.ErrorMessage), genai.RoleModel)
 	}
 
 	return resp
 }
-
-
 
 // extractUserMessage finds the last user message text from ADK request contents.
 func extractUserMessage(req *model.LLMRequest) string {
