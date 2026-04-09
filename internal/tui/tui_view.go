@@ -56,8 +56,13 @@ func (m *model) View() tea.View {
 		widgetBelowLines = strings.Count(widgetBelow, "\n") + 1
 	}
 
+	queueIndicatorLines := 0
+	if m.running && m.renderQueueIndicator() != "" {
+		queueIndicatorLines = 1
+	}
+
 	availableHeight := m.height - statusLines - inputLines - 2
-	availableHeight -= widgetAboveLines + widgetBelowLines
+	availableHeight -= widgetAboveLines + widgetBelowLines + queueIndicatorLines
 	if m.chatModel.Scroll > 0 {
 		availableHeight--
 	}
@@ -133,6 +138,15 @@ func (m *model) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString(statusBar)
 	b.WriteString("\n")
+
+	// Queue indicator for steering/follow-up messages.
+	if m.running {
+		queueLine := m.renderQueueIndicator()
+		if queueLine != "" {
+			b.WriteString(queueLine)
+			b.WriteString("\n")
+		}
+	}
 	if widgetAbove != "" {
 		b.WriteString(widgetAbove)
 		b.WriteString("\n")
@@ -178,6 +192,7 @@ func (m *model) View() tea.View {
 
 	v := tea.NewView(final)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
@@ -193,6 +208,29 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderQueueIndicator renders a status line showing queued steering/follow-up counts.
+func (m *model) renderQueueIndicator() string {
+	sc := m.messageQueue.SteeringCount()
+	fc := m.messageQueue.FollowUpCount()
+	if sc == 0 && fc == 0 {
+		return ""
+	}
+
+	steerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	followStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("183"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	var parts []string
+	if sc > 0 {
+		parts = append(parts, steerStyle.Render(fmt.Sprintf("⚡%d steering", sc)))
+	}
+	if fc > 0 {
+		parts = append(parts, followStyle.Render(fmt.Sprintf("📋%d follow-up", fc)))
+	}
+
+	return dimStyle.Render("  queued: ") + strings.Join(parts, dimStyle.Render(" · "))
 }
 
 func (m *model) debugTraceWidth() int {

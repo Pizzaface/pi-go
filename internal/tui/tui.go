@@ -91,6 +91,13 @@ type model struct {
 	// Setup alert modal (shown when no model is configured).
 	setupAlert bool
 
+	// Message queue for steering and follow-up messages submitted while running.
+	messageQueue MessageQueue
+
+	// steeringNotify signals the agent loop that a steering message is available.
+	// Buffered channel of size 1; the agent loop selects on this between tool rounds.
+	steeringNotify chan struct{}
+
 	// Quit.
 	quitting bool
 	initErr  error // fatal init error → propagated from Run()

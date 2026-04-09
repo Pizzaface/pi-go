@@ -57,13 +57,12 @@ func TestUpdatePasteMsgWhileRunning(t *testing.T) {
 		chatModel:  ChatModel{Messages: make([]message, 0)},
 	}
 
-	originalText := m.inputModel.Text
 	newM, _ := m.Update(tea.PasteMsg{Content: "pasted text"})
 	mm := newM.(*model)
 
-	// Paste should be ignored when running
-	if mm.inputModel.Text != originalText {
-		t.Error("paste should be ignored when agent is running")
+	// Paste should be allowed when running (for steering/follow-up input).
+	if mm.inputModel.Text != "pasted text" {
+		t.Errorf("paste should work when running for steering, got %q", mm.inputModel.Text)
 	}
 }
 

@@ -44,7 +44,7 @@ func (m *model) handleGlobalKey(msg tea.KeyPressMsg, key tea.Key) (tea.Model, te
 		return m, nil
 	}
 
-	if m.running || m.loading {
+	if m.loading {
 		return m, nil
 	}
 
@@ -71,9 +71,21 @@ func (m *model) handleGlobalKey(msg tea.KeyPressMsg, key tea.Key) (tea.Model, te
 	case tea.KeyPgDown:
 		m.chatModel.ScrollDown(5)
 		return m, nil
+	case tea.KeyHome:
+		if key.Mod == tea.ModShift {
+			// Shift+Home: scroll to top of chat.
+			m.chatModel.ScrollUp(m.chatModel.MaxScroll(m.height), m.height)
+			return m, nil
+		}
+	case tea.KeyEnd:
+		if key.Mod == tea.ModShift {
+			// Shift+End: scroll to bottom of chat.
+			m.chatModel.Scroll = 0
+			return m, nil
+		}
 	}
 
-	cmd := m.inputModel.HandleKey(msg)
+	cmd := m.inputModel.HandleKey(msg, m.running)
 	if key.Text == "/" && m.inputModel.Text == "/" && m.slashOverlay == nil {
 		m.openSlashCommandOverlay()
 	}

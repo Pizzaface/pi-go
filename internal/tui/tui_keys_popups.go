@@ -131,7 +131,7 @@ func (m *model) handleSlashOverlayKey(msg tea.KeyPressMsg, key tea.Key) (bool, t
 	case key.Code == tea.KeyTab:
 		return true, m, nil
 	default:
-		cmd := m.inputModel.HandleKey(msg)
+		cmd := m.inputModel.HandleKey(msg, m.running)
 		if m.inputModel.Text != "/" {
 			m.slashOverlay = nil
 		}

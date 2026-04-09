@@ -75,7 +75,16 @@ func (m *model) cancelAgent() {
 		}(m.agentCh)
 		m.agentCh = nil
 	}
+	m.steeringNotify = nil
+	m.messageQueue.Clear()
 }
+
+// steeringCheckMsg is sent by the agent loop when it detects steering messages.
+type steeringCheckMsg struct {
+	messages []QueuedMessage
+}
+
+func (steeringCheckMsg) agentMsg() {}
 
 // submitPrompt sends a user prompt to the agent.
 func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd) {
@@ -132,12 +141,16 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 	runCtx, runCancel := context.WithCancel(parentCtx)
 	m.runCancel = runCancel
 	m.agentCh = make(chan agentMsg, 64)
+	m.steeringNotify = make(chan struct{}, 1)
+	m.messageQueue.Clear()
 	go m.runAgentLoop(runCtx, promptText)
 
 	return m, waitForAgent(m.agentCh)
 }
 
 // runAgentLoop runs the agent and sends events to the channel.
+// It checks for steering messages between tool rounds and re-dispatches
+// them as new user messages in the same session.
 func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 	defer close(m.agentCh)
 	defer func() {
@@ -155,67 +168,96 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 	}
 
 	log := m.cfg.Logger
+	currentPrompt := prompt
 
-	// Trace: mark that we're dispatching to the LLM provider.
-	m.agentCh <- agentTraceMsg{entry: traceEntry{
-		time: time.Now(), kind: "request_sent",
-		summary: fmt.Sprintf("Request dispatched → %s", m.cfg.ModelName),
-		detail:  fmt.Sprintf("session=%s prompt_len=%d", m.cfg.SessionID, len(prompt)),
-	}}
+	for {
+		// Trace: mark that we're dispatching to the LLM provider.
+		m.agentCh <- agentTraceMsg{entry: traceEntry{
+			time: time.Now(), kind: "request_sent",
+			summary: fmt.Sprintf("Request dispatched → %s", m.cfg.ModelName),
+			detail:  fmt.Sprintf("session=%s prompt_len=%d", m.cfg.SessionID, len(currentPrompt)),
+		}}
 
-	for ev, err := range m.cfg.Agent.RunStreaming(runCtx, m.cfg.SessionID, prompt) {
-		if err != nil {
-			if log != nil {
-				log.Error(err.Error())
+		sawToolResult := false
+		for ev, err := range m.cfg.Agent.RunStreaming(runCtx, m.cfg.SessionID, currentPrompt) {
+			if err != nil {
+				if log != nil {
+					log.Error(err.Error())
+				}
+				m.agentCh <- agentDoneMsg{err: err}
+				return
 			}
-			m.agentCh <- agentDoneMsg{err: err}
-			return
-		}
-		if ev == nil {
-			continue
-		}
-		if ev.ErrorCode != "" {
-			errMsg := fmt.Errorf("%s", llmutil.ResponseErrorText(ev.ErrorCode, ev.ErrorMessage))
-			if log != nil {
-				log.Error(errMsg.Error())
-			}
-			m.agentCh <- agentDoneMsg{err: errMsg}
-			return
-		}
-		if ev.Content == nil {
-			continue
-		}
-		for _, part := range ev.Content.Parts {
-			if part.Text != "" && ev.Content.Role == "thinking" {
-				m.agentCh <- agentThinkingMsg{text: part.Text}
+			if ev == nil {
 				continue
 			}
-			if part.Text != "" {
+			if ev.ErrorCode != "" {
+				errMsg := fmt.Errorf("%s", llmutil.ResponseErrorText(ev.ErrorCode, ev.ErrorMessage))
 				if log != nil {
-					log.LLMText(ev.Author, part.Text)
+					log.Error(errMsg.Error())
 				}
-				m.agentCh <- agentTextMsg{text: part.Text, partial: ev.Partial}
+				m.agentCh <- agentDoneMsg{err: errMsg}
+				return
 			}
-			if part.FunctionCall != nil {
-				if log != nil {
-					log.ToolCall(ev.Author, part.FunctionCall.Name, part.FunctionCall.Args)
-				}
-				m.agentCh <- agentToolCallMsg{
-					name: part.FunctionCall.Name,
-					args: part.FunctionCall.Args,
-				}
+			if ev.Content == nil {
+				continue
 			}
-			if part.FunctionResponse != nil {
-				respJSON, _ := json.Marshal(part.FunctionResponse.Response)
-				if log != nil {
-					log.ToolResult(ev.Author, part.FunctionResponse.Name, string(respJSON))
+			for _, part := range ev.Content.Parts {
+				if part.Text != "" && ev.Content.Role == "thinking" {
+					m.agentCh <- agentThinkingMsg{text: part.Text}
+					continue
 				}
-				m.agentCh <- agentToolResultMsg{
-					name:    part.FunctionResponse.Name,
-					content: string(respJSON),
+				if part.Text != "" {
+					if log != nil {
+						log.LLMText(ev.Author, part.Text)
+					}
+					m.agentCh <- agentTextMsg{text: part.Text, partial: ev.Partial}
+				}
+				if part.FunctionCall != nil {
+					if log != nil {
+						log.ToolCall(ev.Author, part.FunctionCall.Name, part.FunctionCall.Args)
+					}
+					m.agentCh <- agentToolCallMsg{
+						name: part.FunctionCall.Name,
+						args: part.FunctionCall.Args,
+					}
+				}
+				if part.FunctionResponse != nil {
+					respJSON, _ := json.Marshal(part.FunctionResponse.Response)
+					if log != nil {
+						log.ToolResult(ev.Author, part.FunctionResponse.Name, string(respJSON))
+					}
+					m.agentCh <- agentToolResultMsg{
+						name:    part.FunctionResponse.Name,
+						content: string(respJSON),
+					}
+					sawToolResult = true
 				}
 			}
 		}
+
+		// After the run finishes, check for pending steering messages.
+		// If there are any, send them as new user messages in the same session.
+		if sawToolResult && m.messageQueue.HasSteering() {
+			steeringMsgs := m.messageQueue.DrainSteering()
+			var combined strings.Builder
+			for i, sm := range steeringMsgs {
+				if i > 0 {
+					combined.WriteString("\n\n")
+				}
+				combined.WriteString(sm.Text)
+			}
+			currentPrompt = combined.String()
+
+			m.agentCh <- agentTraceMsg{entry: traceEntry{
+				time: time.Now(), kind: "request_sent",
+				summary: fmt.Sprintf("Steering injected (%d messages)", len(steeringMsgs)),
+				detail:  currentPrompt,
+			}}
+			continue // Loop back to dispatch the steering as a new prompt.
+		}
+
+		// No steering — done.
+		break
 	}
 
 	// Trace: mark request completion.
@@ -359,6 +401,41 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 	return m, waitForAgent(m.agentCh)
 }
 
+// handleSteeringSubmit queues a steering message to be injected into the agent loop.
+func (m *model) handleSteeringSubmit(msg SteeringSubmitMsg) (tea.Model, tea.Cmd) {
+	m.messageQueue.QueueSteering(msg.Text, msg.Mentions)
+	// Show the steering message in chat as a dimmed user message.
+	steerLabel := "⚡ "
+	m.chatModel.Messages = append(m.chatModel.Messages, message{
+		role:    "user",
+		content: steerLabel + msg.Text,
+	})
+	m.chatModel.Scroll = 0
+	// Signal the agent loop that steering is available.
+	if m.steeringNotify != nil {
+		select {
+		case m.steeringNotify <- struct{}{}:
+		default:
+		}
+	}
+	return m, nil
+}
+
+// handleFollowUpSubmit queues a follow-up message for after the agent finishes.
+func (m *model) handleFollowUpSubmit(msg FollowUpSubmitMsg) (tea.Model, tea.Cmd) {
+	m.messageQueue.QueueFollowUp(msg.Text, msg.Mentions)
+	// Show queued indicator in chat.
+	followLabel := "📋 "
+	dimStyle := "\033[2m"
+	resetStyle := "\033[0m"
+	m.chatModel.Messages = append(m.chatModel.Messages, message{
+		role:    "user",
+		content: followLabel + dimStyle + "(queued follow-up) " + msg.Text + resetStyle,
+	})
+	m.chatModel.Scroll = 0
+	return m, nil
+}
+
 // handleAgentDone processes an agentDoneMsg.
 func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	m.running = false
@@ -384,6 +461,13 @@ func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	m.chatModel.Thinking = ""
 	m.runCancel = nil
 	m.agentCh = nil
+	m.steeringNotify = nil
 	m.refreshDiffStats()
+
+	// Check for queued follow-up messages. Drain one and auto-submit it.
+	if followUp, ok := m.messageQueue.DrainOneFollowUp(); ok {
+		return m.submitPrompt(followUp.Text, followUp.Mentions)
+	}
+
 	return m, nil
 }

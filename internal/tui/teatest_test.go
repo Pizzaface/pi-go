@@ -59,14 +59,14 @@ func TestUpdate_PasteMsg(t *testing.T) {
 	}
 }
 
-func TestUpdate_PasteMsg_IgnoredWhenRunning(t *testing.T) {
+func TestUpdate_PasteMsg_AllowedWhenRunning(t *testing.T) {
 	m := newTestModel(t)
 	m.running = true
 	m.inputModel.Text = "before"
 	m.inputModel.CursorPos = 6
 	m.Update(tea.PasteMsg{Content: "paste"})
-	if m.inputModel.Text != "before" {
-		t.Errorf("expected input unchanged when running, got %q", m.inputModel.Text)
+	if m.inputModel.Text != "beforepaste" {
+		t.Errorf("expected paste to work when running for steering, got %q", m.inputModel.Text)
 	}
 }
 
@@ -399,8 +399,8 @@ func TestRenderInput_Running(t *testing.T) {
 	m := newTestModel(t)
 	m.running = true
 	out := m.inputModel.View(m.running)
-	if !contains(out, "waiting") {
-		t.Error("expected 'waiting' in running state")
+	if !contains(out, "steer") {
+		t.Error("expected steering hint in running state with empty input")
 	}
 }
 
@@ -525,7 +525,7 @@ func TestView_SlashOverlayDoesNotChangeRenderedLineCount(t *testing.T) {
 // testSubmit simulates pressing Enter: InputModel handles the key, then
 // if it returns an InputSubmitMsg, the root model processes it.
 func (m *model) testSubmit() (tea.Model, tea.Cmd) {
-	cmd := m.inputModel.HandleKey(makeKey(tea.KeyEnter))
+	cmd := m.inputModel.HandleKey(makeKey(tea.KeyEnter), m.running)
 	if cmd != nil {
 		msg := cmd()
 		if msg != nil {
@@ -652,13 +652,14 @@ func TestHandleKey_Esc_DismissCycling(t *testing.T) {
 	}
 }
 
-func TestHandleKey_IgnoresWhenRunning(t *testing.T) {
+func TestHandleKey_AllowsInputWhenRunning(t *testing.T) {
 	m := newTestModel(t)
 	m.running = true
 	m.inputModel.Text = "before"
+	m.inputModel.CursorPos = 6
 	m.handleKey(makeTextKey("x"))
-	if m.inputModel.Text != "before" {
-		t.Error("expected input unchanged when running")
+	if m.inputModel.Text != "beforex" {
+		t.Errorf("expected input to accept typing when running, got %q", m.inputModel.Text)
 	}
 }
 

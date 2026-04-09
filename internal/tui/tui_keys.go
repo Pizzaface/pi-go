@@ -8,6 +8,15 @@ func (m *model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	if msg.Button == tea.MouseWheelUp {
+		m.chatModel.ScrollUp(3, m.height)
+	} else if msg.Button == tea.MouseWheelDown {
+		m.chatModel.ScrollDown(3)
+	}
+	return m, nil
+}
+
 func (m *model) toggleDebugPanel() {
 	m.debugPanel = !m.debugPanel
 	mainWidth := m.layoutMainWidth()

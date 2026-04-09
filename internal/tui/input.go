@@ -16,6 +16,18 @@ type InputSubmitMsg struct {
 	Mentions []string // file paths referenced via @path
 }
 
+// SteeringSubmitMsg is emitted when the user presses Enter while agent is running.
+type SteeringSubmitMsg struct {
+	Text     string
+	Mentions []string
+}
+
+// FollowUpSubmitMsg is emitted when the user presses Alt+Enter while agent is running.
+type FollowUpSubmitMsg struct {
+	Text     string
+	Mentions []string
+}
+
 // InputModel manages the text input area: cursor, history, and completion.
 type InputModel struct {
 	Text       string
@@ -62,8 +74,22 @@ func NewInputModel(history []HistoryEntry, skills []extension.Skill, skillDirs [
 
 // HandleKey processes a key press for the input area.
 // Returns a tea.Cmd (InputSubmitMsg on submit, nil otherwise).
-func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
+// When running is true, Enter queues a steering message and Alt+Enter queues a follow-up.
+func (im *InputModel) HandleKey(msg tea.KeyPressMsg, running bool) tea.Cmd {
 	key := msg.Key()
+
+	// Alt+Enter: follow-up submission (only while running).
+	if key.Code == tea.KeyEnter && key.Mod == tea.ModAlt && running {
+		text := strings.TrimSpace(im.Text)
+		if text == "" {
+			return nil
+		}
+		mentions := extractMentions(text)
+		im.addToHistory(text, mentions)
+		im.Text = ""
+		im.CursorPos = 0
+		return func() tea.Msg { return FollowUpSubmitMsg{Text: text, Mentions: mentions} }
+	}
 
 	switch {
 	case key.Code == tea.KeyEnter:
@@ -97,20 +123,18 @@ func (im *InputModel) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			im.SelectedIndex = 0
 			return nil
 		}
-		// Submit.
+		// Submit — steering if running, normal otherwise.
 		text := strings.TrimSpace(im.Text)
 		if text == "" {
 			return nil
 		}
 		mentions := extractMentions(text)
-		entry := HistoryEntry{Text: text, Mentions: mentions}
-		if len(im.History) == 0 || im.History[len(im.History)-1].Text != text {
-			im.History = append(im.History, entry)
-			appendHistory(entry)
-		}
-		im.HistoryIdx = -1
+		im.addToHistory(text, mentions)
 		im.Text = ""
 		im.CursorPos = 0
+		if running {
+			return func() tea.Msg { return SteeringSubmitMsg{Text: text, Mentions: mentions} }
+		}
 		return func() tea.Msg { return InputSubmitMsg{Text: text, Mentions: mentions} }
 
 	case key.Code == tea.KeyTab && key.Mod == tea.ModShift:
@@ -309,9 +333,18 @@ func (im *InputModel) View(running bool) string {
 		Bold(true).
 		Render("> ")
 
-	if running {
+	if running && im.Text == "" {
+		// Show hint for steering/follow-up when input is empty and agent is running.
 		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-		return prefix + dim.Render("(waiting for response...)")
+		steerHint := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("Enter")
+		followHint := lipgloss.NewStyle().Foreground(lipgloss.Color("183")).Render("Alt+Enter")
+		cursor := lipgloss.NewStyle().
+			Background(lipgloss.Color("252")).
+			Foreground(lipgloss.Color("0")).
+			Render(" ")
+		return prefix + cursor + dim.Render(" type to steer (") +
+			steerHint + dim.Render(") or follow up (") +
+			followHint + dim.Render(")")
 	}
 
 	before := im.Text[:im.CursorPos]
@@ -464,6 +497,16 @@ func (im *InputModel) DismissCompletion() {
 	im.dismissMention()
 	im.Text = ""
 	im.CursorPos = 0
+}
+
+// addToHistory appends an entry if it differs from the last one.
+func (im *InputModel) addToHistory(text string, mentions []string) {
+	entry := HistoryEntry{Text: text, Mentions: mentions}
+	if len(im.History) == 0 || im.History[len(im.History)-1].Text != text {
+		im.History = append(im.History, entry)
+		appendHistory(entry)
+	}
+	im.HistoryIdx = -1
 }
 
 // restoreHistoryEntry restores full input state from a history entry.

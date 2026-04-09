@@ -16,7 +16,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusModel.Width = mainWidth
 		m.chatModel.UpdateRenderer(mainWidth)
 	case tea.PasteMsg:
-		if !m.running {
+		if !m.loading {
 			m.inputModel.InsertText(msg.Content)
 		}
 	case tea.KeyPressMsg:
@@ -25,6 +25,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.MouseClickMsg:
 			return m.handleMouseClick(msg)
+		case tea.MouseWheelMsg:
+			return m.handleMouseWheel(msg)
 		}
 		return m, nil
 	case InputSubmitMsg:
@@ -32,6 +34,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleSlashCommand(msg.Text)
 		}
 		return m.submitPrompt(msg.Text, msg.Mentions)
+	case SteeringSubmitMsg:
+		return m.handleSteeringSubmit(msg)
+	case FollowUpSubmitMsg:
+		return m.handleFollowUpSubmit(msg)
 	case initEventMsg:
 		return m.handleInitEvent(msg)
 	case extensionIntentMsg:
