@@ -174,7 +174,8 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 	var row2Left []string
 	var row2Right []string
 
-	// Left: context bar + token usage.
+	// Left: context bar + token usage — only show when the provider has
+	// reported actual context window usage (no inaccurate guesswork).
 	if tt := in.TokenTracker; tt != nil && tt.ContextUsed() > 0 {
 		ctxUsed := tt.ContextUsed()
 		ctxLimit := tt.ContextLimit()
@@ -183,24 +184,6 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 			row2Left = append(row2Left, " "+renderContextBar(pct, bg))
 		} else {
 			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: %s", formatTokenCount(ctxUsed))))
-		}
-	} else {
-		// Fallback: rough context size estimate (~4 chars per token).
-		// Only count messages with actual content (skip empty placeholders).
-		ctxChars := 0
-		for _, msg := range in.Messages {
-			c := len(msg.content) + len(msg.tool) + len(msg.toolIn)
-			if c > 0 && (msg.role == "user" || msg.role == "assistant" || msg.role == "tool") {
-				ctxChars += c
-			}
-		}
-		if ctxChars > 0 {
-			ctxTokens := ctxChars / 4
-			if ctxTokens >= 1000 {
-				row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: ~%.1fk", float64(ctxTokens)/1000)))
-			} else {
-				row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: ~%d", ctxTokens)))
-			}
 		}
 	}
 
