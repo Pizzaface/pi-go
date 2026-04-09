@@ -184,7 +184,7 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		} else {
 			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: %s", formatTokenCount(ctxUsed))))
 		}
-	} else {
+	} else if len(in.Messages) > 0 {
 		// Fallback: rough context size estimate (~4 chars per token).
 		ctxChars := 0
 		for _, msg := range in.Messages {
@@ -193,7 +193,7 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 		ctxTokens := ctxChars / 4
 		if ctxTokens >= 1000 {
 			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: ~%.1fk", float64(ctxTokens)/1000)))
-		} else {
+		} else if ctxTokens > 0 {
 			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: ~%d", ctxTokens)))
 		}
 	}
