@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // StatusModel manages the status bar display at the bottom of the TUI.
@@ -79,7 +80,24 @@ func renderContextBar(pct float64, bg color.Color) string {
 		pctStyle.Render(fmt.Sprintf(" %.0f%%", pct))
 }
 
-// Render renders the status bar string.
+// padRow renders a left + right pair as a single full-width row with bg fill.
+// Any remaining space between them is filled with bg-colored spaces.
+func padRow(left, right string, width int, bg color.Color) string {
+	leftW := ansi.StringWidth(left)
+	rightW := ansi.StringWidth(right)
+	gap := width - leftW - rightW
+	if gap < 1 {
+		gap = 1
+	}
+	fill := lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", gap))
+	return left + fill + right
+}
+
+// Render renders the footer as a two-row table: left-aligned and right-aligned
+// content on each row, with a full-width background.
+//
+//	Row 1:  ⎇ branch (+N -N)                    • (provider) model • effort
+//	Row 2:  ctx ████░░░░ 42%  tokens: 1.2k/5M         ⚡ tool (1.2s)
 func (s *StatusModel) Render(in StatusRenderInput) string {
 	bg := lipgloss.Color("236")
 	fg := lipgloss.Color("252")
@@ -87,93 +105,36 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 
 	bright := lipgloss.NewStyle().Background(bg).Foreground(fg)
 	dim := lipgloss.NewStyle().Background(bg).Foreground(dimFg)
-	bar := lipgloss.NewStyle().Background(bg).Width(s.Width)
+	accent := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("39"))
+	dot := dim.Render(" • ")
 
-	sep := dim.Render(" · ")
-
-	var parts []string
-
-	// Loading progress (replaces normal status content during init).
+	// --- Loading state (single row) ---
 	if in.LoadingItems != nil {
 		var items []string
 		for _, name := range sortedKeys(in.LoadingItems) {
 			if in.LoadingItems[name] {
-				okStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35")) // green
-				items = append(items, okStyle.Render(name+" \u2713"))
+				okStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35"))
+				items = append(items, okStyle.Render(name+" ✓"))
 			} else {
-				loadStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")) // orange
+				loadStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214"))
 				items = append(items, loadStyle.Render(name+"..."))
 			}
 		}
-		parts = append(parts, dim.Render("loading: ")+strings.Join(items, dim.Render(" ")))
-		return bar.Render(strings.Join(parts, sep))
+		content := dim.Render(" loading: ") + strings.Join(items, dim.Render(" "))
+		return padRow(content, "", s.Width, bg)
 	}
 
-	// Full-width footer status bar.
+	// ═══════════════════════════════════════════════════
+	// Row 1: branch/diff (left)  ·  provider model effort (right)
+	// ═══════════════════════════════════════════════════
 
-	// Provider | Model.
-	if in.ProviderName != "" {
-		parts = append(parts, bright.Render(fmt.Sprintf("%s %s", in.ProviderName, in.ModelName)))
-	} else {
-		parts = append(parts, bright.Render(in.ModelName))
-	}
+	var row1Left []string
+	var row1Right []string
 
-	// Context % bar — prefer actual provider-reported context usage.
-	if tt := in.TokenTracker; tt != nil && tt.ContextUsed() > 0 {
-		ctxUsed := tt.ContextUsed()
-		ctxLimit := tt.ContextLimit()
-		if ctxLimit > 0 {
-			pct := float64(ctxUsed) / float64(ctxLimit) * 100
-			parts = append(parts, renderContextBar(pct, bg))
-		} else {
-			parts = append(parts, dim.Render(fmt.Sprintf("ctx: %s", formatTokenCount(ctxUsed))))
-		}
-	} else {
-		// Fallback: rough context size estimate (~4 chars per token).
-		ctxChars := 0
-		for _, msg := range in.Messages {
-			ctxChars += len(msg.content) + len(msg.tool) + len(msg.toolIn)
-		}
-		ctxTokens := ctxChars / 4
-		switch {
-		case ctxTokens >= 1000:
-			parts = append(parts, dim.Render(fmt.Sprintf("ctx: ~%.1fk", float64(ctxTokens)/1000)))
-		default:
-			parts = append(parts, dim.Render(fmt.Sprintf("ctx: ~%d", ctxTokens)))
-		}
-	}
-
-	// Token usage (numeric): daily aggregate from provider.
-	if tt := in.TokenTracker; tt != nil {
-		total := tt.TotalUsed()
-		limit := tt.Limit()
-		if limit > 0 {
-			pct := tt.PercentUsed()
-			var tokenStyle lipgloss.Style
-			switch {
-			case pct >= 100:
-				tokenStyle = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196")) // red
-			case pct >= 80:
-				tokenStyle = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214")) // orange
-			default:
-				tokenStyle = dim
-			}
-			parts = append(parts, tokenStyle.Render(fmt.Sprintf("tokens: %s/%s",
-				formatTokenCount(total), formatTokenCount(limit))))
-		} else if total > 0 {
-			parts = append(parts, dim.Render(fmt.Sprintf("tokens: %s", formatTokenCount(total))))
-		}
-	}
-
-	// Effort level indicator.
-	if in.EffortLevel != "" && in.EffortLevel != "medium" {
-		effortStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("183"))
-		parts = append(parts, effortStyle.Render(fmt.Sprintf("⚡%s", in.EffortLevel)))
-	}
-
-	// Git branch and diff summary.
+	// Left: git branch + diff stats.
 	if s.GitBranch != "" {
-		parts = append(parts, bright.Render(fmt.Sprintf("⎇ %s", s.GitBranch)))
+		branchStr := accent.Render(fmt.Sprintf(" ⎇ %s", s.GitBranch))
+		row1Left = append(row1Left, branchStr)
 	}
 	if in.DiffAdded > 0 || in.DiffRemoved > 0 {
 		var diffParts []string
@@ -185,29 +146,106 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 			delStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196"))
 			diffParts = append(diffParts, delStyle.Render(fmt.Sprintf("-%d", in.DiffRemoved)))
 		}
-		parts = append(parts, strings.Join(diffParts, dim.Render(" ")))
+		row1Left = append(row1Left, strings.Join(diffParts, dim.Render(" ")))
 	}
 
-	// Active tools or thinking status.
+	// Right: provider · model · effort.
+	if in.ProviderName != "" {
+		row1Right = append(row1Right, dim.Render(fmt.Sprintf("(%s)", in.ProviderName)))
+	}
+	if in.ModelName != "" {
+		row1Right = append(row1Right, bright.Render(in.ModelName))
+	}
+	if in.EffortLevel != "" && in.EffortLevel != "medium" {
+		effortStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("183"))
+		row1Right = append(row1Right, effortStyle.Render(in.EffortLevel))
+	}
+
+	r1Left := strings.Join(row1Left, dim.Render("  "))
+	r1Right := strings.Join(row1Right, dot)
+	if r1Right != "" {
+		r1Right += " "
+	}
+
+	// ═══════════════════════════════════════════════════
+	// Row 2: context + tokens (left)  ·  activity (right)
+	// ═══════════════════════════════════════════════════
+
+	var row2Left []string
+	var row2Right []string
+
+	// Left: context bar + token usage.
+	if tt := in.TokenTracker; tt != nil && tt.ContextUsed() > 0 {
+		ctxUsed := tt.ContextUsed()
+		ctxLimit := tt.ContextLimit()
+		if ctxLimit > 0 {
+			pct := float64(ctxUsed) / float64(ctxLimit) * 100
+			row2Left = append(row2Left, " "+renderContextBar(pct, bg))
+		} else {
+			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: %s", formatTokenCount(ctxUsed))))
+		}
+	} else {
+		// Fallback: rough context size estimate (~4 chars per token).
+		ctxChars := 0
+		for _, msg := range in.Messages {
+			ctxChars += len(msg.content) + len(msg.tool) + len(msg.toolIn)
+		}
+		ctxTokens := ctxChars / 4
+		if ctxTokens >= 1000 {
+			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: ~%.1fk", float64(ctxTokens)/1000)))
+		} else {
+			row2Left = append(row2Left, dim.Render(fmt.Sprintf(" ctx: ~%d", ctxTokens)))
+		}
+	}
+
+	if tt := in.TokenTracker; tt != nil {
+		total := tt.TotalUsed()
+		limit := tt.Limit()
+		if limit > 0 {
+			pct := tt.PercentUsed()
+			var tokenStyle lipgloss.Style
+			switch {
+			case pct >= 100:
+				tokenStyle = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196"))
+			case pct >= 80:
+				tokenStyle = lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214"))
+			default:
+				tokenStyle = dim
+			}
+			row2Left = append(row2Left, tokenStyle.Render(fmt.Sprintf("%s/%s",
+				formatTokenCount(total), formatTokenCount(limit))))
+		} else if total > 0 {
+			row2Left = append(row2Left, dim.Render(formatTokenCount(total)))
+		}
+	}
+
+	// Right: active tool / thinking status + extension status.
 	if len(s.ActiveTools) > 1 {
-		// Multiple tools running in parallel.
 		var toolNames []string
 		for name := range s.ActiveTools {
 			toolNames = append(toolNames, name)
 		}
 		sort.Strings(toolNames)
-		parts = append(parts, bright.Render(fmt.Sprintf("tools[%d]: %s", len(toolNames), strings.Join(toolNames, ", "))))
+		toolStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35"))
+		row2Right = append(row2Right, toolStyle.Render(fmt.Sprintf("⚡ %s", strings.Join(toolNames, ", "))))
 	} else if s.ActiveTool != "" {
 		elapsed := time.Since(s.ToolStart).Truncate(time.Millisecond)
-		parts = append(parts, bright.Render(fmt.Sprintf("⚡ %s (%s)", s.ActiveTool, elapsed)))
+		toolStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35"))
+		row2Right = append(row2Right, toolStyle.Render(fmt.Sprintf("⚡ %s", s.ActiveTool))+dim.Render(fmt.Sprintf(" %s", elapsed)))
 	} else if in.Running {
-		parts = append(parts, dim.Render("thinking..."))
+		row2Right = append(row2Right, dim.Render("thinking..."))
 	}
-	if strings.TrimSpace(in.ExtensionStatus) != "" {
-		parts = append(parts, dim.Render(in.ExtensionStatus))
+	if ext := strings.TrimSpace(in.ExtensionStatus); ext != "" {
+		row2Right = append(row2Right, dim.Render(ext))
 	}
 
-	return bar.Render(strings.Join(parts, sep))
+	r2Left := strings.Join(row2Left, dot)
+	r2Right := strings.Join(row2Right, dot)
+	if r2Right != "" {
+		r2Right += " "
+	}
+
+	return padRow(r1Left, r1Right, s.Width, bg) + "\n" + padRow(r2Left, r2Right, s.Width, bg)
 }
 
 // sortedKeys returns map keys in sorted order.
