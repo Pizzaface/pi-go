@@ -136,7 +136,15 @@ func (m *model) View() tea.View {
 	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	b.WriteString(sepStyle.Render(strings.Repeat("─", mainWidth)))
 	b.WriteString("\n")
-	b.WriteString(statusBar)
+	if widgetAbove != "" {
+		b.WriteString(widgetAbove)
+		b.WriteString("\n")
+	}
+	b.WriteString(inputArea)
+	if widgetBelow != "" {
+		b.WriteString("\n")
+		b.WriteString(widgetBelow)
+	}
 	b.WriteString("\n")
 
 	// Queue indicator for steering/follow-up messages.
@@ -147,15 +155,7 @@ func (m *model) View() tea.View {
 			b.WriteString("\n")
 		}
 	}
-	if widgetAbove != "" {
-		b.WriteString(widgetAbove)
-		b.WriteString("\n")
-	}
-	b.WriteString(inputArea)
-	if widgetBelow != "" {
-		b.WriteString("\n")
-		b.WriteString(widgetBelow)
-	}
+	b.WriteString(statusBar)
 
 	leftPanel := b.String()
 	if m.cfg.Screen != nil {
