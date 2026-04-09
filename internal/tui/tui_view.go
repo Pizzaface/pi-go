@@ -39,21 +39,21 @@ func (m *model) View() tea.View {
 	debugTraceWidth := m.debugTraceWidth()
 	mainWidth := m.layoutMainWidth()
 
-	messagesView := m.chatModel.RenderMessages(m.running)
+	renderedMessages := lipgloss.NewStyle().Width(mainWidth).Render(m.chatModel.RenderMessages(m.running))
 	statusBar := padBlockWidth(m.statusModel.Render(m.statusRenderInput()), mainWidth)
 	inputArea := padBlockWidth(m.inputModel.View(m.running || m.loading), mainWidth)
 	widgetAbove := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetAbove), mainWidth)
 	widgetBelow := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetBelow), mainWidth)
 
-	statusLines := strings.Count(statusBar, "\n") + 1
-	inputLines := strings.Count(inputArea, "\n") + 1
+	statusLines := lipgloss.Height(statusBar)
+	inputLines := lipgloss.Height(inputArea)
 	widgetAboveLines := 0
 	if widgetAbove != "" {
-		widgetAboveLines = strings.Count(widgetAbove, "\n") + 1
+		widgetAboveLines = lipgloss.Height(widgetAbove)
 	}
 	widgetBelowLines := 0
 	if widgetBelow != "" {
-		widgetBelowLines = strings.Count(widgetBelow, "\n") + 1
+		widgetBelowLines = lipgloss.Height(widgetBelow)
 	}
 
 	queueIndicatorLines := 0
@@ -71,7 +71,7 @@ func (m *model) View() tea.View {
 		availableHeight = 1
 	}
 
-	msgLines := strings.Split(messagesView, "\n")
+	msgLines := strings.Split(renderedMessages, "\n")
 	totalLines := len(msgLines)
 	startLine := totalLines - availableHeight - m.chatModel.Scroll
 	if startLine < 0 {
@@ -89,8 +89,6 @@ func (m *model) View() tea.View {
 		visibleLineCount++
 	}
 
-	chatStyle := lipgloss.NewStyle().Width(mainWidth)
-	visibleMessages = chatStyle.Render(visibleMessages)
 	if m.slashOverlay != nil {
 		maxOverlayHeight := availableHeight - 1
 		if maxOverlayHeight < 1 {

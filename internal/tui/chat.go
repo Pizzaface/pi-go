@@ -124,7 +124,10 @@ func (c *ChatModel) MaxScroll(height int) int {
 		return 0
 	}
 	messagesView := c.RenderMessages(false)
-	totalLines := strings.Count(messagesView, "\n") + 1
+	if c.Width > 0 {
+		messagesView = lipgloss.NewStyle().Width(c.Width).Render(messagesView)
+	}
+	totalLines := lipgloss.Height(messagesView)
 
 	availableHeight := height - 3
 	if availableHeight < 1 {

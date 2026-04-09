@@ -522,6 +522,29 @@ func TestView_SlashOverlayDoesNotChangeRenderedLineCount(t *testing.T) {
 	}
 }
 
+func TestView_LongThinkingWrapStillFitsTerminalHeight(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 40
+	m.height = 12
+	m.statusModel.Width = 40
+	m.chatModel.UpdateRenderer(40)
+	m.chatModel.Messages = append(m.chatModel.Messages,
+		message{role: "assistant", content: "short response"},
+		message{role: "thinking", content: strings.Repeat("very long thinking line ", 18)},
+	)
+
+	v := m.View()
+	if got := strings.Count(v.Content, "\n") + 1; got > m.height {
+		t.Fatalf("expected rendered view to fit terminal height %d, got %d lines\n%s", m.height, got, v.Content)
+	}
+	if !strings.Contains(v.Content, strings.Repeat("─", m.width)) {
+		t.Fatalf("expected separator to remain visible, got %q", v.Content)
+	}
+	if !strings.Contains(v.Content, "> ") {
+		t.Fatalf("expected input prompt to remain visible, got %q", v.Content)
+	}
+}
+
 // testSubmit simulates pressing Enter: InputModel handles the key, then
 // if it returns an InputSubmitMsg, the root model processes it.
 func (m *model) testSubmit() (tea.Model, tea.Cmd) {
@@ -1262,6 +1285,20 @@ func TestMaxScroll(t *testing.T) {
 	ms := m.chatModel.MaxScroll(m.height)
 	if ms < 0 {
 		t.Errorf("expected maxScroll >= 0, got %d", ms)
+	}
+}
+
+func TestMaxScroll_CountsWrappedThinkingLines(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 40
+	m.height = 12
+	m.chatModel.UpdateRenderer(40)
+	m.chatModel.Messages = append(m.chatModel.Messages,
+		message{role: "thinking", content: strings.Repeat("very long thinking line ", 18)},
+	)
+
+	if got := m.chatModel.MaxScroll(m.height); got <= 0 {
+		t.Fatalf("expected wrapped thinking to produce positive scroll range, got %d", got)
 	}
 }
 
