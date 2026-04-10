@@ -651,3 +651,68 @@ func TestWellKnownPathsUnix(t *testing.T) {
 		t.Errorf("expected .claude/local/claude in Unix paths: %v", paths)
 	}
 }
+
+func TestWithCleanAnthropicEnv(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test-original")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "tok-original")
+
+	var sawKey, sawTok string
+	var keyPresent, tokPresent bool
+	err := withCleanAnthropicEnv(func() error {
+		sawKey, keyPresent = os.LookupEnv("ANTHROPIC_API_KEY")
+		sawTok, tokPresent = os.LookupEnv("ANTHROPIC_AUTH_TOKEN")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("withCleanAnthropicEnv returned error: %v", err)
+	}
+
+	if keyPresent {
+		t.Errorf("ANTHROPIC_API_KEY leaked into fn: %q", sawKey)
+	}
+	if tokPresent {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN leaked into fn: %q", sawTok)
+	}
+
+	// Verify restore.
+	if got := os.Getenv("ANTHROPIC_API_KEY"); got != "sk-test-original" {
+		t.Errorf("ANTHROPIC_API_KEY not restored: got %q, want %q", got, "sk-test-original")
+	}
+	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "tok-original" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN not restored: got %q, want %q", got, "tok-original")
+	}
+}
+
+func TestWithCleanAnthropicEnv_NotSet(t *testing.T) {
+	// If the vars aren't set at all, the helper should be a no-op and
+	// must not leave empty-string entries behind after running.
+	os.Unsetenv("ANTHROPIC_API_KEY")
+	os.Unsetenv("ANTHROPIC_AUTH_TOKEN")
+
+	err := withCleanAnthropicEnv(func() error { return nil })
+	if err != nil {
+		t.Fatalf("withCleanAnthropicEnv returned error: %v", err)
+	}
+
+	if _, ok := os.LookupEnv("ANTHROPIC_API_KEY"); ok {
+		t.Error("ANTHROPIC_API_KEY was unexpectedly set after helper returned")
+	}
+	if _, ok := os.LookupEnv("ANTHROPIC_AUTH_TOKEN"); ok {
+		t.Error("ANTHROPIC_AUTH_TOKEN was unexpectedly set after helper returned")
+	}
+}
+
+func TestWithCleanAnthropicEnv_RestoresOnPanic(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-panic-test")
+
+	defer func() {
+		_ = recover()
+		if got := os.Getenv("ANTHROPIC_API_KEY"); got != "sk-panic-test" {
+			t.Errorf("env not restored after panic: got %q, want %q", got, "sk-panic-test")
+		}
+	}()
+
+	_ = withCleanAnthropicEnv(func() error {
+		panic("boom")
+	})
+}

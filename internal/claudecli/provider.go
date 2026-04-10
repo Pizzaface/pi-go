@@ -71,6 +71,53 @@ type Provider struct {
 	toolNames      map[string]string // tool_use ID → tool name, for matching results to calls
 }
 
+// anthropicEnvKeys are environment variables that Claude CLI reads to use an
+// "external" API key instead of its own stored OAuth credentials. We strip
+// them from the subprocess environment at spawn time so a stale key loaded
+// from ~/.pi-go/.env (used by the native anthropic provider) cannot hijack
+// the CLI's own auth flow.
+var anthropicEnvKeys = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
+
+// spawnEnvMu serializes process-environment manipulation around the Claude
+// CLI subprocess spawn. Without this, parallel spawns from multiple providers
+// could see an inconsistent environment.
+var spawnEnvMu sync.Mutex
+
+// withCleanAnthropicEnv temporarily unsets ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+// in the parent process environment, runs fn, then restores the previous values.
+// This lets Claude CLI fall back to its own stored credentials during spawn.
+//
+// Side note: this briefly affects *any* subprocess spawned concurrently by the
+// same pi-go process. That window is only as long as fn() runs, which in
+// practice is a few hundred milliseconds covering the CLI spawn and first
+// write. The alternative (passing a stale ANTHROPIC_API_KEY through) breaks
+// Claude CLI outright, so this tradeoff is worth it.
+func withCleanAnthropicEnv(fn func() error) error {
+	spawnEnvMu.Lock()
+	defer spawnEnvMu.Unlock()
+
+	type snapshot struct {
+		value string
+		had   bool
+	}
+	saved := make(map[string]snapshot, len(anthropicEnvKeys))
+	for _, k := range anthropicEnvKeys {
+		if v, ok := os.LookupEnv(k); ok {
+			saved[k] = snapshot{value: v, had: true}
+			_ = os.Unsetenv(k)
+		}
+	}
+	defer func() {
+		for k, s := range saved {
+			if s.had {
+				_ = os.Setenv(k, s.value)
+			}
+		}
+	}()
+
+	return fn()
+}
+
 // New creates a new Claude CLI provider.
 func New(cfg Config) *Provider {
 	return &Provider{config: cfg}
@@ -120,15 +167,29 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 			return
 		}
 
-		// Ensure session is started.
+		// Ensure session is started. NewSession itself does not spawn — the
+		// subprocess is spawned lazily on the first Send, which is why we
+		// wrap only that first Send in withCleanAnthropicEnv below.
+		firstSend := false
 		if p.session == nil {
 			p.session = claude.NewSession(p.buildOptions()...)
+			firstSend = true
 		}
 		session := p.session
 		p.mu.Unlock()
 
-		// Send the user message.
-		if err := session.Send(ctx, userText); err != nil {
+		// Send the user message. On the very first Send we strip
+		// ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the parent env so
+		// the spawned Claude CLI uses its own stored OAuth credentials
+		// rather than a (possibly-stale) key loaded from ~/.pi-go/.env.
+		sendFn := func() error { return session.Send(ctx, userText) }
+		var sendErr error
+		if firstSend {
+			sendErr = withCleanAnthropicEnv(sendFn)
+		} else {
+			sendErr = sendFn()
+		}
+		if err := sendErr; err != nil {
 			// Session may have died — reset so next call creates a fresh one.
 			p.mu.Lock()
 			if p.session == session {
