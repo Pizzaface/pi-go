@@ -34,6 +34,66 @@ func newTestModel(t *testing.T) *model {
 	}
 }
 
+func TestHelpers_LongWrappedThinkingScenario_KeepsBottomUIVisible(t *testing.T) {
+	m := newTestModel(t)
+	applyWindowSize(m, 40, 12)
+	addLongAssistant(m, 1, "short response")
+	addLongThinking(m, 18)
+
+	content := renderTestView(t, m)
+	assertViewFitsTerminal(t, m, content)
+	assertComposerVisible(t, content)
+	assertStatusSeparatorVisible(t, m, content)
+}
+
+func applyWindowSize(m *model, width, height int) {
+	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+}
+
+func sendKey(m *model, code rune) {
+	m.handleKey(makeKey(code))
+}
+
+func renderTestView(t *testing.T, m *model) string {
+	t.Helper()
+	return m.View().Content
+}
+
+func renderedHeight(view string) int {
+	return strings.Count(view, "\n") + 1
+}
+
+func assertViewFitsTerminal(t *testing.T, m *model, content string) {
+	t.Helper()
+	if got := renderedHeight(content); got > m.height {
+		t.Fatalf("expected rendered view to fit terminal height %d, got %d lines\n%s", m.height, got, content)
+	}
+}
+
+func assertComposerVisible(t *testing.T, content string) {
+	t.Helper()
+	if !strings.Contains(content, "> ") {
+		t.Fatalf("expected input prompt to remain visible, got %q", content)
+	}
+}
+
+func assertStatusSeparatorVisible(t *testing.T, m *model, content string) {
+	t.Helper()
+	if !strings.Contains(content, strings.Repeat("─", m.width)) {
+		t.Fatalf("expected separator to remain visible, got %q", content)
+	}
+}
+
+func addLongAssistant(m *model, count int, phrase string) {
+	for range count {
+		m.chatModel.Messages = append(m.chatModel.Messages, message{role: "assistant", content: strings.Repeat(phrase+" ", 18)})
+	}
+}
+
+func addLongThinking(m *model, repeats int) {
+	m.chatModel.Messages = append(m.chatModel.Messages, message{role: "thinking", content: strings.Repeat("very long thinking line ", repeats)})
+}
+
 // --- Update: WindowSizeMsg ---
 
 func TestUpdate_WindowSize(t *testing.T) {
@@ -524,25 +584,45 @@ func TestView_SlashOverlayDoesNotChangeRenderedLineCount(t *testing.T) {
 
 func TestView_LongThinkingWrapStillFitsTerminalHeight(t *testing.T) {
 	m := newTestModel(t)
-	m.width = 40
-	m.height = 12
-	m.statusModel.Width = 40
-	m.chatModel.UpdateRenderer(40)
+	applyWindowSize(m, 40, 12)
 	m.chatModel.Messages = append(m.chatModel.Messages,
 		message{role: "assistant", content: "short response"},
 		message{role: "thinking", content: strings.Repeat("very long thinking line ", 18)},
 	)
 
-	v := m.View()
-	if got := strings.Count(v.Content, "\n") + 1; got > m.height {
-		t.Fatalf("expected rendered view to fit terminal height %d, got %d lines\n%s", m.height, got, v.Content)
+	content := renderTestView(t, m)
+	assertViewFitsTerminal(t, m, content)
+	assertStatusSeparatorVisible(t, m, content)
+	assertComposerVisible(t, content)
+}
+
+func TestView_PgUpScrollKeepsBottomUIVisible(t *testing.T) {
+	m := newTestModel(t)
+	applyWindowSize(m, 40, 12)
+	addLongAssistant(m, 8, "wrapped assistant output")
+	addLongThinking(m, 18)
+
+	sendKey(m, tea.KeyPgUp)
+	content := renderTestView(t, m)
+	if m.chatModel.Scroll == 0 {
+		t.Fatal("expected PgUp to increase scroll")
 	}
-	if !strings.Contains(v.Content, strings.Repeat("─", m.width)) {
-		t.Fatalf("expected separator to remain visible, got %q", v.Content)
-	}
-	if !strings.Contains(v.Content, "> ") {
-		t.Fatalf("expected input prompt to remain visible, got %q", v.Content)
-	}
+	assertViewFitsTerminal(t, m, content)
+	assertStatusSeparatorVisible(t, m, content)
+	assertComposerVisible(t, content)
+}
+
+func TestView_ResizeAfterLongOutputStillFits(t *testing.T) {
+	m := newTestModel(t)
+	applyWindowSize(m, 80, 16)
+	addLongAssistant(m, 6, "resize scenario assistant output")
+	addLongThinking(m, 20)
+
+	applyWindowSize(m, 38, 12)
+	content := renderTestView(t, m)
+	assertViewFitsTerminal(t, m, content)
+	assertStatusSeparatorVisible(t, m, content)
+	assertComposerVisible(t, content)
 }
 
 // testSubmit simulates pressing Enter: InputModel handles the key, then

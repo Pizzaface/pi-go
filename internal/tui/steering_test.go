@@ -244,7 +244,8 @@ func TestCancelAgent_ClearsQueue(t *testing.T) {
 	m.messageQueue.QueueFollowUp("f1", nil)
 
 	// Drain channel to prevent goroutine leak.
-	go func() { close(m.agentCh) }()
+	ch := m.agentCh
+	go func() { close(ch) }()
 
 	m.cancelAgent()
 

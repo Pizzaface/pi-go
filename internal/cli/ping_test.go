@@ -288,7 +288,7 @@ func TestDefaultAPIBaseURL(t *testing.T) {
 		want     string
 	}{
 		{"anthropic", "https://api.anthropic.com"},
-		{"openai", "https://api.openai.com"},
+		{"openai", "https://api.openai.com/v1"},
 		{"gemini", "https://generativelanguage.googleapis.com"},
 		{"ollama", ""},
 		{"", ""},

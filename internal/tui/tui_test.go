@@ -962,18 +962,16 @@ func TestRenderStatusBar_WithoutProvider(t *testing.T) {
 
 func TestRenderStatusBar_ContextEstimate(t *testing.T) {
 	m := &model{
-		cfg:         Config{ModelName: "test"},
+		cfg: Config{
+			ModelName:    "test",
+			TokenTracker: &mockTokenTracker{contextUsed: 5000},
+		},
 		width:       120,
 		statusModel: StatusModel{Width: 120},
-		chatModel: ChatModel{
-			Messages: []message{
-				{content: strings.Repeat("a", 4000)}, // ~1k tokens
-			},
-		},
 	}
 	bar := m.statusModel.Render(m.statusRenderInput())
 	if !strings.Contains(bar, "ctx:") {
-		t.Errorf("status bar should show context estimate, got %q", bar)
+		t.Errorf("status bar should show provider-reported context usage, got %q", bar)
 	}
 }
 
