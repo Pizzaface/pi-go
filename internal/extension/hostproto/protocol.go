@@ -10,14 +10,44 @@ import (
 const (
 	JSONRPCVersion = "2.0"
 
-	ProtocolVersion = "1.0.0"
-	protocolMajor   = 1
+	ProtocolVersion = "2.0.0"
+	protocolMajor   = 2
 )
 
 const (
 	MethodHandshake = "pi.extension/handshake"
 	MethodShutdown  = "pi.extension/shutdown"
+	MethodHostCall  = "pi.extension/host_call"
+	MethodExtCall   = "pi.extension/ext_call"
 )
+
+// JSON-RPC error codes emitted by the host + SDK. These are stable and
+// documented as part of the protocol — do not change values.
+const (
+	ErrCodeMethodNotFound     = -32601 // unknown service or method
+	ErrCodeInvalidParams      = -32602 // payload unmarshal / validate failure
+	ErrCodeServiceError       = -32000 // handler returned an error
+	ErrCodeCapabilityDenied   = -32001 // service used without handshake declaration
+	ErrCodeServiceUnsupported = -32002 // host does not implement this service or version
+)
+
+// HostCallParams is the envelope for an ext→host RPC dispatched by the
+// services registry. Payload is service-defined JSON.
+type HostCallParams struct {
+	Service string          `json:"service"`
+	Method  string          `json:"method"`
+	Version int             `json:"version"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+// ExtCallParams is the mirror envelope: host→ext RPC. Same shape as
+// HostCallParams. Used for command invocations, sigil resolves, etc.
+type ExtCallParams struct {
+	Service string          `json:"service"`
+	Method  string          `json:"method"`
+	Version int             `json:"version"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
 
 type RPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
