@@ -151,3 +151,113 @@ func (c *Client) Close() error {
 	}
 	return nil
 }
+
+// HostCall issues a single host_call RPC and waits for the response.
+// This is the primary way extensions invoke host services.
+func (c *Client) HostCall(ctx context.Context, service, method string, version int, payload any) (json.RawMessage, error) {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("sdk: HostCall marshal payload: %w", err)
+	}
+	params := hostproto.HostCallParams{
+		Service: service,
+		Method:  method,
+		Version: version,
+		Payload: payloadBytes,
+	}
+	id, err := c.sendRequest(hostproto.MethodHostCall, params)
+	if err != nil {
+		return nil, err
+	}
+	waiter := c.waitFor(id)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-waiter:
+		if res.err != nil {
+			return nil, res.err
+		}
+		return res.result, nil
+	}
+}
+
+// ServeOptions configures a Serve invocation.
+type ServeOptions struct {
+	ExtensionID       string
+	Mode              string // typically "hosted_stdio"
+	RequestedServices []hostproto.ServiceRequest
+	// OnReady is called once the handshake completes successfully. Use
+	// it to issue startup host_calls (e.g. commands.register). Returning
+	// an error terminates Serve.
+	OnReady func(HandshakeReady) error
+}
+
+// HandshakeReady is passed to ServeOptions.OnReady with the negotiated
+// handshake result.
+type HandshakeReady struct {
+	Client   *Client
+	Response hostproto.HandshakeResponse
+}
+
+// Serve runs the extension lifecycle:
+//  1. Start the stdio read loop
+//  2. Send the handshake
+//  3. Wait for the handshake response
+//  4. Invoke OnReady (if set) for startup registrations
+//  5. Block until the host closes stdin or ctx is canceled
+//
+// Serve returns nil on clean shutdown, or an error if the handshake
+// fails, the read loop errors, or OnReady returns an error.
+func (c *Client) Serve(ctx context.Context, opts ServeOptions) error {
+	if opts.ExtensionID == "" {
+		return fmt.Errorf("sdk: ExtensionID is required")
+	}
+	if opts.Mode == "" {
+		opts.Mode = "hosted_stdio"
+	}
+
+	go c.readLoop(ctx)
+
+	handshakeReq := hostproto.HandshakeRequest{
+		ProtocolVersion:   hostproto.ProtocolVersion,
+		ExtensionID:       opts.ExtensionID,
+		Mode:              opts.Mode,
+		RequestedServices: opts.RequestedServices,
+	}
+	id, err := c.sendRequest(hostproto.MethodHandshake, handshakeReq)
+	if err != nil {
+		return err
+	}
+	waiter := c.waitFor(id)
+
+	var response hostproto.HandshakeResponse
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case res := <-waiter:
+		if res.err != nil {
+			return fmt.Errorf("sdk: handshake failed: %w", res.err)
+		}
+		if err := json.Unmarshal(res.result, &response); err != nil {
+			return fmt.Errorf("sdk: decode handshake response: %w", err)
+		}
+	}
+
+	if !response.Accepted {
+		return fmt.Errorf("sdk: handshake rejected: %s", response.Message)
+	}
+	if err := hostproto.ValidateProtocolCompatibility(response.ProtocolVersion); err != nil {
+		return fmt.Errorf("sdk: incompatible host protocol: %w", err)
+	}
+
+	if opts.OnReady != nil {
+		if err := opts.OnReady(HandshakeReady{Client: c, Response: response}); err != nil {
+			return err
+		}
+	}
+
+	// Block until context cancellation. The read loop exits on its own
+	// when the host closes stdin.
+	<-ctx.Done()
+	return nil
+}
