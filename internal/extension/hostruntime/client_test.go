@@ -1,6 +1,7 @@
 package hostruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -36,7 +37,7 @@ func TestHostedClient_PerformsHandshake(t *testing.T) {
 			serverErr <- err
 			return
 		}
-		if handshake.Mode != "interactive" || len(handshake.CapabilityMask) != 2 {
+		if handshake.Mode != "interactive" || len(handshake.RequestedServices) != 2 {
 			serverErr <- context.Canceled
 			return
 		}
@@ -59,9 +60,12 @@ func TestHostedClient_PerformsHandshake(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	response, err := client.Handshake(ctx, hostproto.HandshakeRequest{
-		ExtensionID:    "ext.demo",
-		Mode:           "interactive",
-		CapabilityMask: []string{"commands.register", "tools.register"},
+		ExtensionID: "ext.demo",
+		Mode:        "interactive",
+		RequestedServices: []hostproto.ServiceRequest{
+			{Service: "commands", Version: 1},
+			{Service: "tools", Version: 1},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -135,4 +139,159 @@ func waitUntil(t *testing.T, timeout time.Duration, condition func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition not met before timeout")
+}
+
+// fakeDispatcher implements Dispatcher in tests.
+type fakeDispatcher struct {
+	calls []hostproto.HostCallParams
+}
+
+func (f *fakeDispatcher) Dispatch(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error) {
+	f.calls = append(f.calls, params)
+	return json.RawMessage(`{"ok":true}`), nil
+}
+
+// codedRPCErr satisfies the rpcCoder interface so we can test the
+// extractRPCError code path without importing the services package.
+type codedRPCErr struct {
+	code    int
+	message string
+}
+
+func (e *codedRPCErr) Error() string { return e.message }
+func (e *codedRPCErr) RPCCode() int  { return e.code }
+
+type errorDispatcher struct{}
+
+func (errorDispatcher) Dispatch(string, hostproto.HostCallParams) (json.RawMessage, error) {
+	return nil, &codedRPCErr{code: hostproto.ErrCodeInvalidParams, message: "bad"}
+}
+
+func mustMarshalRPC(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestServeInbound_DispatchesHostCall(t *testing.T) {
+	extWrites := &bytes.Buffer{}
+	hostWrites := &bytes.Buffer{}
+
+	req := hostproto.RPCRequest{
+		JSONRPC: hostproto.JSONRPCVersion,
+		ID:      7,
+		Method:  hostproto.MethodHostCall,
+		Params: mustMarshalRPC(t, hostproto.HostCallParams{
+			Service: "ui",
+			Method:  "status",
+			Version: 1,
+			Payload: json.RawMessage(`{"text":"hi"}`),
+		}),
+	}
+	data, _ := json.Marshal(req)
+	extWrites.Write(append(data, '\n'))
+
+	client := NewClient(extWrites, hostWrites)
+	dispatcher := &fakeDispatcher{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- client.ServeInbound(ctx, "ext.demo", dispatcher)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("ServeInbound did not exit on EOF")
+	}
+
+	if len(dispatcher.calls) != 1 {
+		t.Fatalf("dispatcher.calls = %d, want 1", len(dispatcher.calls))
+	}
+	if dispatcher.calls[0].Service != "ui" || dispatcher.calls[0].Method != "status" {
+		t.Errorf("unexpected call: %+v", dispatcher.calls[0])
+	}
+
+	var resp hostproto.RPCResponse
+	if err := json.Unmarshal(hostWrites.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ID != 7 {
+		t.Errorf("response ID = %d, want 7", resp.ID)
+	}
+	if string(resp.Result) != `{"ok":true}` {
+		t.Errorf("response result = %s", string(resp.Result))
+	}
+}
+
+func TestServeInbound_DispatcherErrorBecomesRPCError(t *testing.T) {
+	extWrites := &bytes.Buffer{}
+	hostWrites := &bytes.Buffer{}
+
+	req := hostproto.RPCRequest{
+		JSONRPC: hostproto.JSONRPCVersion,
+		ID:      11,
+		Method:  hostproto.MethodHostCall,
+		Params:  mustMarshalRPC(t, hostproto.HostCallParams{Service: "ui", Method: "status", Version: 1}),
+	}
+	data, _ := json.Marshal(req)
+	extWrites.Write(append(data, '\n'))
+
+	client := NewClient(extWrites, hostWrites)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- client.ServeInbound(ctx, "ext.demo", errorDispatcher{}) }()
+	<-done
+
+	var resp hostproto.RPCResponse
+	if err := json.Unmarshal(hostWrites.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error in response")
+	}
+	if resp.Error.Code != hostproto.ErrCodeInvalidParams {
+		t.Errorf("code = %d, want %d", resp.Error.Code, hostproto.ErrCodeInvalidParams)
+	}
+}
+
+func TestServeInbound_UnknownMethodIsError(t *testing.T) {
+	extWrites := &bytes.Buffer{}
+	hostWrites := &bytes.Buffer{}
+
+	req := hostproto.RPCRequest{
+		JSONRPC: hostproto.JSONRPCVersion,
+		ID:      5,
+		Method:  "pi.extension/nope",
+	}
+	data, _ := json.Marshal(req)
+	extWrites.Write(append(data, '\n'))
+
+	client := NewClient(extWrites, hostWrites)
+	dispatcher := &fakeDispatcher{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- client.ServeInbound(ctx, "ext.demo", dispatcher) }()
+	<-done
+
+	if len(dispatcher.calls) != 0 {
+		t.Error("dispatcher should not be called for unknown method")
+	}
+	var resp hostproto.RPCResponse
+	if err := json.Unmarshal(hostWrites.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Error == nil || resp.Error.Code != hostproto.ErrCodeMethodNotFound {
+		t.Errorf("unexpected response error: %+v", resp.Error)
+	}
 }

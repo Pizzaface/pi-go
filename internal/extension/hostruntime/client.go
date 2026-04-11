@@ -3,6 +3,7 @@ package hostruntime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -12,6 +13,20 @@ import (
 
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
 )
+
+// Dispatcher routes an incoming host_call from an extension to the
+// services registry. The hostruntime package defines the interface to
+// avoid an import cycle with the services package.
+type Dispatcher interface {
+	Dispatch(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error)
+}
+
+// rpcCoder is satisfied by *services.RPCError. Used to extract a
+// JSON-RPC code from an error without importing the services package.
+type rpcCoder interface {
+	error
+	RPCCode() int
+}
 
 type Client struct {
 	readMu  sync.Mutex
@@ -158,4 +173,86 @@ func (c *Client) Close() error {
 
 func DefaultHandshakeTimeout() time.Duration {
 	return 5 * time.Second
+}
+
+// ServeInbound reads ext-initiated requests from the client's stdout
+// (the extension's stdout, read by the host) and dispatches them via
+// the registry. Runs until EOF or ctx is canceled. Returns nil on
+// clean EOF or ctx.Err() on cancellation; other errors propagate.
+//
+// All dispatch failures are serialized as JSON-RPC error responses;
+// only framing/transport errors abort the loop.
+func (c *Client) ServeInbound(ctx context.Context, extensionID string, dispatcher Dispatcher) error {
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var req hostproto.RPCRequest
+		c.readMu.Lock()
+		err := c.decoder.Decode(&req)
+		c.readMu.Unlock()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("hostruntime: decode inbound request: %w", err)
+		}
+		switch req.Method {
+		case hostproto.MethodHostCall:
+			c.handleHostCall(extensionID, req, dispatcher)
+		default:
+			c.writeError(req.ID, hostproto.ErrCodeMethodNotFound, "unknown method: "+req.Method)
+		}
+	}
+}
+
+func (c *Client) handleHostCall(extensionID string, req hostproto.RPCRequest, dispatcher Dispatcher) {
+	var params hostproto.HostCallParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		c.writeError(req.ID, hostproto.ErrCodeInvalidParams, "invalid host_call params: "+err.Error())
+		return
+	}
+	result, err := dispatcher.Dispatch(extensionID, params)
+	if err != nil {
+		code, msg := extractRPCError(err)
+		c.writeError(req.ID, code, msg)
+		return
+	}
+	c.writeResult(req.ID, result)
+}
+
+func (c *Client) writeResult(id int64, result json.RawMessage) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_ = c.encoder.Encode(hostproto.RPCResponse{
+		JSONRPC: hostproto.JSONRPCVersion,
+		ID:      id,
+		Result:  result,
+	})
+}
+
+func (c *Client) writeError(id int64, code int, message string) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_ = c.encoder.Encode(hostproto.RPCResponse{
+		JSONRPC: hostproto.JSONRPCVersion,
+		ID:      id,
+		Error: &hostproto.RPCError{
+			Code:    code,
+			Message: message,
+		},
+	})
+}
+
+// extractRPCError pulls a JSON-RPC code and message out of an error.
+// It handles *services.RPCError via the rpcCoder interface, and falls
+// back to ErrCodeServiceError for anything else.
+func extractRPCError(err error) (int, string) {
+	if err == nil {
+		return hostproto.ErrCodeServiceError, ""
+	}
+	if coder, ok := err.(rpcCoder); ok {
+		return coder.RPCCode(), coder.Error()
+	}
+	return hostproto.ErrCodeServiceError, err.Error()
 }
