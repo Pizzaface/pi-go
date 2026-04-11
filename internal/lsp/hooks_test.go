@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -137,8 +138,12 @@ func TestCollectDiagnostics_FiltersToErrorsAndWarnings(t *testing.T) {
 		available:   make(map[string]bool),
 	}
 
-	// Pre-populate diagnostics cache.
-	testURI := pathToURI("/tmp/test.go")
+	// Use a real absolute path so collectDiagnosticsImmediate's
+	// filepath.Abs() round-trip produces the same URI as our cache
+	// pre-population (on Windows, Abs("/tmp/test.go") would prepend
+	// the current drive, breaking the key lookup).
+	testPath := filepath.Join(t.TempDir(), "test.go")
+	testURI := pathToURI(testPath)
 	mgr.diagnostics[testURI] = []Diagnostic{
 		{Range: Range{Start: Position{Line: 5, Character: 0}}, Severity: SeverityError, Message: "undefined: foo"},
 		{Range: Range{Start: Position{Line: 10, Character: 3}}, Severity: SeverityWarning, Message: "unused variable"},
@@ -146,8 +151,8 @@ func TestCollectDiagnostics_FiltersToErrorsAndWarnings(t *testing.T) {
 		{Range: Range{Start: Position{Line: 20, Character: 0}}, Severity: SeverityInformation, Message: "info message"},
 	}
 
-	result := map[string]any{"path": "/tmp/test.go"}
-	result = collectDiagnosticsImmediate(mgr, nil, "/tmp/test.go", result)
+	result := map[string]any{"path": testPath}
+	result = collectDiagnosticsImmediate(mgr, nil, testPath, result)
 
 	diagStr, ok := result["lsp_diagnostics"].(string)
 	if !ok {
@@ -451,12 +456,13 @@ func TestCollectDiagnosticsImmediate_OnlyErrors(t *testing.T) {
 		available:   make(map[string]bool),
 	}
 
-	testURI := pathToURI("/tmp/errors_only.go")
+	testPath := filepath.Join(t.TempDir(), "errors_only.go")
+	testURI := pathToURI(testPath)
 	mgr.diagnostics[testURI] = []Diagnostic{
 		{Range: Range{Start: Position{Line: 0, Character: 0}}, Severity: SeverityError, Message: "syntax error"},
 	}
 
-	result := collectDiagnosticsImmediate(mgr, nil, "/tmp/errors_only.go", map[string]any{})
+	result := collectDiagnosticsImmediate(mgr, nil, testPath, map[string]any{})
 	diagStr, ok := result["lsp_diagnostics"].(string)
 	if !ok {
 		t.Fatal("expected lsp_diagnostics in result")
@@ -474,13 +480,14 @@ func TestCollectDiagnosticsImmediate_AllHintsFiltered(t *testing.T) {
 		available:   make(map[string]bool),
 	}
 
-	testURI := pathToURI("/tmp/hints_only.go")
+	testPath := filepath.Join(t.TempDir(), "hints_only.go")
+	testURI := pathToURI(testPath)
 	mgr.diagnostics[testURI] = []Diagnostic{
 		{Range: Range{Start: Position{Line: 0, Character: 0}}, Severity: SeverityHint, Message: "consider using X"},
 		{Range: Range{Start: Position{Line: 1, Character: 0}}, Severity: SeverityInformation, Message: "info about Y"},
 	}
 
-	result := collectDiagnosticsImmediate(mgr, nil, "/tmp/hints_only.go", map[string]any{})
+	result := collectDiagnosticsImmediate(mgr, nil, testPath, map[string]any{})
 	if _, ok := result["lsp_diagnostics"]; ok {
 		t.Error("hints and info should be filtered out — lsp_diagnostics should not be in result")
 	}
@@ -494,7 +501,8 @@ func TestCollectDiagnosticsImmediate_DiagnosticLineFormat(t *testing.T) {
 		available:   make(map[string]bool),
 	}
 
-	testURI := pathToURI("/tmp/format_test.go")
+	testPath := filepath.Join(t.TempDir(), "format_test.go")
+	testURI := pathToURI(testPath)
 	mgr.diagnostics[testURI] = []Diagnostic{
 		{
 			Range:    Range{Start: Position{Line: 4, Character: 7}},
@@ -503,7 +511,7 @@ func TestCollectDiagnosticsImmediate_DiagnosticLineFormat(t *testing.T) {
 		},
 	}
 
-	result := collectDiagnosticsImmediate(mgr, nil, "/tmp/format_test.go", map[string]any{})
+	result := collectDiagnosticsImmediate(mgr, nil, testPath, map[string]any{})
 	diagStr, ok := result["lsp_diagnostics"].(string)
 	if !ok {
 		t.Fatal("expected lsp_diagnostics")
@@ -830,15 +838,16 @@ func TestCollectDiagnostics_WaitForDiagnostics(t *testing.T) {
 	}
 
 	// Pre-populate diagnostics cache
-	testURI := pathToURI("/tmp/test.go")
+	testPath := filepath.Join(t.TempDir(), "test.go")
+	testURI := pathToURI(testPath)
 	mgr.diagnostics[testURI] = []Diagnostic{
 		{Range: Range{Start: Position{Line: 5, Character: 0}}, Severity: SeverityError, Message: "error message"},
 	}
 
-	result := map[string]any{"path": "/tmp/test.go"}
+	result := map[string]any{"path": testPath}
 	// Note: collectDiagnostics waits for DiagnosticsDelay (2s)
 	// We can't easily test the delay without actual time passing
-	result = collectDiagnosticsImmediate(mgr, nil, "/tmp/test.go", result)
+	result = collectDiagnosticsImmediate(mgr, nil, testPath, result)
 
 	diagStr, ok := result["lsp_diagnostics"].(string)
 	if !ok {

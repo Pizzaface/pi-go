@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -396,8 +397,16 @@ func fileURI(path string) string {
 }
 
 // pathToURI converts an absolute path to a file:// URI.
+// Ensures the path portion always starts with a slash so Windows
+// drive-letter paths render as "file:///C:/..." (three slashes) per
+// the LSP spec, rather than "file://C:/..." which Go's url.URL would
+// otherwise produce because it interprets "C:" as a host.
 func pathToURI(path string) string {
-	u := &url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	slash := filepath.ToSlash(path)
+	if !strings.HasPrefix(slash, "/") {
+		slash = "/" + slash
+	}
+	u := &url.URL{Scheme: "file", Path: slash}
 	return u.String()
 }
 

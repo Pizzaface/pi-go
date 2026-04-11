@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -533,19 +534,28 @@ func TestManager_ServerFor_ReturnsCachedServer(t *testing.T) {
 
 func TestFileURIAbsoluteConversion(t *testing.T) {
 	// fileURI converts relative paths by making them absolute.
-	// Since the CWD can vary, we just check it starts with file:// and has no double-slash issues.
+	// Every returned URI must start with file:/// (three slashes) — two
+	// slashes would indicate the Windows drive letter being treated as
+	// a URL host, which is the bug this regression test protects against.
 	uri := fileURI("relative/path/file.go")
-	if !strings.HasPrefix(uri, "file://") {
-		t.Errorf("fileURI should return a file:// URI, got: %s", uri)
-	}
-	if strings.Contains(uri, "relative/path") && !strings.HasPrefix(uri, "file:///") {
-		t.Errorf("fileURI returned unexpected value: %s", uri)
+	if !strings.HasPrefix(uri, "file:///") {
+		t.Errorf("fileURI should return file:/// URI, got: %s", uri)
 	}
 
-	// Absolute path should work normally.
-	uri2 := fileURI("/tmp/absolute.go")
-	if uri2 != "file:///tmp/absolute.go" {
-		t.Errorf("fileURI(/tmp/absolute.go) = %q, want file:///tmp/absolute.go", uri2)
+	// An absolute-looking path on the current platform should also
+	// produce file:/// (three slashes). We build the input from
+	// filepath.Abs so the test is cross-platform: on Unix it becomes
+	// something like /tmp/absolute.go, on Windows C:\something.
+	absInput, err := filepath.Abs(filepath.Join("tmp", "absolute.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri2 := fileURI(absInput)
+	if !strings.HasPrefix(uri2, "file:///") {
+		t.Errorf("fileURI(%q) = %q, want file:/// prefix", absInput, uri2)
+	}
+	if !strings.HasSuffix(uri2, "/absolute.go") {
+		t.Errorf("fileURI(%q) = %q, want suffix /absolute.go", absInput, uri2)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -415,7 +416,8 @@ func TestNewClient(t *testing.T) {
 		clientConn.Close()
 	}()
 
-	c, err := NewClient("/bin/cat")
+	cmd, args := stdinReaderCommand()
+	c, err := NewClient(cmd, args...)
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
@@ -424,6 +426,21 @@ func TestNewClient(t *testing.T) {
 	if c == nil {
 		t.Fatal("expected non-nil client")
 	}
+	// Force close without LSP handshake to avoid blocking.
+	c.closed.Store(true)
+	_ = c.stdin.Close()
+}
+
+// stdinReaderCommand returns a platform-appropriate command that
+// starts, reads stdin, and stays alive until stdin closes. Used by
+// tests that only verify NewClient can spawn a child process, not
+// any LSP protocol behavior.
+func stdinReaderCommand() (string, []string) {
+	if runtime.GOOS == "windows" {
+		// sort.exe ships in System32; it reads stdin and exits on EOF.
+		return "sort", nil
+	}
+	return "cat", nil
 }
 
 func TestClient_Close(t *testing.T) {
@@ -490,10 +507,10 @@ func TestNewClient_NonExistentCommand(t *testing.T) {
 }
 
 func TestNewClient_ValidCommand(t *testing.T) {
-	// /bin/cat is a valid command that can be started.
-	c, err := NewClient("/bin/cat")
+	cmd, args := stdinReaderCommand()
+	c, err := NewClient(cmd, args...)
 	if err != nil {
-		t.Fatalf("NewClient(/bin/cat) failed: %v", err)
+		t.Fatalf("NewClient(%q) failed: %v", cmd, err)
 	}
 	if c == nil {
 		t.Fatal("expected non-nil client")

@@ -498,7 +498,10 @@ func TestFindBinaryWellKnownPaths(t *testing.T) {
 	isWindows = func() bool { return false }
 
 	home, _ := os.UserHomeDir()
-	expectedPath := home + "/.local/bin/claude"
+	// Build the expected path using filepath.Join so it matches what
+	// wellKnownPaths() produces on the current OS (Windows filepath.Join
+	// uses backslashes regardless of the mocked isWindows() value).
+	expectedPath := filepath.Join(home, ".local", "bin", "claude")
 
 	statFile = func(path string) (os.FileInfo, error) {
 		if path == expectedPath {
@@ -633,22 +636,27 @@ func TestWellKnownPathsUnix(t *testing.T) {
 		t.Fatalf("expected at least 2 Unix paths, got %d: %v", len(paths), paths)
 	}
 
-	// Should include ~/.local/bin/claude and ~/.claude/local/claude
+	// Build the expected substrings via filepath.Join so this test is
+	// cross-platform: the real separator depends on the host OS, even
+	// when isWindows() is mocked to false. (wellKnownPaths uses
+	// filepath.Join internally.)
+	wantLocal := filepath.Join(".local", "bin", "claude")
+	wantDotClaude := filepath.Join(".claude", "local", "claude")
 	hasLocal := false
 	hasDotClaude := false
 	for _, p := range paths {
-		if strings.Contains(p, ".local/bin/claude") {
+		if strings.Contains(p, wantLocal) {
 			hasLocal = true
 		}
-		if strings.Contains(p, ".claude/local/claude") {
+		if strings.Contains(p, wantDotClaude) {
 			hasDotClaude = true
 		}
 	}
 	if !hasLocal {
-		t.Errorf("expected .local/bin/claude in Unix paths: %v", paths)
+		t.Errorf("expected %q in Unix paths: %v", wantLocal, paths)
 	}
 	if !hasDotClaude {
-		t.Errorf("expected .claude/local/claude in Unix paths: %v", paths)
+		t.Errorf("expected %q in Unix paths: %v", wantDotClaude, paths)
 	}
 }
 

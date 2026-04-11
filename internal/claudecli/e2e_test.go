@@ -1,8 +1,8 @@
 package claudecli
 
 import (
+	"bufio"
 	"context"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -12,46 +12,85 @@ import (
 	"google.golang.org/genai"
 )
 
-// mockCLIScript creates a shell script that simulates a Claude CLI session.
-// It outputs the system init line immediately, then for each stdin line
-// (user message), outputs the given response NDJSON lines.
-func mockCLIScript(t *testing.T, initLines []string, responseLines []string) string {
+// Sentinel env vars that turn the test binary into a Claude CLI mock.
+// See TestMain and mockCLIConfig for the pattern.
+const (
+	mockEnvSentinel = "PI_CLAUDECLI_TEST_MOCK"
+	mockEnvInit     = "PI_CLAUDECLI_TEST_MOCK_INIT"
+	mockEnvResponse = "PI_CLAUDECLI_TEST_MOCK_RESPONSE"
+	// mockLineSep joins multiple NDJSON lines into a single env var.
+	// The NUL byte is illegal in JSON strings, so it's a safe delimiter.
+	mockLineSep = "\x1e" // ASCII RS (record separator)
+)
+
+// TestMain dispatches to the mock runner when the sentinel env var is
+// set. This lets e2e tests use os.Args[0] as their "Claude CLI binary",
+// avoiding platform-specific shell scripts (#!/bin/sh doesn't run on
+// Windows).
+func TestMain(m *testing.M) {
+	if os.Getenv(mockEnvSentinel) == "1" {
+		runMockCLI()
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// runMockCLI simulates a Claude CLI session:
+//  1. Print the init lines from PI_CLAUDECLI_TEST_MOCK_INIT
+//  2. For each stdin line (skipping control messages), print the
+//     response lines from PI_CLAUDECLI_TEST_MOCK_RESPONSE
+func runMockCLI() {
+	initRaw := os.Getenv(mockEnvInit)
+	respRaw := os.Getenv(mockEnvResponse)
+
+	w := bufio.NewWriter(os.Stdout)
+	defer w.Flush()
+
+	if initRaw != "" {
+		for _, line := range strings.Split(initRaw, mockLineSep) {
+			w.WriteString(line)
+			w.WriteByte('\n')
+		}
+		w.Flush()
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		input := scanner.Text()
+		// Skip control messages from the SDK.
+		if strings.Contains(input, "control_response") {
+			continue
+		}
+		if respRaw != "" {
+			for _, line := range strings.Split(respRaw, mockLineSep) {
+				w.WriteString(line)
+				w.WriteByte('\n')
+			}
+			w.Flush()
+		}
+	}
+}
+
+// mockCLIConfig returns a claudecli.Config that re-executes the test
+// binary as a Claude CLI mock, feeding init and response NDJSON lines
+// via env vars. Replaces the old shell-script mock that didn't work
+// on Windows.
+func mockCLIConfig(t *testing.T, initLines []string, responseLines []string) Config {
 	t.Helper()
-
-	var sb strings.Builder
-	sb.WriteString("#!/bin/sh\n")
-
-	// Output init lines immediately.
-	// Use printf instead of echo — macOS /bin/sh echo interprets \n as newline
-	// even in single quotes, which breaks JSON lines containing literal \n.
-	for _, line := range initLines {
-		escaped := strings.ReplaceAll(line, "'", "'\\''")
-		fmt.Fprintf(&sb, "printf '%%s\\n' '%s'\n", escaped)
-	}
-
-	// For each stdin line, output response lines.
-	sb.WriteString("while IFS= read -r input; do\n")
-	// Skip control messages.
-	sb.WriteString("  case \"$input\" in *control_response*) continue ;; esac\n")
-	for _, line := range responseLines {
-		escaped := strings.ReplaceAll(line, "'", "'\\''")
-		fmt.Fprintf(&sb, "  printf '%%s\\n' '%s'\n", escaped)
-	}
-	sb.WriteString("done\n")
-
-	f, err := os.CreateTemp(t.TempDir(), "mock-claude-*.sh")
+	exe, err := os.Executable()
 	if err != nil {
-		t.Fatalf("creating mock script: %v", err)
+		t.Fatalf("os.Executable: %v", err)
 	}
-	if _, err := f.WriteString(sb.String()); err != nil {
-		f.Close()
-		t.Fatalf("writing mock script: %v", err)
+	return Config{
+		BinaryPath: exe,
+		WorkDir:    t.TempDir(),
+		EnvVars: map[string]string{
+			mockEnvSentinel: "1",
+			mockEnvInit:     strings.Join(initLines, mockLineSep),
+			mockEnvResponse: strings.Join(responseLines, mockLineSep),
+		},
 	}
-	f.Close()
-	if err := os.Chmod(f.Name(), 0o755); err != nil {
-		t.Fatalf("chmod mock script: %v", err)
-	}
-	return f.Name()
 }
 
 // NDJSON fixtures for testing.
@@ -76,12 +115,12 @@ const (
 // TestE2E_SimpleTextResponse tests the full path:
 // mock CLI script → claude SDK Session → Provider.GenerateContent → model.LLMResponse
 func TestE2E_SimpleTextResponse(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{assistantText, resultWithText},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -150,12 +189,12 @@ func TestE2E_SimpleTextResponse(t *testing.T) {
 // TestE2E_ToolUseSession tests a session with tool use:
 // assistant (text + tool_use) → user (tool_result) → assistant (text) → result
 func TestE2E_ToolUseSession(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{assistantWithToolUse, userToolResult, assistantAfterTool, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -246,12 +285,12 @@ func TestE2E_ToolUseSession(t *testing.T) {
 // TestE2E_EmptyResult tests that an empty ResultMessage still produces a
 // valid turn-complete response with non-nil Content.
 func TestE2E_EmptyResult(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{assistantText, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -304,12 +343,12 @@ func TestE2E_EmptyResult(t *testing.T) {
 
 // TestE2E_ThinkingBlocks tests that thinking content is surfaced.
 func TestE2E_ThinkingBlocks(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{assistantThinking, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -367,12 +406,12 @@ func TestE2E_ThinkingBlocks(t *testing.T) {
 // Provider → ADK Agent → Runner → session.Event
 // This is what the TUI actually consumes.
 func TestE2E_ADKFlowIntegration(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{assistantText, resultWithText},
 	)
 
-	provider := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	provider := New(cfg)
 	t.Cleanup(func() { provider.Close() })
 
 	// Create a real ADK agent with our provider.
@@ -530,12 +569,12 @@ const (
 
 // TestE2E_StreamingTextDeltas verifies token-level streaming via StreamEvent.
 func TestE2E_StreamingTextDeltas(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{streamTextDelta1, streamTextDelta2, assistantTextFull, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -584,12 +623,12 @@ func TestE2E_StreamingTextDeltas(t *testing.T) {
 
 // TestE2E_StreamingThinkingDeltas verifies thinking deltas are streamed with Role="thinking".
 func TestE2E_StreamingThinkingDeltas(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{streamThinkingDelta1, streamThinkingDelta2, streamTextDelta1, streamTextDelta2, assistantThinkingAndTextFull, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -644,12 +683,12 @@ func TestE2E_StreamingThinkingDeltas(t *testing.T) {
 // TestE2E_StreamingDedupKeepsToolUse verifies that tool_use blocks from the
 // final AssistantMessage are preserved even when text was already streamed.
 func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{streamTextDelta1, assistantToolUseAfterStream, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{
@@ -711,12 +750,12 @@ func TestE2E_StreamingDedupKeepsToolUse(t *testing.T) {
 // stream events are present (e.g. older CLI without partial message support),
 // text and thinking still come through from AssistantMessage.
 func TestE2E_NoStreamDeltas_FallsBackToAssistantMessage(t *testing.T) {
-	script := mockCLIScript(t,
+	cfg := mockCLIConfig(t,
 		[]string{systemInit},
 		[]string{assistantThinking, resultEmpty},
 	)
 
-	p := New(Config{BinaryPath: script, WorkDir: t.TempDir()})
+	p := New(cfg)
 	t.Cleanup(func() { p.Close() })
 
 	req := &model.LLMRequest{

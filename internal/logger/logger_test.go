@@ -43,16 +43,20 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewHomeDirError(t *testing.T) {
-	// Set HOME to a non-existent path
-	origHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", "/nonexistent/path/that/does/not/exist"); err != nil {
-		t.Fatalf("Failed to set HOME: %v", err)
-	}
-	defer func() { os.Setenv("HOME", origHome) }() //nolint:errcheck
+	// Clear every env var os.UserHomeDir() consults on any platform.
+	// On Unix it reads HOME; on Windows it reads USERPROFILE (falling
+	// back to HOMEDRIVE+HOMEPATH); on Plan 9 it reads home. With all
+	// of them empty, os.UserHomeDir() returns an error, which New()
+	// wraps.
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	t.Setenv("home", "")
 
 	_, err := New()
 	if err == nil {
-		t.Error("New() should return error when home dir doesn't exist")
+		t.Error("New() should return error when home dir is undefined")
 	}
 }
 

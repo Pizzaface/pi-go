@@ -273,19 +273,24 @@ func min(a, b int) int {
 // -----------------------------------------------------------------------
 
 func TestRunAuditOutputWriteError(t *testing.T) {
-	// Trying to write to a read-only directory should produce an error.
+	// Trying to write to an impossible path should produce an error.
+	// We use a path whose parent is a regular file, which makes the
+	// nested write fail on every platform (Windows doesn't honor Unix
+	// permission bits on directories, so chmod 0555 would no-op).
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("Clean content"), 0644)
 
-	// Create a directory we can't write to.
-	readOnlyDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(readOnlyDir, 0555)
-	outPath := filepath.Join(readOnlyDir, "out.txt")
+	// Create a regular file that we'll treat as a "directory" in outPath.
+	notADir := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(notADir, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outPath := filepath.Join(notADir, "out.txt")
 
 	err := runAudit(nil, "", path, false, false, false, false, "text", outPath)
 	if err == nil {
-		t.Error("expected error when writing to read-only directory")
+		t.Error("expected error when writing to a path whose parent is a file")
 	}
 }
 

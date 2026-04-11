@@ -599,7 +599,10 @@ func TestLoad_MergesProviderAndModelDefinitionsAcrossGlobalAndProject(t *testing
 		t.Fatal(err)
 	}
 
+	// os.UserHomeDir() reads HOME on Unix and USERPROFILE on Windows.
+	// Set both so the test works cross-platform.
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	origWd, _ := os.Getwd()
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
