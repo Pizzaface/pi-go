@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
@@ -395,4 +396,90 @@ func (m mockRuntimeTool) Description() string {
 
 func (m mockRuntimeTool) IsLongRunning() bool {
 	return false
+}
+
+func TestManager_RegistersUIAndCommandsServices(t *testing.T) {
+	mgr := NewManager(ManagerOptions{
+		Permissions: EmptyPermissions(),
+	})
+	catalog := mgr.servicesRegistry.HostServices()
+	found := map[string]bool{}
+	for _, entry := range catalog {
+		found[entry.Service] = true
+	}
+	if !found["ui"] {
+		t.Error("ui service not registered")
+	}
+	if !found["commands"] {
+		t.Error("commands service not registered")
+	}
+}
+
+func TestManager_DispatchUIStatusForwardsToIntentChannel(t *testing.T) {
+	mgr := NewManager(ManagerOptions{
+		Permissions: EmptyPermissions(),
+	})
+	// Pre-register the test extension as compiled-in so the cap gate passes.
+	mgr.extensions["ext.test"] = extensionRegistration{
+		manifest: Manifest{Name: "ext.test"},
+		trust:    TrustClassCompiledIn,
+	}
+
+	sub, cancel := mgr.SubscribeUIIntents(4)
+	defer cancel()
+
+	result, err := mgr.DispatchHostCall("ext.test", hostproto.HostCallParams{
+		Service: "ui",
+		Method:  "status",
+		Version: 1,
+		Payload: []byte(`{"text":"hi"}`),
+	})
+	if err != nil {
+		t.Fatalf("DispatchHostCall: %v", err)
+	}
+	if string(result) != `{"ok":true}` {
+		t.Errorf("result = %s", string(result))
+	}
+
+	select {
+	case envelope := <-sub:
+		if envelope.ExtensionID != "ext.test" {
+			t.Errorf("ExtensionID = %q", envelope.ExtensionID)
+		}
+		if envelope.Intent.Type != UIIntentStatus {
+			t.Errorf("Intent.Type = %q", envelope.Intent.Type)
+		}
+		if envelope.Intent.Status == nil || envelope.Intent.Status.Text != "hi" {
+			t.Errorf("Intent.Status = %+v", envelope.Intent.Status)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for UI intent")
+	}
+}
+
+func TestManager_DispatchCommandRegisterForwardsToCommandRegistry(t *testing.T) {
+	mgr := NewManager(ManagerOptions{
+		Permissions: EmptyPermissions(),
+	})
+	mgr.extensions["ext.test"] = extensionRegistration{
+		manifest: Manifest{Name: "ext.test"},
+		trust:    TrustClassCompiledIn,
+	}
+
+	_, err := mgr.DispatchHostCall("ext.test", hostproto.HostCallParams{
+		Service: "commands",
+		Method:  "register",
+		Version: 1,
+		Payload: []byte(`{"name":"hello","description":"say hi","kind":"prompt","prompt":"say hi"}`),
+	})
+	if err != nil {
+		t.Fatalf("DispatchHostCall: %v", err)
+	}
+	cmd, ok := mgr.FindCommand("hello")
+	if !ok {
+		t.Fatal("command 'hello' was not registered")
+	}
+	if cmd.Description != "say hi" {
+		t.Errorf("Description = %q", cmd.Description)
+	}
 }

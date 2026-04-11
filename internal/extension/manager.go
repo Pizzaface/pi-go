@@ -12,6 +12,8 @@ import (
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
 	"github.com/dimetron/pi-go/internal/extension/hostruntime"
 	"github.com/dimetron/pi-go/internal/extension/services"
+	commandsservice "github.com/dimetron/pi-go/internal/extension/services/commands"
+	uiservice "github.com/dimetron/pi-go/internal/extension/services/ui"
 	"google.golang.org/adk/tool"
 )
 
@@ -205,6 +207,11 @@ func NewManager(opts ManagerOptions) *Manager {
 		gate := managerCapabilityGate{permissions: permissions, manager: mgr}
 		mgr.servicesRegistry = services.NewRegistry(gate)
 	}
+
+	// Register the v1 services. Sinks forward to the manager's existing
+	// fan-out channels so the TUI doesn't need to know about services.
+	_ = mgr.servicesRegistry.Register(uiservice.New(managerUISink{manager: mgr}))
+	_ = mgr.servicesRegistry.Register(commandsservice.New(managerCommandsSink{manager: mgr}))
 
 	return mgr
 }
@@ -946,6 +953,50 @@ func (g managerCapabilityGate) Allowed(extensionID, service, method string) bool
 		g.manager.mu.RUnlock()
 	}
 	return g.permissions.AllowsService(extensionID, trust, service, method)
+}
+
+// managerUISink adapts uiservice.Sink to the manager's existing UI
+// intent fan-out (SubscribeUIIntents subscribers receive a status
+// envelope each time SetStatus is called).
+type managerUISink struct {
+	manager *Manager
+}
+
+func (s managerUISink) SetStatus(entry uiservice.StatusEntry) {
+	_ = s.manager.EmitUIIntent(entry.ExtensionID, UIIntent{
+		Type:   UIIntentStatus,
+		Status: &StatusIntent{Text: entry.Text},
+	})
+}
+
+func (s managerUISink) ClearStatus(extensionID string) {
+	// No existing "clear" channel semantic — emit an empty-text status,
+	// which TUI subscribers can interpret as "no status from this ext".
+	_ = s.manager.EmitUIIntent(extensionID, UIIntent{
+		Type:   UIIntentStatus,
+		Status: &StatusIntent{Text: ""},
+	})
+}
+
+// managerCommandsSink adapts commandsservice.Sink to the manager's
+// existing dynamic command registry.
+type managerCommandsSink struct {
+	manager *Manager
+}
+
+func (s managerCommandsSink) RegisterCommand(reg commandsservice.Registration) error {
+	return s.manager.RegisterDynamicCommand(reg.ExtensionID, SlashCommand{
+		Name:        reg.Name,
+		Description: reg.Description,
+		Prompt:      reg.Prompt,
+	})
+}
+
+func (s managerCommandsSink) UnregisterCommand(input commandsservice.UnregisterInput) error {
+	// Plan 1 does not implement per-command unregister; the underlying
+	// flow lands in Plan 2 alongside the ext_call mirror direction.
+	_ = input
+	return nil
 }
 
 func normalizeRenderSurface(surface RenderSurface) RenderSurface {
