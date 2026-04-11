@@ -30,6 +30,17 @@ const (
 	CapabilityUIDialog        Capability = "ui.dialog"
 	CapabilityRenderText      Capability = "render.text"
 	CapabilityRenderMarkdown  Capability = "render.markdown"
+
+	// v2 capabilities — one per new service namespace.
+	CapabilitySessionRead    Capability = "session.read"
+	CapabilitySessionWrite   Capability = "session.write"
+	CapabilityAgentMode      Capability = "agent.mode"
+	CapabilityStateRead      Capability = "state.read"
+	CapabilityStateWrite     Capability = "state.write"
+	CapabilityChatAppend     Capability = "chat.append"
+	CapabilitySigilsRegister Capability = "sigils.register"
+	CapabilitySigilsResolve  Capability = "sigils.resolve"
+	CapabilitySigilsAction   Capability = "sigils.action"
 )
 
 type ApprovalRecord struct {
@@ -178,4 +189,81 @@ func ResolveManifestTrust(manifest Manifest) TrustClass {
 	default:
 		return TrustClassDeclarative
 	}
+}
+
+// AllowsService reports whether the given (extension, trust) tuple is
+// allowed to call a v2 service method. It looks up the capability
+// string associated with (service, method) and checks the extension's
+// granted_capabilities from approvals.json. Services not in the mapping
+// are denied for hosted extensions and allowed for
+// declarative/compiled-in extensions.
+func (p *Permissions) AllowsService(extensionID string, trust TrustClass, service, method string) bool {
+	cap, ok := capabilityForServiceMethod(service, method)
+	if !ok {
+		// Unknown mapping. Trust declarative/compiled-in implicitly.
+		return trust == TrustClassDeclarative || trust == TrustClassCompiledIn
+	}
+	if cap == "" {
+		// Known method with no capability gate (e.g. reads, on_* callbacks).
+		return true
+	}
+	return p.AllowsCapability(extensionID, trust, cap)
+}
+
+// capabilityForServiceMethod maps a (service, method) tuple to the
+// Capability string required to call it. Returning ("", true) means
+// the method has no gate (always allowed); returning (_, false) means
+// the mapping is unknown.
+func capabilityForServiceMethod(service, method string) (Capability, bool) {
+	key := service + "." + method
+	switch key {
+	// session
+	case "session.get_metadata":
+		return CapabilitySessionRead, true
+	case "session.set_name", "session.set_tags":
+		return CapabilitySessionWrite, true
+
+	// agent
+	case "agent.get_mode", "agent.list_modes":
+		return "", true
+	case "agent.set_mode", "agent.register_mode", "agent.unregister_mode":
+		return CapabilityAgentMode, true
+
+	// state
+	case "state.get":
+		return CapabilityStateRead, true
+	case "state.set", "state.patch", "state.delete":
+		return CapabilityStateWrite, true
+
+	// commands
+	case "commands.register", "commands.unregister":
+		return CapabilityCommandRegister, true
+
+	// tools
+	case "tools.register", "tools.unregister":
+		return CapabilityToolRegister, true
+	case "tools.intercept":
+		return CapabilityToolIntercept, true
+
+	// ui
+	case "ui.status", "ui.clear_status":
+		return CapabilityUIStatus, true
+	case "ui.widget", "ui.clear_widget":
+		return CapabilityUIWidget, true
+	case "ui.notify":
+		return CapabilityUIStatus, true // ui.notification maps to ui.status for v1
+	case "ui.dialog":
+		return CapabilityUIDialog, true
+
+	// chat
+	case "chat.append_message":
+		return CapabilityChatAppend, true
+
+	// sigils
+	case "sigils.register", "sigils.unregister":
+		return CapabilitySigilsRegister, true
+	case "sigils.list":
+		return "", true
+	}
+	return "", false
 }

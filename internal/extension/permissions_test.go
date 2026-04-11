@@ -66,3 +66,53 @@ func TestManager_RejectsUnapprovedHostedCapability(t *testing.T) {
 		t.Fatalf("expected approval error, got %v", err)
 	}
 }
+
+func TestPermissions_AllowsService_HostedThirdPartyRequiresGrant(t *testing.T) {
+	p := NewPermissions([]ApprovalRecord{
+		{
+			ExtensionID:         "ext.demo",
+			TrustClass:          TrustClassHostedThirdParty,
+			GrantedCapabilities: []Capability{CapabilityUIStatus, CapabilityCommandRegister},
+		},
+	})
+	if !p.AllowsService("ext.demo", TrustClassHostedThirdParty, "ui", "status") {
+		t.Error("expected ui.status to be allowed (ui.status granted)")
+	}
+	if !p.AllowsService("ext.demo", TrustClassHostedThirdParty, "commands", "register") {
+		t.Error("expected commands.register to be allowed")
+	}
+	if p.AllowsService("ext.demo", TrustClassHostedThirdParty, "sigils", "register") {
+		t.Error("expected sigils.register to be denied (not in grant list)")
+	}
+}
+
+func TestPermissions_AllowsService_DeclarativeTrustedByDefault(t *testing.T) {
+	p := EmptyPermissions()
+	if !p.AllowsService("ext.builtin", TrustClassDeclarative, "ui", "status") {
+		t.Error("declarative extensions should be trusted by default")
+	}
+	if !p.AllowsService("ext.builtin", TrustClassCompiledIn, "commands", "register") {
+		t.Error("compiled-in extensions should be trusted by default")
+	}
+}
+
+func TestPermissions_AllowsService_UnknownServiceDenied(t *testing.T) {
+	p := NewPermissions([]ApprovalRecord{
+		{
+			ExtensionID:         "ext.demo",
+			TrustClass:          TrustClassHostedThirdParty,
+			GrantedCapabilities: []Capability{CapabilityUIStatus},
+		},
+	})
+	if p.AllowsService("ext.demo", TrustClassHostedThirdParty, "mystery", "do") {
+		t.Error("unknown service should be denied for hosted extensions")
+	}
+}
+
+func TestPermissions_AllowsService_GetMethodsNoGate(t *testing.T) {
+	// agent.get_mode has no capability gate — always allowed.
+	p := EmptyPermissions()
+	if !p.AllowsService("ext.demo", TrustClassHostedThirdParty, "agent", "get_mode") {
+		t.Error("agent.get_mode should be allowed without a grant")
+	}
+}

@@ -379,10 +379,10 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 		}
 		handshakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, err = client.Handshake(handshakeCtx, hostproto.HandshakeRequest{
-			ProtocolVersion: hostproto.ProtocolVersion,
-			ExtensionID:     reg.id,
-			Mode:            mode,
-			CapabilityMask:  capabilitiesToStrings(reg.manifest.Capabilities),
+			ProtocolVersion:   hostproto.ProtocolVersion,
+			ExtensionID:       reg.id,
+			Mode:              mode,
+			RequestedServices: manifestToRequestedServices(reg.manifest),
 		})
 		cancel()
 		if err != nil {
@@ -846,12 +846,38 @@ func normalizeCommandName(name string) string {
 	return strings.TrimSpace(strings.TrimPrefix(name, "/"))
 }
 
-func capabilitiesToStrings(capabilities []Capability) []string {
-	out := make([]string, 0, len(capabilities))
-	for _, capability := range capabilities {
-		out = append(out, string(capability))
+// manifestToRequestedServices synthesizes a v2 service request list
+// from a manifest's declared Capabilities. Each distinct service prefix
+// (the part of a capability before the first ".") becomes one
+// ServiceRequest at version 1. Plan 2 will replace this with an
+// explicit RequestedServices field on the manifest.
+func manifestToRequestedServices(manifest Manifest) []hostproto.ServiceRequest {
+	seen := map[string]bool{}
+	var out []hostproto.ServiceRequest
+	for _, capability := range manifest.Capabilities {
+		prefix := capabilityServicePrefix(string(capability))
+		if prefix == "" || seen[prefix] {
+			continue
+		}
+		seen[prefix] = true
+		out = append(out, hostproto.ServiceRequest{
+			Service: prefix,
+			Version: 1,
+		})
 	}
 	return out
+}
+
+// capabilityServicePrefix returns the service-name prefix of a
+// capability string. "ui.status" -> "ui", "commands.register" ->
+// "commands", "render.text" -> "render".
+func capabilityServicePrefix(capability string) string {
+	for i := 0; i < len(capability); i++ {
+		if capability[i] == '.' {
+			return capability[:i]
+		}
+	}
+	return ""
 }
 
 func renderKindCapability(kind RenderKind) (Capability, error) {
