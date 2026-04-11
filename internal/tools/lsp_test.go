@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dimetron/pi-go/internal/lsp"
@@ -178,14 +180,18 @@ func TestConvertLocations(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[0].File != "/tmp/foo.go" {
-		t.Errorf("expected /tmp/foo.go, got %s", entries[0].File)
+	// uriToPath returns OS-native separators via filepath.FromSlash,
+	// so build expected values the same way.
+	wantFoo := filepath.FromSlash("/tmp/foo.go")
+	wantBar := filepath.FromSlash("/tmp/bar.go")
+	if entries[0].File != wantFoo {
+		t.Errorf("expected %q, got %s", wantFoo, entries[0].File)
 	}
 	if entries[0].Line != 10 || entries[0].Column != 5 {
 		t.Errorf("expected line=10 col=5, got line=%d col=%d", entries[0].Line, entries[0].Column)
 	}
-	if entries[1].File != "/tmp/bar.go" {
-		t.Errorf("expected /tmp/bar.go, got %s", entries[1].File)
+	if entries[1].File != wantBar {
+		t.Errorf("expected %q, got %s", wantBar, entries[1].File)
 	}
 }
 
@@ -233,8 +239,10 @@ func TestURIToPath(t *testing.T) {
 		uri  string
 		want string
 	}{
-		{"file:///tmp/foo.go", "/tmp/foo.go"},
-		{"file:///home/user/bar.py", "/home/user/bar.py"},
+		// file URIs become OS-native paths via filepath.FromSlash.
+		{"file:///tmp/foo.go", filepath.FromSlash("/tmp/foo.go")},
+		{"file:///home/user/bar.py", filepath.FromSlash("/home/user/bar.py")},
+		// Non-file URIs pass through unchanged.
 		{"https://example.com", "https://example.com"},
 	}
 	for _, tt := range tests {
@@ -246,17 +254,23 @@ func TestURIToPath(t *testing.T) {
 }
 
 func TestFileURI(t *testing.T) {
-	tests := []struct {
-		path    string
-		wantPfx string
-	}{
-		{"/tmp/foo.go", "file:///tmp/foo.go"},
-		{"/home/user/project/main.go", "file:///home/user/project/main.go"},
+	// Use absolute paths derived via filepath.Abs so the tests work
+	// on any platform (on Windows, "/tmp/foo.go" is not truly
+	// absolute — filepath.Abs prepends the current drive, producing
+	// "file:///C:/tmp/foo.go"). We only assert the invariants that
+	// matter: three-slash prefix, and the filename suffix.
+	tests := []string{
+		filepath.Join("tmp", "foo.go"),
+		filepath.Join("home", "user", "project", "main.go"),
 	}
-	for _, tt := range tests {
-		got := fileURI(tt.path)
-		if got != tt.wantPfx {
-			t.Errorf("fileURI(%q) = %q, want %q", tt.path, got, tt.wantPfx)
+	for _, input := range tests {
+		got := fileURI(input)
+		if !strings.HasPrefix(got, "file:///") {
+			t.Errorf("fileURI(%q) = %q, want file:/// prefix", input, got)
+		}
+		suffix := "/" + filepath.ToSlash(filepath.Base(input))
+		if !strings.HasSuffix(got, suffix) {
+			t.Errorf("fileURI(%q) = %q, want suffix %q", input, got, suffix)
 		}
 	}
 }

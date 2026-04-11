@@ -9,7 +9,15 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
+
+// shutdownGracePeriod is the maximum time Shutdown waits for a child
+// to exit gracefully (via stdin EOF + SIGINT on Unix) before killing
+// it. It exists so a Shutdown called with context.Background() or a
+// long-timeout context still terminates promptly — critical on
+// Windows where os.Interrupt is a no-op.
+var shutdownGracePeriod = 2 * time.Second
 
 type ProcessConfig struct {
 	Command string
@@ -24,6 +32,15 @@ type Process struct {
 	stdout io.ReadCloser
 	stderr bytes.Buffer
 
+	// cancel cancels the exec.CommandContext ctx, which causes the
+	// go runtime to send a kill signal to the subprocess. On Unix
+	// this is SIGKILL (which kills the process but not its children);
+	// on Windows it's TerminateProcess (same caveat). For shell-style
+	// wrappers like `go run .` this may still leave the compiled
+	// binary running — that's acceptable for shutdown since we only
+	// need the parent pipe handles closed so cmd.Wait() returns.
+	cancel context.CancelFunc
+
 	waitOnce sync.Once
 	waitDone chan struct{}
 	waitErr  error
@@ -34,7 +51,11 @@ func StartProcess(ctx context.Context, cfg ProcessConfig) (*Process, error) {
 	if command == "" {
 		return nil, fmt.Errorf("process command is required")
 	}
-	cmd := exec.CommandContext(ctx, command, cfg.Args...)
+	// Wrap the caller's ctx in our own so Shutdown can cancel the
+	// exec-owned kill signal even when the caller's ctx is
+	// context.Background().
+	runCtx, cancel := context.WithCancel(ctx)
+	cmd := exec.CommandContext(runCtx, command, cfg.Args...)
 	if strings.TrimSpace(cfg.WorkDir) != "" {
 		cmd.Dir = cfg.WorkDir
 	}
@@ -53,11 +74,13 @@ func StartProcess(ctx context.Context, cfg ProcessConfig) (*Process, error) {
 		cmd:      cmd,
 		stdin:    stdin,
 		stdout:   stdout,
+		cancel:   cancel,
 		waitDone: make(chan struct{}),
 	}
 	cmd.Stderr = &p.stderr
 
 	if err := cmd.Start(); err != nil {
+		cancel()
 		return nil, fmt.Errorf("starting process %q: %w", command, err)
 	}
 	go p.waitLoop()
@@ -97,24 +120,68 @@ func (p *Process) Shutdown(ctx context.Context) error {
 		return nil
 	default:
 	}
+
+	// Close stdin first. stdio-based child processes (Claude CLI,
+	// the hosted-hello SDK, etc.) exit cleanly on stdin EOF, and
+	// this is the only shutdown mechanism that works cross-platform:
+	// Go's os.Process.Signal(os.Interrupt) returns
+	// "not supported by windows" on Windows and is a silent no-op,
+	// which previously caused Shutdown to block forever.
+	if p.stdin != nil {
+		_ = p.stdin.Close()
+	}
+
+	// On Unix, also send SIGINT in case the child ignores stdin EOF.
+	// Windows doesn't support os.Interrupt so this is a no-op there,
+	// and we fall back to Kill() below if the child doesn't exit.
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Signal(os.Interrupt)
 	}
+
 	done := make(chan struct{})
 	go func() {
 		_ = p.Wait()
 		close(done)
 	}()
+
+	// Give the child a bounded grace period to exit. This guarantees
+	// Shutdown terminates even when the caller passed a never-canceling
+	// context (e.g. context.Background()) — critical on Windows where
+	// stdin close + os.Interrupt don't affect processes like
+	// `go run .` that buffer stdin until their child compiles.
+	graceTimer := time.NewTimer(shutdownGracePeriod)
+	defer graceTimer.Stop()
+
 	select {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		if p.cmd != nil && p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
-		}
-		<-done
-		return nil
+		// Caller ran out of patience first.
+	case <-graceTimer.C:
+		// Grace period elapsed; caller hasn't canceled yet.
 	}
+
+	// Cancel the exec context so Go's exec package runs its own
+	// kill-and-reap path, then Kill directly as belt-and-suspenders.
+	if p.cancel != nil {
+		p.cancel()
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+
+	// Bounded wait after Kill. On Windows with process-tree parents
+	// like `go run .`, the grandchild can keep the stdout/stderr
+	// pipes open indefinitely, so cmd.Wait() (which waits for I/O
+	// copy goroutines) may never return. We accept orphaning those
+	// goroutines rather than blocking Shutdown forever.
+	killTimer := time.NewTimer(shutdownGracePeriod)
+	defer killTimer.Stop()
+	select {
+	case <-done:
+	case <-killTimer.C:
+	}
+	return nil
 }
 
 func mergeEnv(base []string, extra map[string]string) []string {

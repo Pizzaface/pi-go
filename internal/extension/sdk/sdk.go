@@ -39,6 +39,14 @@ type Client struct {
 
 	pendingMu sync.Mutex
 	pending   map[int64]chan rpcResult
+
+	// readDone is closed when readLoop exits (EOF, decode error, or
+	// ctx cancellation). Serve watches this so it can return when the
+	// host closes stdin, without needing a signal. Closing is guarded
+	// by readOnce so the channel is only closed once even if readLoop
+	// is restarted in tests.
+	readDone chan struct{}
+	readOnce sync.Once
 }
 
 type rpcResult struct {
@@ -50,11 +58,12 @@ type rpcResult struct {
 // Typical callers pass os.Stdin / os.Stdout.
 func NewClient(in io.ReadCloser, out io.Writer) *Client {
 	return &Client{
-		in:      in,
-		out:     out,
-		encoder: json.NewEncoder(out),
-		decoder: json.NewDecoder(in),
-		pending: make(map[int64]chan rpcResult),
+		in:       in,
+		out:      out,
+		encoder:  json.NewEncoder(out),
+		decoder:  json.NewDecoder(in),
+		pending:  make(map[int64]chan rpcResult),
+		readDone: make(chan struct{}),
 	}
 }
 
@@ -107,8 +116,10 @@ func (c *Client) resolvePending(id int64, result rpcResult) {
 
 // readLoop pumps incoming messages from in. Responses are routed to
 // pending waiters; requests are dispatched to registered handlers
-// (added in Task 10). Exits on EOF or context cancellation.
+// (added in Task 10). Exits on EOF, decode error, or context
+// cancellation. On exit, signals readDone so Serve can return.
 func (c *Client) readLoop(ctx context.Context) {
+	defer c.readOnce.Do(func() { close(c.readDone) })
 	for {
 		if ctx.Err() != nil {
 			return
@@ -256,8 +267,14 @@ func (c *Client) Serve(ctx context.Context, opts ServeOptions) error {
 		}
 	}
 
-	// Block until context cancellation. The read loop exits on its own
-	// when the host closes stdin.
-	<-ctx.Done()
+	// Block until either the context is canceled (SIGINT/SIGTERM) or
+	// the read loop exits. The read loop exits when the host closes
+	// stdin, which is how the host signals graceful shutdown — stdin
+	// EOF works cross-platform, whereas os.Interrupt doesn't on
+	// Windows.
+	select {
+	case <-ctx.Done():
+	case <-c.readDone:
+	}
 	return nil
 }

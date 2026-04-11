@@ -261,6 +261,7 @@ func TestPackageCommandLifecycle(t *testing.T) {
 func TestRootCmdNoPromptExitsCleanly(t *testing.T) {
 	// With API key set but no prompt in print mode, the CLI should exit cleanly.
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	isolateCLIEnv(t)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--model", "gpt-4o", "--mode", "print"})
@@ -270,15 +271,41 @@ func TestRootCmdNoPromptExitsCleanly(t *testing.T) {
 	}
 }
 
+// isolateCLIEnv makes a cli test hermetic with respect to extension
+// and resource discovery. The defaults walk upward from the test's
+// cwd looking for .pi-go/ and .git/ markers, so without isolation the
+// test picks up whatever extensions are installed in the repository
+// (e.g. an untracked .pi-go/extensions/hosted-hello directory that
+// would try to spawn a real `go run .` subprocess). Point every
+// home-dir env var and the cwd at a fresh temp dir so discovery
+// finds nothing.
+func isolateCLIEnv(t *testing.T) {
+	t.Helper()
+	clean := t.TempDir()
+	t.Setenv("PI_GO_HOME", clean)
+	t.Setenv("HOME", clean)
+	t.Setenv("USERPROFILE", clean)
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(clean); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(origWd)
+	})
+}
+
 func TestCLI_SmolFlag(t *testing.T) {
 	// --smol flag should resolve to smol role model.
 	t.Setenv("ANTHROPIC_API_KEY", "test-key")
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	isolateCLIEnv(t)
 
-	// Write a config with smol role.
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	cfgDir := filepath.Join(tmpDir, ".pi-go")
+	// Write a config with smol role into the isolated HOME.
+	home, _ := os.UserHomeDir()
+	cfgDir := filepath.Join(home, ".pi-go")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -303,6 +330,7 @@ func TestCLI_SmolFlag(t *testing.T) {
 func TestCLI_ModelFlagOverridesDefault(t *testing.T) {
 	// --model flag overrides the default role model.
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	isolateCLIEnv(t)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--model", "gpt-4o", "--mode", "print"})
@@ -316,6 +344,7 @@ func TestCLI_RoleFlagsMutuallyExclusive(t *testing.T) {
 	// When multiple role flags are set, the switch statement picks one (smol wins due to order).
 	// This just verifies no crash occurs.
 	t.Setenv("OPENAI_API_KEY", "test-key")
+	isolateCLIEnv(t)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--smol", "--mode", "print"})
@@ -328,14 +357,8 @@ func TestCLI_RoleFlagsMutuallyExclusive(t *testing.T) {
 func TestRootCmdDefaultModelNoPrompt(t *testing.T) {
 	// Default model is gpt-5.4, so set OpenAI key.
 	// No prompt in print mode → should exit cleanly with info message.
-	if err := os.Setenv("OPENAI_API_KEY", "test-key"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("OPENAI_API_KEY"); err != nil {
-			t.Logf("failed to unset env: %v", err)
-		}
-	}()
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	isolateCLIEnv(t)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--mode", "print"})
@@ -365,10 +388,7 @@ func TestRootCmdMissingAPIKey(t *testing.T) {
 func TestContinueNoSessionError(t *testing.T) {
 	// --continue with no previous sessions should error.
 	t.Setenv("OPENAI_API_KEY", "test-key")
-
-	// Use a temp dir so there are no existing sessions.
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
+	isolateCLIEnv(t)
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--model", "gpt-4o", "--continue", "hello"})
@@ -790,7 +810,7 @@ func TestLoadDotEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up a temp .pi-go dir with .env file
+			// Set up a temp .pi-go dir with .env file.
 			tmpDir := t.TempDir()
 			piGoDir := filepath.Join(tmpDir, ".pi-go")
 			if err := os.MkdirAll(piGoDir, 0755); err != nil {
@@ -803,18 +823,14 @@ func TestLoadDotEnv(t *testing.T) {
 				}
 			}
 
-			// Override home dir
-			origHome := os.Getenv("HOME")
-			if err := os.Setenv("HOME", tmpDir); err != nil {
-				t.Fatalf("failed to set HOME: %v", err)
-			}
-			// Use Setenv in cleanup but ignore error (cleanup shouldn't fail test)
-			t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+			// Override home dir. os.UserHomeDir() reads HOME on Unix
+			// and USERPROFILE on Windows — set both so the test works
+			// cross-platform.
+			t.Setenv("HOME", tmpDir)
+			t.Setenv("USERPROFILE", tmpDir)
 
 			if tt.setEnv != "" {
-				if err := os.Setenv("TEST_KEY", tt.setEnv); err != nil {
-					t.Fatalf("failed to set env: %v", err)
-				}
+				t.Setenv("TEST_KEY", tt.setEnv)
 			}
 			t.Cleanup(func() { _ = os.Unsetenv("TEST_KEY") })
 
@@ -829,13 +845,10 @@ func TestLoadDotEnv(t *testing.T) {
 }
 
 func TestLoadDotEnvNoFile(t *testing.T) {
-	// Should not panic when .env doesn't exist
+	// Should not panic when .env doesn't exist.
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", tmpDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	loadDotEnv() // Should not panic
 }
@@ -1151,6 +1164,7 @@ func TestLoadDotEnvQuotedValues(t *testing.T) {
 	}
 
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 	t.Cleanup(func() { _ = os.Unsetenv("TEST_QUOTED_KEY") })
 
 	loadDotEnv()
@@ -1172,6 +1186,7 @@ func TestLoadDotEnvMultipleKeys(t *testing.T) {
 	}
 
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 	t.Cleanup(func() {
 		_ = os.Unsetenv("TEST_MULTI_A")
 		_ = os.Unsetenv("TEST_MULTI_B")
@@ -1198,6 +1213,7 @@ func TestLoadDotEnvExistingVarNotOverridden(t *testing.T) {
 	}
 
 	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 	t.Setenv("TEST_EXISTING", "from-env")
 
 	loadDotEnv()

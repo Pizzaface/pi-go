@@ -899,8 +899,13 @@ func TestOpenBrowserCommand_WindowsUsesRundll32(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := cmd.Path; got != "rundll32" {
-		t.Fatalf("expected rundll32, got %q", got)
+	// exec.Command resolves the command via PATH on Windows, producing
+	// e.g. "C:\\WINDOWS\\system32\\rundll32.exe". On Unix the lookup
+	// fails and cmd.Path stays as "rundll32". Match the base name
+	// without extension to work on both.
+	base := strings.TrimSuffix(filepath.Base(cmd.Path), filepath.Ext(cmd.Path))
+	if base != "rundll32" {
+		t.Fatalf("expected rundll32, got %q (cmd.Path=%q)", base, cmd.Path)
 	}
 	if len(cmd.Args) != 3 {
 		t.Fatalf("expected 3 args, got %d: %v", len(cmd.Args), cmd.Args)

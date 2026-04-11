@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"google.golang.org/adk/tool"
 
@@ -256,12 +257,20 @@ func lspSymbolsHandler(_ tool.Context, mgr *lsp.Manager, input LSPFileInput) (LS
 // --- Helpers ---
 
 // fileURI converts a file path to a file:// URI (matching lsp package convention).
+// Ensures the path portion always starts with a slash so Windows
+// drive-letter paths render as "file:///C:/..." (three slashes) per
+// the LSP spec, rather than "file://C:/..." which Go's url.URL would
+// otherwise produce because it interprets "C:" as a host.
 func fileURI(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
 	}
-	u := &url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
+	slash := filepath.ToSlash(abs)
+	if !strings.HasPrefix(slash, "/") {
+		slash = "/" + slash
+	}
+	u := &url.URL{Scheme: "file", Path: slash}
 	return u.String()
 }
 
