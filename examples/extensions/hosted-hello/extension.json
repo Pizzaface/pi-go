@@ -1,6 +1,6 @@
 {
   "name": "hosted-hello",
-  "description": "Hosted extension example over stdio JSON-RPC",
+  "description": "Hosted extension example over stdio JSON-RPC (protocol v2.0)",
   "runtime": {
     "type": "hosted_stdio_jsonrpc",
     "command": "go",
@@ -11,7 +11,6 @@
   },
   "capabilities": [
     "commands.register",
-    "ui.status",
-    "render.text"
+    "ui.status"
   ]
 }

@@ -1,124 +1,57 @@
+// Package main is the pi-go hosted-hello example extension, rewritten
+// against the v2 host_call protocol. It registers a single slash
+// command (/hello) and pushes a status line entry via the ui service.
 package main
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
+	"context"
+	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/dimetron/pi-go/internal/extension/sdk"
+	commandstypes "github.com/dimetron/pi-go/internal/extension/services/commands"
+	uitypes "github.com/dimetron/pi-go/internal/extension/services/ui"
 )
 
 func main() {
-	decoder := json.NewDecoder(os.Stdin)
-	encoder := json.NewEncoder(os.Stdout)
+	client := sdk.NewClient(os.Stdin, os.Stdout)
 
-	for {
-		var req hostproto.RPCRequest
-		if err := decoder.Decode(&req); err != nil {
-			if errors.Is(err, io.EOF) {
-				return
-			}
-			_ = sendError(encoder, req.ID, -32700, fmt.Sprintf("decode error: %v", err))
-			return
-		}
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
-		switch req.Method {
-		case hostproto.MethodHandshake:
-			if err := handleHandshake(encoder, req); err != nil {
-				_ = sendError(encoder, req.ID, -32000, err.Error())
-				return
-			}
-		case hostproto.MethodShutdown:
-			_ = sendResult(encoder, req.ID, hostproto.ShutdownControl{Reason: "bye"})
-			return
-		default:
-			_ = sendError(encoder, req.ID, -32601, "method not found")
-		}
-	}
-}
-
-func handleHandshake(encoder *json.Encoder, req hostproto.RPCRequest) error {
-	var handshake hostproto.HandshakeRequest
-	if err := json.Unmarshal(req.Params, &handshake); err != nil {
-		return fmt.Errorf("invalid handshake payload: %w", err)
-	}
-	if err := hostproto.ValidateProtocolCompatibility(handshake.ProtocolVersion); err != nil {
-		_ = sendResult(encoder, req.ID, hostproto.HandshakeResponse{
-			ProtocolVersion: hostproto.ProtocolVersion,
-			Accepted:        false,
-			Message:         err.Error(),
-		})
-		return err
-	}
-
-	if err := sendResult(encoder, req.ID, hostproto.HandshakeResponse{
-		ProtocolVersion: hostproto.ProtocolVersion,
-		Accepted:        true,
-		Message:         "hosted-hello ready",
-	}); err != nil {
-		return err
-	}
-
-	// Optional best-effort command registration request.
-	_ = sendRequest(encoder, hostproto.MethodRegisterCommand, hostproto.CommandRegistration{
-		Name:        "hello",
-		Description: "Say hello from hosted extension",
-		Prompt:      "Say hello from hosted extension. Extra: {{args}}",
-	})
-
-	// Optional best-effort UI status intent.
-	statusIntent := extension.UIIntent{
-		Type: extension.UIIntentStatus,
-		Status: &extension.StatusIntent{
-			Text: "hosted-hello connected",
+	err := client.Serve(ctx, sdk.ServeOptions{
+		ExtensionID: "hosted-hello",
+		Mode:        "hosted_stdio",
+		RequestedServices: []hostproto.ServiceRequest{
+			{Service: "ui", Version: 1, Methods: []string{"status"}},
+			{Service: "commands", Version: 1, Methods: []string{"register"}},
 		},
-	}
-	intentPayload, err := json.Marshal(statusIntent)
-	if err != nil {
-		return err
-	}
-	_ = sendRequest(encoder, hostproto.MethodIntent, hostproto.IntentEnvelope{
-		Type:    string(extension.IntentUI),
-		Payload: intentPayload,
-	})
+		OnReady: func(ready sdk.HandshakeReady) error {
+			// Register a slash command.
+			if _, err := ready.Client.HostCall(ctx, "commands", "register", 1, commandstypes.RegisterPayload{
+				Name:        "hello",
+				Description: "Say hello from the hosted-hello extension",
+				Prompt:      "Say hello from the hosted-hello extension. Extra args: {{args}}",
+				Kind:        "prompt",
+			}); err != nil {
+				log.Printf("hosted-hello: commands.register failed: %v", err)
+			}
 
-	return nil
-}
-
-func sendRequest(encoder *json.Encoder, method string, payload any) error {
-	params, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return encoder.Encode(hostproto.RPCRequest{
-		JSONRPC: hostproto.JSONRPCVersion,
-		Method:  method,
-		Params:  params,
-	})
-}
-
-func sendResult(encoder *json.Encoder, id int64, payload any) error {
-	result, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return encoder.Encode(hostproto.RPCResponse{
-		JSONRPC: hostproto.JSONRPCVersion,
-		ID:      id,
-		Result:  result,
-	})
-}
-
-func sendError(encoder *json.Encoder, id int64, code int, message string) error {
-	return encoder.Encode(hostproto.RPCResponse{
-		JSONRPC: hostproto.JSONRPCVersion,
-		ID:      id,
-		Error: &hostproto.RPCError{
-			Code:    code,
-			Message: message,
+			// Push a status line entry.
+			if _, err := ready.Client.HostCall(ctx, "ui", "status", 1, uitypes.StatusPayload{
+				Text:  "hosted-hello connected",
+				Color: "cyan",
+			}); err != nil {
+				log.Printf("hosted-hello: ui.status failed: %v", err)
+			}
+			return nil
 		},
 	})
+	if err != nil && err != context.Canceled {
+		log.Printf("hosted-hello: Serve exited: %v", err)
+		os.Exit(1)
+	}
 }

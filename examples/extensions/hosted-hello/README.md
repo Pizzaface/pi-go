@@ -1,42 +1,44 @@
 # hosted-hello
 
-Minimal hosted extension example for go-pi.
+Minimal hosted extension example for pi-go, built against the v2 extension
+protocol (`docs/superpowers/specs/2026-04-11-extension-platform-v2-design.md`).
 
-This example demonstrates:
+## What it demonstrates
 
-- stdio JSON-RPC handshake
-- optional command registration request
-- optional status UI intent request
-- clean shutdown handling
+- The v2 handshake with `requested_services`
+- The `sdk.Client.Serve` lifecycle helper
+- A `commands.register` host_call
+- A `ui.status` host_call
 
 ## Files
 
-- `extension.json`: hosted runtime manifest
-- `main.go`: extension process implementation
+- `extension.json`: hosted runtime manifest (declares the capabilities it needs)
+- `main.go`: the extension process, using the SDK
 
 ## Install
 
-Copy this folder into one of the extension discovery locations, for example:
+Copy this folder into one of the extension discovery locations:
 
-- `~/.pi-go/extensions/hosted-hello/`
+```
+~/.pi-go/extensions/hosted-hello/
+```
 
 ## Approvals
 
-Hosted extensions require explicit approval in:
-
-- `~/.pi-go/extensions/approvals.json`
-
-Example approval entry:
+Hosted extensions require explicit approval in `~/.pi-go/extensions/approvals.json`:
 
 ```json
 {
-  "extension_id": "hosted-hello",
-  "trust_class": "hosted_third_party",
-  "hosted_required": true,
-  "granted_capabilities": [
-    "commands.register",
-    "ui.status",
-    "render.text"
+  "approvals": [
+    {
+      "extension_id": "hosted-hello",
+      "trust_class": "hosted_third_party",
+      "hosted_required": true,
+      "granted_capabilities": [
+        "ui.status",
+        "commands.register"
+      ]
+    }
   ]
 }
 ```
@@ -49,10 +51,11 @@ The manifest starts the extension with:
 go run .
 ```
 
-from this directory.
+from this directory. pi-go invokes this automatically when the extension is enabled.
 
 ## Notes
 
-- The host always performs handshake and shutdown.
-- Command/intent requests are best-effort and should be treated as optional until the host side subscribes to each
-  method in your deployment.
+- The host performs the handshake, returns a catalog of `host_services`, and then
+  the extension issues two `host_call` RPCs to register its command and status line.
+- Both registrations are best-effort: any error is logged and the extension continues.
+- Shutdown is clean on SIGINT/SIGTERM or when the host closes stdin.
