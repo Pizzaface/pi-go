@@ -2,6 +2,7 @@ package extension
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,8 +11,14 @@ import (
 
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
 	"github.com/dimetron/pi-go/internal/extension/hostruntime"
+	"github.com/dimetron/pi-go/internal/extension/services"
 	"google.golang.org/adk/tool"
 )
+
+// Dispatcher is re-exported from hostruntime so HostedClient
+// implementations and tests can reference it without importing
+// hostruntime directly.
+type Dispatcher = hostruntime.Dispatcher
 
 type commandRegistration struct {
 	command   SlashCommand
@@ -36,10 +43,11 @@ type rendererRegistration struct {
 }
 
 type ManagerOptions struct {
-	Permissions     *Permissions
-	Registry        *Registry
-	BuiltinCommands []string
-	HostedLauncher  HostedLauncher
+	Permissions      *Permissions
+	Registry         *Registry
+	BuiltinCommands  []string
+	HostedLauncher   HostedLauncher
+	ServicesRegistry *services.Registry
 }
 
 type HostedClient interface {
@@ -71,22 +79,23 @@ func (defaultHostedLauncher) Launch(ctx context.Context, manifest Manifest) (Hos
 
 // Manager stores runtime extension registrations and ownership metadata.
 type Manager struct {
-	mu              sync.RWMutex
-	permissions     *Permissions
-	registry        *Registry
-	hostedLauncher  HostedLauncher
-	stateStore      *StateStore
-	builtins        map[string]struct{}
-	extensions      map[string]extensionRegistration
-	commands        map[string]commandRegistration
-	tools           map[string]toolRegistration
-	runtimeTools    map[string]tool.Tool
-	hostedClients   map[string]HostedClient
-	subscriptions   map[string]map[string]struct{} // event -> extension IDs
-	eventHandlers   map[string]func(Event)
-	intentSubs      map[int]chan UIIntentEnvelope
-	nextIntentSubID int
-	renderers       map[RenderSurface]rendererRegistration
+	mu               sync.RWMutex
+	permissions      *Permissions
+	registry         *Registry
+	servicesRegistry *services.Registry
+	hostedLauncher   HostedLauncher
+	stateStore       *StateStore
+	builtins         map[string]struct{}
+	extensions       map[string]extensionRegistration
+	commands         map[string]commandRegistration
+	tools            map[string]toolRegistration
+	runtimeTools     map[string]tool.Tool
+	hostedClients    map[string]HostedClient
+	subscriptions    map[string]map[string]struct{} // event -> extension IDs
+	eventHandlers    map[string]func(Event)
+	intentSubs       map[int]chan UIIntentEnvelope
+	nextIntentSubID  int
+	renderers        map[RenderSurface]rendererRegistration
 }
 
 // Registrar is passed to compiled extensions so they can register contributions.
@@ -173,22 +182,47 @@ func NewManager(opts ManagerOptions) *Manager {
 			builtins[name] = struct{}{}
 		}
 	}
-	return &Manager{
-		permissions:    permissions,
-		registry:       registry,
-		hostedLauncher: hostedLauncher,
-		stateStore:     nil,
-		builtins:       builtins,
-		extensions:     map[string]extensionRegistration{},
-		commands:       map[string]commandRegistration{},
-		tools:          map[string]toolRegistration{},
-		runtimeTools:   map[string]tool.Tool{},
-		hostedClients:  map[string]HostedClient{},
-		subscriptions:  map[string]map[string]struct{}{},
-		eventHandlers:  map[string]func(Event){},
-		intentSubs:     map[int]chan UIIntentEnvelope{},
-		renderers:      map[RenderSurface]rendererRegistration{},
+
+	mgr := &Manager{
+		permissions:      permissions,
+		registry:         registry,
+		servicesRegistry: opts.ServicesRegistry,
+		hostedLauncher:   hostedLauncher,
+		stateStore:       nil,
+		builtins:         builtins,
+		extensions:       map[string]extensionRegistration{},
+		commands:         map[string]commandRegistration{},
+		tools:            map[string]toolRegistration{},
+		runtimeTools:     map[string]tool.Tool{},
+		hostedClients:    map[string]HostedClient{},
+		subscriptions:    map[string]map[string]struct{}{},
+		eventHandlers:    map[string]func(Event){},
+		intentSubs:       map[int]chan UIIntentEnvelope{},
+		renderers:        map[RenderSurface]rendererRegistration{},
 	}
+
+	if mgr.servicesRegistry == nil {
+		gate := managerCapabilityGate{permissions: permissions, manager: mgr}
+		mgr.servicesRegistry = services.NewRegistry(gate)
+	}
+
+	return mgr
+}
+
+// DispatchHostCall routes an ext-initiated host_call through the
+// services registry. It's the integration point for hostruntime.Client
+// .ServeInbound (via the Dispatcher interface).
+func (m *Manager) DispatchHostCall(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error) {
+	sess := &services.SessionContext{
+		ExtensionID: extensionID,
+	}
+	m.mu.RLock()
+	if m.stateStore != nil && m.stateStore.Bound() {
+		// SessionID/SessionsDir are populated for services that need them.
+		// (Plan 2 wires this through fully when the state service lands.)
+	}
+	m.mu.RUnlock()
+	return m.servicesRegistry.Dispatch(extensionID, params, sess)
 }
 
 func (m *Manager) BindSession(sessionID, sessionsDir string) {
@@ -889,6 +923,29 @@ func renderKindCapability(kind RenderKind) (Capability, error) {
 	default:
 		return "", fmt.Errorf("unsupported render kind %q", kind)
 	}
+}
+
+// managerCapabilityGate adapts *Permissions to the
+// services.CapabilityGate interface. It looks up the registered
+// extension's trust class to pick the right gate policy. If the
+// extension is unknown, it defaults to HostedThirdParty (the most
+// restrictive class).
+type managerCapabilityGate struct {
+	permissions *Permissions
+	manager     *Manager
+}
+
+// Allowed consults Permissions.AllowsService for the looked-up trust.
+func (g managerCapabilityGate) Allowed(extensionID, service, method string) bool {
+	trust := TrustClassHostedThirdParty
+	if g.manager != nil {
+		g.manager.mu.RLock()
+		if reg, ok := g.manager.extensions[extensionID]; ok {
+			trust = reg.trust
+		}
+		g.manager.mu.RUnlock()
+	}
+	return g.permissions.AllowsService(extensionID, trust, service, method)
 }
 
 func normalizeRenderSurface(surface RenderSurface) RenderSurface {
