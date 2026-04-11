@@ -15,15 +15,8 @@ const (
 )
 
 const (
-	MethodHandshake       = "pi.extension/handshake"
-	MethodEvent           = "pi.extension/event"
-	MethodIntent          = "pi.extension/intent"
-	MethodRegisterCommand = "pi.extension/register_command"
-	MethodRegisterTool    = "pi.extension/register_tool"
-	MethodRender          = "pi.extension/render"
-	MethodHealth          = "pi.extension/health"
-	MethodShutdown        = "pi.extension/shutdown"
-	MethodReload          = "pi.extension/reload"
+	MethodHandshake = "pi.extension/handshake"
+	MethodShutdown  = "pi.extension/shutdown"
 )
 
 type RPCRequest struct {
@@ -69,59 +62,7 @@ func ValidateProtocolCompatibility(version string) error {
 	return nil
 }
 
-type EventPayload struct {
-	Type string         `json:"type"`
-	Data map[string]any `json:"data,omitempty"`
-}
-
-type IntentEnvelope struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload,omitempty"`
-}
-
-type CommandRegistration struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Prompt      string `json:"prompt,omitempty"`
-}
-
-type ToolRegistration struct {
-	Name      string `json:"name"`
-	Intercept bool   `json:"intercept,omitempty"`
-}
-
-type RenderKind string
-
-const (
-	RenderKindText     RenderKind = "text"
-	RenderKindMarkdown RenderKind = "markdown"
-)
-
-type RenderPayload struct {
-	Kind    RenderKind `json:"kind"`
-	Content string     `json:"content"`
-}
-
-func (r RenderPayload) Validate() error {
-	switch r.Kind {
-	case RenderKindText, RenderKindMarkdown:
-		return nil
-	default:
-		return fmt.Errorf("unsupported render kind %q", r.Kind)
-	}
-}
-
-type HealthNotification struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
 type ShutdownControl struct {
-	Reason string `json:"reason,omitempty"`
-}
-
-type ReloadControl struct {
 	Reason string `json:"reason,omitempty"`
 }
 
