@@ -54,6 +54,7 @@ type ManagerOptions struct {
 
 type HostedClient interface {
 	Handshake(context.Context, hostproto.HandshakeRequest) (hostproto.HandshakeResponse, error)
+	ServeInbound(ctx context.Context, extensionID string, dispatcher Dispatcher) error
 	Shutdown(context.Context) error
 	IsHealthy() bool
 }
@@ -433,8 +434,27 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 		m.mu.Lock()
 		m.hostedClients[reg.id] = client
 		m.mu.Unlock()
+
+		// Spawn the inbound dispatch loop. It reads host_call requests
+		// from the extension process and routes them through
+		// DispatchHostCall. The loop exits cleanly on EOF or shutdown.
+		go func(extID string, c HostedClient) {
+			serveCtx, serveCancel := context.WithCancel(context.Background())
+			defer serveCancel()
+			dispatcher := dispatcherFunc(func(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error) {
+				return m.DispatchHostCall(extensionID, params)
+			})
+			_ = c.ServeInbound(serveCtx, extID, dispatcher)
+		}(reg.id, client)
 	}
 	return nil
+}
+
+// dispatcherFunc adapts a function to the Dispatcher interface.
+type dispatcherFunc func(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error)
+
+func (f dispatcherFunc) Dispatch(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error) {
+	return f(extensionID, params)
 }
 
 func (m *Manager) HostedClient(extensionID string) (HostedClient, bool) {

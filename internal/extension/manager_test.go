@@ -351,12 +351,19 @@ type mockHostedClient struct {
 	response      hostproto.HandshakeResponse
 	shutdowns     int
 	healthy       bool
+	serveCalled   bool
 }
 
 func (m *mockHostedClient) Handshake(_ context.Context, request hostproto.HandshakeRequest) (hostproto.HandshakeResponse, error) {
 	m.lastHandshake = request
 	m.healthy = m.response.Accepted
 	return m.response, nil
+}
+
+func (m *mockHostedClient) ServeInbound(ctx context.Context, _ string, _ Dispatcher) error {
+	m.serveCalled = true
+	<-ctx.Done()
+	return nil
 }
 
 func (m *mockHostedClient) Shutdown(_ context.Context) error {
@@ -455,6 +462,66 @@ func TestManager_DispatchUIStatusForwardsToIntentChannel(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for UI intent")
 	}
+}
+
+func TestStartHostedExtensions_RunsServeInbound(t *testing.T) {
+	client := &mockHostedClient{
+		response: hostproto.HandshakeResponse{
+			ProtocolVersion: hostproto.ProtocolVersion,
+			Accepted:        true,
+		},
+	}
+	mgr := NewManager(ManagerOptions{
+		Permissions: NewPermissions([]ApprovalRecord{{
+			ExtensionID:         "ext.demo",
+			TrustClass:          TrustClassHostedThirdParty,
+			HostedRequired:      true,
+			GrantedCapabilities: []Capability{CapabilityUIStatus},
+		}}),
+		HostedLauncher: stubHostedLauncher{client: client},
+	})
+	manifest := Manifest{
+		Name:         "ext.demo",
+		Capabilities: []Capability{CapabilityUIStatus},
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "demo",
+		},
+	}
+	if err := mgr.RegisterManifest(manifest); err != nil {
+		t.Fatalf("RegisterManifest: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := mgr.StartHostedExtensions(ctx, "hosted_stdio"); err != nil {
+		t.Fatalf("StartHostedExtensions: %v", err)
+	}
+	// Give the spawned ServeInbound goroutine a chance to run.
+	deadline := time.After(time.Second)
+	for {
+		if client.serveCalled {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("ServeInbound was not called")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if client.lastHandshake.ExtensionID != "ext.demo" {
+		t.Errorf("handshake ExtensionID = %q", client.lastHandshake.ExtensionID)
+	}
+	if len(client.lastHandshake.RequestedServices) == 0 {
+		t.Error("handshake RequestedServices empty")
+	}
+}
+
+type stubHostedLauncher struct {
+	client *mockHostedClient
+}
+
+func (l stubHostedLauncher) Launch(_ context.Context, _ Manifest) (HostedClient, error) {
+	return l.client, nil
 }
 
 func TestManager_DispatchCommandRegisterForwardsToCommandRegistry(t *testing.T) {
