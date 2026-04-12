@@ -82,13 +82,15 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building provider registry: %w", err)
 	}
-	permissions, err := LoadPermissions(DefaultApprovalsPath())
+	approvalsPath := DefaultApprovalsPath()
+	permissions, err := LoadPermissions(approvalsPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading extension approvals: %w", err)
 	}
 	manager := NewManager(ManagerOptions{
-		Permissions: permissions,
-		Registry:    cfg.CompiledRegistry,
+		Permissions:   permissions,
+		Registry:      cfg.CompiledRegistry,
+		ApprovalsPath: approvalsPath,
 	})
 	if err := manager.RegisterManifests(manifests); err != nil {
 		return nil, fmt.Errorf("registering extension manifests: %w", err)
