@@ -446,6 +446,79 @@ func TestBuildRuntime_IncludesManagerRegisteredTools(t *testing.T) {
 	}
 }
 
+func TestManager_GrantApproval(t *testing.T) {
+	dir := t.TempDir()
+	approvalsPath := filepath.Join(dir, "approvals.json")
+	m := NewManager(ManagerOptions{
+		Permissions:   EmptyPermissions(),
+		ApprovalsPath: approvalsPath,
+	})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+		Capabilities: []Capability{CapabilityUIStatus},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if info := findExtension(t, m, "ext.hosted"); info.State != StatePending {
+		t.Fatalf("pre-grant state = %q, want pending", info.State)
+	}
+
+	if err := m.GrantApproval(GrantInput{
+		ExtensionID:  "ext.hosted",
+		TrustClass:   TrustClassHostedThirdParty,
+		Capabilities: []Capability{CapabilityUIStatus},
+	}); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+
+	if info := findExtension(t, m, "ext.hosted"); info.State != StateReady {
+		t.Fatalf("post-grant state = %q, want ready", info.State)
+	}
+
+	reloaded, err := LoadPermissions(approvalsPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if _, ok := reloaded.Approval("ext.hosted"); !ok {
+		t.Fatal("expected approvals.json to contain ext.hosted")
+	}
+}
+
+func TestManager_DenyApproval(t *testing.T) {
+	m := NewManager(ManagerOptions{Permissions: EmptyPermissions()})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DenyApproval("ext.hosted"); err != nil {
+		t.Fatalf("deny: %v", err)
+	}
+	if info := findExtension(t, m, "ext.hosted"); info.State != StateDenied {
+		t.Fatalf("post-deny state = %q, want denied", info.State)
+	}
+}
+
+// findExtension is a test helper.
+func findExtension(t *testing.T, m *Manager, id string) ExtensionInfo {
+	t.Helper()
+	for _, info := range m.Extensions() {
+		if info.ID == id {
+			return info
+		}
+	}
+	t.Fatalf("extension %q not found", id)
+	return ExtensionInfo{}
+}
+
 type mockHostedLauncher struct {
 	client       HostedClient
 	launches     int

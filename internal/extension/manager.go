@@ -65,6 +65,13 @@ type ExtensionInfo struct {
 	StartedAt             time.Time
 }
 
+// GrantInput carries the parameters for an approval grant.
+type GrantInput struct {
+	ExtensionID  string
+	TrustClass   TrustClass
+	Capabilities []Capability
+}
+
 type extensionRegistration struct {
 	manifest  Manifest
 	trust     TrustClass
@@ -316,6 +323,85 @@ func (m *Manager) Extensions() []ExtensionInfo {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// GrantApproval records an approval for a pending extension and
+// transitions it to Ready. Persists to approvals.json if
+// ManagerOptions.ApprovalsPath was set. Does NOT auto-start.
+func (m *Manager) GrantApproval(input GrantInput) error {
+	id := strings.TrimSpace(input.ExtensionID)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+
+	m.mu.Lock()
+	reg, ok := m.extensions[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q is not registered", id)
+	}
+	if reg.state != StatePending && reg.state != StateDenied {
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q cannot be granted from state %q", id, reg.state)
+	}
+
+	trust := input.TrustClass
+	if trust == "" {
+		trust = reg.trust
+	}
+	caps := append([]Capability(nil), input.Capabilities...)
+	if len(caps) == 0 {
+		caps = append(caps, reg.manifest.Capabilities...)
+	}
+
+	record := ApprovalRecord{
+		ExtensionID:         id,
+		TrustClass:          trust,
+		GrantedCapabilities: caps,
+		HostedRequired:      reg.manifest.runtimeType() == RuntimeTypeHostedStdioJSONRPC,
+		ApprovedAt:          time.Now().UTC(),
+	}
+
+	reg.trust = trust
+	reg.state = StateReady
+	reg.lastError = ""
+	m.extensions[id] = reg
+	approvalsPath := m.approvalsPath
+	m.mu.Unlock()
+
+	if approvalsPath != "" {
+		if err := m.permissions.Upsert(approvalsPath, record); err != nil {
+			m.mu.Lock()
+			reg.state = StatePending
+			reg.lastError = err.Error()
+			m.extensions[id] = reg
+			m.mu.Unlock()
+			return fmt.Errorf("persisting approval for %q: %w", id, err)
+		}
+	} else {
+		m.permissions.approvals[id] = record
+	}
+	return nil
+}
+
+// DenyApproval transitions a pending extension to Denied. In-memory only.
+func (m *Manager) DenyApproval(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	reg, ok := m.extensions[id]
+	if !ok {
+		return fmt.Errorf("extension %q is not registered", id)
+	}
+	if reg.state != StatePending {
+		return fmt.Errorf("extension %q cannot be denied from state %q", id, reg.state)
+	}
+	reg.state = StateDenied
+	m.extensions[id] = reg
+	return nil
 }
 
 // SubscribeUIIntents creates a non-blocking subscription channel for UI intents.
