@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -707,6 +708,70 @@ type stubHostedLauncher struct {
 
 func (l stubHostedLauncher) Launch(_ context.Context, _ Manifest) (HostedClient, error) {
 	return l.client, nil
+}
+
+func TestManager_ReloadManifests(t *testing.T) {
+	root := t.TempDir()
+	extDir := filepath.Join(root, "extensions")
+
+	mustWriteManifest(t, extDir, "ext.first", `{"name":"ext.first","description":"first"}`)
+
+	m := NewManager(ManagerOptions{Permissions: EmptyPermissions()})
+	manifests, err := LoadManifests(extDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterManifests(manifests); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add a new extension on disk.
+	mustWriteManifest(t, extDir, "ext.second", `{"name":"ext.second","description":"second"}`)
+
+	added, removed, err := m.ReloadManifests(extDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 1 || added[0] != "ext.second" {
+		t.Fatalf("added = %v, want [ext.second]", added)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("removed = %v, want []", removed)
+	}
+
+	// Remove the first extension from disk.
+	if err := os.RemoveAll(filepath.Join(extDir, "ext.first")); err != nil {
+		t.Fatal(err)
+	}
+	added, removed, err = m.ReloadManifests(extDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 0 {
+		t.Fatalf("added = %v, want []", added)
+	}
+	if len(removed) != 1 || removed[0] != "ext.first" {
+		t.Fatalf("removed = %v, want [ext.first]", removed)
+	}
+
+	ids := map[string]bool{}
+	for _, info := range m.Extensions() {
+		ids[info.ID] = true
+	}
+	if ids["ext.first"] || !ids["ext.second"] {
+		t.Fatalf("unexpected extensions after reload: %v", ids)
+	}
+}
+
+func mustWriteManifest(t *testing.T, extDir, name, body string) {
+	t.Helper()
+	dir := filepath.Join(extDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extension.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestManager_DispatchCommandRegisterForwardsToCommandRegistry(t *testing.T) {

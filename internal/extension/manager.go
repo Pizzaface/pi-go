@@ -1155,6 +1155,51 @@ func (m *Manager) UnregisterExtension(extensionID string) {
 	}
 }
 
+// ReloadManifests rescans the given directories and reconciles the
+// manager's extension set. Returns added and removed ids.
+func (m *Manager) ReloadManifests(dirs ...string) (added, removed []string, err error) {
+	manifests, err := LoadManifests(dirs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reload: %w", err)
+	}
+
+	onDisk := make(map[string]Manifest, len(manifests))
+	for _, manifest := range manifests {
+		onDisk[manifest.Name] = manifest
+	}
+
+	m.mu.RLock()
+	existing := make(map[string]bool, len(m.extensions))
+	for id := range m.extensions {
+		existing[id] = true
+	}
+	m.mu.RUnlock()
+
+	for id, manifest := range onDisk {
+		if existing[id] {
+			continue
+		}
+		if regErr := m.RegisterManifest(manifest); regErr != nil {
+			m.markErrored(id, regErr)
+			continue
+		}
+		added = append(added, id)
+	}
+
+	for id := range existing {
+		if _, stillOnDisk := onDisk[id]; stillOnDisk {
+			continue
+		}
+		_ = m.StopExtension(context.Background(), id)
+		m.UnregisterExtension(id)
+		removed = append(removed, id)
+	}
+
+	sort.Strings(added)
+	sort.Strings(removed)
+	return added, removed, nil
+}
+
 func (m *Manager) Render(
 	ctx context.Context,
 	extensionID string,
