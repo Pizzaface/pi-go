@@ -578,6 +578,96 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 	return nil
 }
 
+// StartExtension launches a single hosted extension. Valid from
+// Ready/Stopped/Errored. Idempotent if Running. Rejects Pending/Denied.
+func (m *Manager) StartExtension(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+
+	m.mu.Lock()
+	reg, ok := m.extensions[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q is not registered", id)
+	}
+	if reg.manifest.runtimeType() != RuntimeTypeHostedStdioJSONRPC {
+		m.mu.Unlock()
+		return nil
+	}
+	switch reg.state {
+	case StateRunning:
+		m.mu.Unlock()
+		return nil
+	case StatePending, StateDenied:
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q cannot start from state %q", id, reg.state)
+	case StateReady, StateStopped, StateErrored:
+		// ok
+	default:
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q has unknown state %q", id, reg.state)
+	}
+	manifest := reg.manifest
+	trust := reg.trust
+	m.mu.Unlock()
+
+	if err := m.startOneHosted(ctx, id, manifest, trust, "interactive"); err != nil {
+		m.markErrored(id, err)
+		return err
+	}
+	return nil
+}
+
+// StopExtension gracefully shuts down a running hosted extension.
+func (m *Manager) StopExtension(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+
+	m.mu.Lock()
+	reg, ok := m.extensions[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q is not registered", id)
+	}
+	if reg.state != StateRunning {
+		m.mu.Unlock()
+		return nil
+	}
+	client := m.hostedClients[id]
+	delete(m.hostedClients, id)
+	for name, registration := range m.commands {
+		if registration.owner == id {
+			delete(m.commands, name)
+		}
+	}
+	for name, registration := range m.tools {
+		if registration.owner == id {
+			delete(m.tools, name)
+			delete(m.runtimeTools, name)
+		}
+	}
+	for surface, registration := range m.renderers {
+		if registration.owner == id {
+			delete(m.renderers, surface)
+		}
+	}
+	reg.state = StateStopped
+	reg.lastError = ""
+	m.extensions[id] = reg
+	m.mu.Unlock()
+
+	if client != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, HostedShutdownTimeout)
+		defer cancel()
+		_ = client.Shutdown(shutdownCtx)
+	}
+	return nil
+}
+
 // startOneHosted launches, handshakes, and wires the dispatch goroutine
 // for a single hosted extension.
 func (m *Manager) startOneHosted(ctx context.Context, id string, manifest Manifest, trust TrustClass, mode string) error {

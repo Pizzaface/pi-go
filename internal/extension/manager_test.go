@@ -735,3 +735,73 @@ func TestManager_DispatchCommandRegisterForwardsToCommandRegistry(t *testing.T) 
 		t.Errorf("Description = %q", cmd.Description)
 	}
 }
+
+func TestManager_StartAndStopExtension(t *testing.T) {
+	client := &mockHostedClient{response: hostproto.HandshakeResponse{
+		ProtocolVersion: hostproto.ProtocolVersion,
+		Accepted:        true,
+	}}
+	launcher := &mockHostedLauncher{client: client}
+	m := NewManager(ManagerOptions{
+		Permissions: NewPermissions([]ApprovalRecord{{
+			ExtensionID:    "ext.hosted",
+			TrustClass:     TrustClassHostedThirdParty,
+			HostedRequired: true,
+		}}),
+		HostedLauncher: launcher,
+	})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.StartExtension(context.Background(), "ext.hosted"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if info := findExtension(t, m, "ext.hosted"); info.State != StateRunning {
+		t.Fatalf("post-start state = %q, want running", info.State)
+	}
+	if launcher.launches != 1 {
+		t.Fatalf("launches = %d, want 1", launcher.launches)
+	}
+
+	// Idempotent: re-starting a running extension is a no-op.
+	if err := m.StartExtension(context.Background(), "ext.hosted"); err != nil {
+		t.Fatalf("idempotent start: %v", err)
+	}
+	if launcher.launches != 1 {
+		t.Fatalf("launches after idempotent = %d, want 1", launcher.launches)
+	}
+
+	if err := m.StopExtension(context.Background(), "ext.hosted"); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if info := findExtension(t, m, "ext.hosted"); info.State != StateStopped {
+		t.Fatalf("post-stop state = %q, want stopped", info.State)
+	}
+	if client.shutdowns != 1 {
+		t.Fatalf("shutdowns = %d, want 1", client.shutdowns)
+	}
+}
+
+func TestManager_StartExtension_RejectsPending(t *testing.T) {
+	m := NewManager(ManagerOptions{Permissions: EmptyPermissions()})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := m.StartExtension(context.Background(), "ext.hosted")
+	if err == nil {
+		t.Fatal("expected start of pending extension to fail")
+	}
+}
