@@ -41,9 +41,36 @@ type toolRegistration struct {
 	intercept bool
 }
 
+// ExtensionState is the lifecycle state of a registered extension.
+type ExtensionState string
+
+const (
+	StatePending ExtensionState = "pending_approval"
+	StateReady   ExtensionState = "ready"
+	StateRunning ExtensionState = "running"
+	StateStopped ExtensionState = "stopped"
+	StateErrored ExtensionState = "errored"
+	StateDenied  ExtensionState = "denied"
+)
+
+// ExtensionInfo is a read-only snapshot of a single extension's state,
+// used by the TUI panel and status line.
+type ExtensionInfo struct {
+	ID                    string
+	TrustClass            TrustClass
+	State                 ExtensionState
+	RequestedCapabilities []Capability
+	Runtime               RuntimeSpec
+	LastError             string
+	StartedAt             time.Time
+}
+
 type extensionRegistration struct {
-	manifest Manifest
-	trust    TrustClass
+	manifest  Manifest
+	trust     TrustClass
+	state     ExtensionState
+	lastError string
+	startedAt time.Time
 }
 
 type rendererRegistration struct {
@@ -58,6 +85,7 @@ type ManagerOptions struct {
 	BuiltinCommands  []string
 	HostedLauncher   HostedLauncher
 	ServicesRegistry *services.Registry
+	ApprovalsPath    string
 }
 
 type HostedClient interface {
@@ -95,6 +123,7 @@ type Manager struct {
 	registry         *Registry
 	servicesRegistry *services.Registry
 	hostedLauncher   HostedLauncher
+	approvalsPath    string
 	stateStore       *StateStore
 	builtins         map[string]struct{}
 	extensions       map[string]extensionRegistration
@@ -186,6 +215,7 @@ func NewManager(opts ManagerOptions) *Manager {
 	if hostedLauncher == nil {
 		hostedLauncher = defaultHostedLauncher{}
 	}
+	approvalsPath := strings.TrimSpace(opts.ApprovalsPath)
 	builtins := make(map[string]struct{}, len(builtinCommands))
 	for _, cmd := range builtinCommands {
 		name := normalizeCommandName(cmd)
@@ -199,6 +229,7 @@ func NewManager(opts ManagerOptions) *Manager {
 		registry:         registry,
 		servicesRegistry: opts.ServicesRegistry,
 		hostedLauncher:   hostedLauncher,
+		approvalsPath:    approvalsPath,
 		stateStore:       nil,
 		builtins:         builtins,
 		extensions:       map[string]extensionRegistration{},
@@ -265,6 +296,26 @@ func (m *Manager) StateNamespace(extensionID string) StateNamespace {
 
 func (m *Manager) Permissions() *Permissions {
 	return m.permissions
+}
+
+func (m *Manager) Extensions() []ExtensionInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ExtensionInfo, 0, len(m.extensions))
+	for id, reg := range m.extensions {
+		caps := append([]Capability(nil), reg.manifest.Capabilities...)
+		out = append(out, ExtensionInfo{
+			ID:                    id,
+			TrustClass:            reg.trust,
+			State:                 reg.state,
+			RequestedCapabilities: caps,
+			Runtime:               reg.manifest.Runtime,
+			LastError:             reg.lastError,
+			StartedAt:             reg.startedAt,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // SubscribeUIIntents creates a non-blocking subscription channel for UI intents.
@@ -349,12 +400,20 @@ func (m *Manager) RegisterManifest(manifest Manifest) error {
 	}
 
 	trust := m.permissions.ResolveTrust(manifest.Name, ResolveManifestTrust(manifest))
-	if manifest.runtimeType() == RuntimeTypeHostedStdioJSONRPC && !m.permissions.HostedApproved(manifest.Name, trust) {
-		return fmt.Errorf("extension %q requires hosted approval", manifest.Name)
+	initialState := StateReady
+	if manifest.runtimeType() == RuntimeTypeHostedStdioJSONRPC &&
+		!m.permissions.HostedApproved(manifest.Name, trust) {
+		initialState = StatePending
 	}
-	for _, capability := range manifest.Capabilities {
-		if !m.permissions.AllowsCapability(manifest.Name, trust, capability) {
-			return fmt.Errorf("extension %q capability %q is not approved", manifest.Name, capability)
+
+	// Capability gate validation only applies to Ready extensions;
+	// Pending extensions carry their requested caps through to the
+	// approval dialog untouched.
+	if initialState == StateReady {
+		for _, capability := range manifest.Capabilities {
+			if !m.permissions.AllowsCapability(manifest.Name, trust, capability) {
+				return fmt.Errorf("extension %q capability %q is not approved", manifest.Name, capability)
+			}
 		}
 	}
 
@@ -363,10 +422,13 @@ func (m *Manager) RegisterManifest(manifest Manifest) error {
 	m.extensions[manifest.Name] = extensionRegistration{
 		manifest: manifest,
 		trust:    trust,
+		state:    initialState,
 	}
-	for _, command := range manifest.TUI.Commands {
-		if err := m.registerCommandLocked(manifest.Name, command, true); err != nil {
-			return err
+	if initialState == StateReady {
+		for _, command := range manifest.TUI.Commands {
+			if err := m.registerCommandLocked(manifest.Name, command, true); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -408,6 +470,9 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 		if reg.manifest.runtimeType() != RuntimeTypeHostedStdioJSONRPC {
 			continue
 		}
+		if reg.state != StateReady {
+			continue
+		}
 		if _, started := m.hostedClients[id]; started {
 			continue
 		}
@@ -420,9 +485,6 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 	m.mu.RUnlock()
 
 	for _, reg := range toStart {
-		if !m.permissions.HostedApproved(reg.id, reg.trust) {
-			return fmt.Errorf("extension %q requires hosted approval", reg.id)
-		}
 		client, err := m.hostedLauncher.Launch(ctx, reg.manifest)
 		if err != nil {
 			return fmt.Errorf("launching hosted extension %q: %w", reg.id, err)

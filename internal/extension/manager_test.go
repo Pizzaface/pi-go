@@ -98,20 +98,15 @@ func TestManager_RejectsDeclarativeCommandConflictingWithBuiltin(t *testing.T) {
 	}
 }
 
-func TestManager_RefusesToLaunchUnapprovedHostedExtension(t *testing.T) {
+func TestManager_SkipsPendingHostedExtensionOnStart(t *testing.T) {
 	launcher := &mockHostedLauncher{client: &mockHostedClient{
 		response: hostproto.HandshakeResponse{
 			ProtocolVersion: hostproto.ProtocolVersion,
 			Accepted:        true,
 		},
 	}}
-	permissions := NewPermissions([]ApprovalRecord{{
-		ExtensionID:    "ext.hosted",
-		TrustClass:     TrustClassHostedThirdParty,
-		HostedRequired: true,
-	}})
 	m := NewManager(ManagerOptions{
-		Permissions:    permissions,
+		Permissions:    EmptyPermissions(),
 		HostedLauncher: launcher,
 	})
 	if err := m.RegisterManifest(Manifest{
@@ -123,15 +118,66 @@ func TestManager_RefusesToLaunchUnapprovedHostedExtension(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	// Simulate approvals being revoked before launch.
-	m.permissions = EmptyPermissions()
-	err := m.StartHostedExtensions(context.Background(), "interactive")
-	if err == nil {
-		t.Fatal("expected hosted launch to fail when approvals are missing")
+	if err := m.StartHostedExtensions(context.Background(), "interactive"); err != nil {
+		t.Fatalf("expected StartHostedExtensions to tolerate pending extensions, got %v", err)
 	}
 	if launcher.launches != 0 {
-		t.Fatalf("expected launcher not to run for unapproved extension, got %d launches", launcher.launches)
+		t.Fatalf("expected launcher not to run for pending extension, got %d launches", launcher.launches)
+	}
+}
+
+func TestManager_RegistersUnapprovedHostedAsPending(t *testing.T) {
+	m := NewManager(ManagerOptions{Permissions: EmptyPermissions()})
+	err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected RegisterManifest to succeed for unapproved hosted, got %v", err)
+	}
+	infos := m.Extensions()
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 extension, got %d", len(infos))
+	}
+	if infos[0].State != StatePending {
+		t.Fatalf("expected StatePending, got %q", infos[0].State)
+	}
+}
+
+func TestManager_RegistersApprovedHostedAsReady(t *testing.T) {
+	m := NewManager(ManagerOptions{
+		Permissions: NewPermissions([]ApprovalRecord{{
+			ExtensionID:    "ext.hosted",
+			TrustClass:     TrustClassHostedThirdParty,
+			HostedRequired: true,
+		}}),
+	})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	infos := m.Extensions()
+	if len(infos) != 1 || infos[0].State != StateReady {
+		t.Fatalf("expected ready state, got %+v", infos)
+	}
+}
+
+func TestManager_RegistersDeclarativeAsReady(t *testing.T) {
+	m := NewManager(ManagerOptions{})
+	if err := m.RegisterManifest(Manifest{Name: "ext.decl"}); err != nil {
+		t.Fatal(err)
+	}
+	infos := m.Extensions()
+	if len(infos) != 1 || infos[0].State != StateReady {
+		t.Fatalf("expected ready state, got %+v", infos)
 	}
 }
 
