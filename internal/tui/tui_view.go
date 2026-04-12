@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/dimetron/pi-go/internal/extension"
 )
 
 func (m *model) hasBlockingPopup() bool {
@@ -261,15 +262,34 @@ func (m *model) layoutMainWidth() int {
 
 func (m *model) statusRenderInput() StatusRenderInput {
 	return StatusRenderInput{
-		ProviderName:    m.cfg.ProviderName,
-		ModelName:       m.cfg.ModelName,
-		Running:         m.running,
-		EffortLevel:     m.effortLevel.String(),
-		Messages:        m.chatModel.Messages,
-		TokenTracker:    m.cfg.TokenTracker,
-		DiffAdded:       m.diffAdded,
-		DiffRemoved:     m.diffRemoved,
-		LoadingItems:    m.loadingItems,
-		ExtensionStatus: m.statusModel.ExtensionStatus,
+		ProviderName:      m.cfg.ProviderName,
+		ModelName:         m.cfg.ModelName,
+		Running:           m.running,
+		EffortLevel:       m.effortLevel.String(),
+		Messages:          m.chatModel.Messages,
+		TokenTracker:      m.cfg.TokenTracker,
+		DiffAdded:         m.diffAdded,
+		DiffRemoved:       m.diffRemoved,
+		LoadingItems:      m.loadingItems,
+		ExtensionStatus:   m.statusModel.ExtensionStatus,
+		ExtensionsSummary: m.extensionsSummary(),
 	}
+}
+
+func (m *model) extensionsSummary() ExtensionsSummary {
+	if m.cfg.ExtensionManager == nil {
+		return ExtensionsSummary{}
+	}
+	var sum ExtensionsSummary
+	for _, info := range m.cfg.ExtensionManager.Extensions() {
+		switch info.State {
+		case extension.StatePending:
+			sum.Pending++
+		case extension.StateRunning:
+			sum.Running++
+		case extension.StateErrored:
+			sum.Errored++
+		}
+	}
+	return sum
 }

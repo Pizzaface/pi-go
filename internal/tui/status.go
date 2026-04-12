@@ -27,6 +27,13 @@ type StatusModel struct {
 	Width int
 }
 
+// ExtensionsSummary counts extensions by lifecycle state for the status bar.
+type ExtensionsSummary struct {
+	Pending int
+	Running int
+	Errored int
+}
+
 // StatusRenderInput provides data from other models needed by the status bar.
 type StatusRenderInput struct {
 	ProviderName string
@@ -40,6 +47,8 @@ type StatusRenderInput struct {
 	DiffRemoved     int
 	LoadingItems    map[string]bool // item -> done; nil means not loading
 	ExtensionStatus string
+
+	ExtensionsSummary ExtensionsSummary
 }
 
 // contextBarWidth is the number of characters used for the visual context bar.
@@ -159,6 +168,25 @@ func (s *StatusModel) Render(in StatusRenderInput) string {
 	if in.EffortLevel != "" && in.EffortLevel != "medium" {
 		effortStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("183"))
 		row1Right = append(row1Right, effortStyle.Render(in.EffortLevel))
+	}
+
+	// Extensions summary (right side of row 1).
+	if in.ExtensionsSummary.Pending > 0 || in.ExtensionsSummary.Running > 0 || in.ExtensionsSummary.Errored > 0 {
+		var extParts []string
+		extParts = append(extParts, dim.Render("ext:"))
+		if in.ExtensionsSummary.Pending > 0 {
+			warn := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("214"))
+			extParts = append(extParts, warn.Render(fmt.Sprintf(" %d!", in.ExtensionsSummary.Pending)))
+		}
+		if in.ExtensionsSummary.Running > 0 {
+			ok := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("35"))
+			extParts = append(extParts, ok.Render(fmt.Sprintf(" %d✓", in.ExtensionsSummary.Running)))
+		}
+		if in.ExtensionsSummary.Errored > 0 {
+			errStyle := lipgloss.NewStyle().Background(bg).Foreground(lipgloss.Color("196"))
+			extParts = append(extParts, errStyle.Render(fmt.Sprintf(" %d✗", in.ExtensionsSummary.Errored)))
+		}
+		row1Right = append(row1Right, strings.Join(extParts, ""))
 	}
 
 	r1Left := strings.Join(row1Left, dim.Render("  "))
