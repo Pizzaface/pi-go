@@ -485,41 +485,79 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 	m.mu.RUnlock()
 
 	for _, reg := range toStart {
-		client, err := m.hostedLauncher.Launch(ctx, reg.manifest)
-		if err != nil {
-			return fmt.Errorf("launching hosted extension %q: %w", reg.id, err)
+		if err := m.startOneHosted(ctx, reg.id, reg.manifest, reg.trust, mode); err != nil {
+			m.markErrored(reg.id, err)
 		}
-		handshakeCtx, cancel := context.WithTimeout(ctx, HostedHandshakeTimeout)
-		_, err = client.Handshake(handshakeCtx, hostproto.HandshakeRequest{
-			ProtocolVersion:   hostproto.ProtocolVersion,
-			ExtensionID:       reg.id,
-			Mode:              mode,
-			RequestedServices: manifestToRequestedServices(reg.manifest),
-		})
-		cancel()
-		if err != nil {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), HostedShutdownTimeout)
-			_ = client.Shutdown(shutdownCtx)
-			shutdownCancel()
-			return fmt.Errorf("handshake with hosted extension %q failed: %w", reg.id, err)
-		}
-		m.mu.Lock()
-		m.hostedClients[reg.id] = client
-		m.mu.Unlock()
-
-		// Spawn the inbound dispatch loop. It reads host_call requests
-		// from the extension process and routes them through
-		// DispatchHostCall. The loop exits cleanly on EOF or shutdown.
-		go func(extID string, c HostedClient) {
-			serveCtx, serveCancel := context.WithCancel(context.Background())
-			defer serveCancel()
-			dispatcher := dispatcherFunc(func(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error) {
-				return m.DispatchHostCall(extensionID, params)
-			})
-			_ = c.ServeInbound(serveCtx, extID, dispatcher)
-		}(reg.id, client)
 	}
 	return nil
+}
+
+// startOneHosted launches, handshakes, and wires the dispatch goroutine
+// for a single hosted extension.
+func (m *Manager) startOneHosted(ctx context.Context, id string, manifest Manifest, trust TrustClass, mode string) error {
+	client, err := m.hostedLauncher.Launch(ctx, manifest)
+	if err != nil {
+		return fmt.Errorf("launching hosted extension %q: %w", id, err)
+	}
+
+	handshakeCtx, cancel := context.WithTimeout(ctx, HostedHandshakeTimeout)
+	resp, err := client.Handshake(handshakeCtx, hostproto.HandshakeRequest{
+		ProtocolVersion:   hostproto.ProtocolVersion,
+		ExtensionID:       id,
+		Mode:              mode,
+		RequestedServices: manifestToRequestedServices(manifest),
+	})
+	cancel()
+	if err != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), HostedShutdownTimeout)
+		_ = client.Shutdown(shutdownCtx)
+		shutdownCancel()
+		return fmt.Errorf("handshake with hosted extension %q failed: %w", id, err)
+	}
+	if !resp.Accepted {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), HostedShutdownTimeout)
+		_ = client.Shutdown(shutdownCtx)
+		shutdownCancel()
+		msg := resp.Message
+		if msg == "" {
+			msg = "handshake rejected"
+		}
+		return fmt.Errorf("hosted extension %q handshake not accepted: %s", id, msg)
+	}
+
+	m.mu.Lock()
+	m.hostedClients[id] = client
+	reg := m.extensions[id]
+	reg.state = StateRunning
+	reg.lastError = ""
+	reg.startedAt = time.Now()
+	m.extensions[id] = reg
+	m.mu.Unlock()
+
+	go func(extID string, c HostedClient) {
+		serveCtx, serveCancel := context.WithCancel(context.Background())
+		defer serveCancel()
+		dispatcher := dispatcherFunc(func(extensionID string, params hostproto.HostCallParams) (json.RawMessage, error) {
+			return m.DispatchHostCall(extensionID, params)
+		})
+		_ = c.ServeInbound(serveCtx, extID, dispatcher)
+	}(id, client)
+
+	return nil
+}
+
+// markErrored transitions an extension to StateErrored and records the
+// error message.
+func (m *Manager) markErrored(id string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	reg, ok := m.extensions[id]
+	if !ok {
+		return
+	}
+	reg.state = StateErrored
+	reg.lastError = err.Error()
+	m.extensions[id] = reg
 }
 
 // dispatcherFunc adapts a function to the Dispatcher interface.

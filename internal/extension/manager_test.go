@@ -2,6 +2,7 @@ package extension
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -224,6 +225,71 @@ func TestManager_LaunchesHostedExtensionFromManifestRuntime(t *testing.T) {
 	if _, ok := m.HostedClient("ext.hosted"); !ok {
 		t.Fatal("expected hosted client to be tracked by manager")
 	}
+	infos := m.Extensions()
+	if len(infos) != 1 || infos[0].State != StateRunning {
+		t.Fatalf("expected running state after start, got %+v", infos)
+	}
+}
+
+func TestStartHostedExtensions_PartialFailureTolerant(t *testing.T) {
+	good := &mockHostedClient{response: hostproto.HandshakeResponse{
+		ProtocolVersion: hostproto.ProtocolVersion,
+		Accepted:        true,
+	}}
+	bad := &mockHostedClient{response: hostproto.HandshakeResponse{
+		Accepted: false,
+		Message:  "boom",
+	}}
+	launcher := &sequencedHostedLauncher{clients: []HostedClient{bad, good}}
+
+	m := NewManager(ManagerOptions{
+		Permissions: NewPermissions([]ApprovalRecord{
+			{ExtensionID: "ext.bad", TrustClass: TrustClassHostedThirdParty, HostedRequired: true},
+			{ExtensionID: "ext.good", TrustClass: TrustClassHostedThirdParty, HostedRequired: true},
+		}),
+		HostedLauncher: launcher,
+	})
+	for _, id := range []string{"ext.bad", "ext.good"} {
+		if err := m.RegisterManifest(Manifest{
+			Name: id,
+			Runtime: RuntimeSpec{
+				Type:    RuntimeTypeHostedStdioJSONRPC,
+				Command: "hosted-ext",
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := m.StartHostedExtensions(context.Background(), "interactive"); err != nil {
+		t.Fatalf("expected nil return despite one failure, got %v", err)
+	}
+
+	states := map[string]ExtensionState{}
+	for _, info := range m.Extensions() {
+		states[info.ID] = info.State
+	}
+	if states["ext.bad"] != StateErrored {
+		t.Errorf("ext.bad state = %q, want errored", states["ext.bad"])
+	}
+	if states["ext.good"] != StateRunning {
+		t.Errorf("ext.good state = %q, want running", states["ext.good"])
+	}
+}
+
+// sequencedHostedLauncher returns clients in order on successive Launch calls.
+type sequencedHostedLauncher struct {
+	clients []HostedClient
+	calls   int
+}
+
+func (l *sequencedHostedLauncher) Launch(_ context.Context, _ Manifest) (HostedClient, error) {
+	if l.calls >= len(l.clients) {
+		return nil, fmt.Errorf("sequencedHostedLauncher: out of clients")
+	}
+	c := l.clients[l.calls]
+	l.calls++
+	return c, nil
 }
 
 func TestManager_ProvidesStateNamespaceToExtensions(t *testing.T) {
