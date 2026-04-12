@@ -3,11 +3,15 @@ package extension_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/dimetron/pi-go/internal/tools"
 )
 
 // TestHostedHello_V2_EndToEnd spins up the manager with an in-process
@@ -127,3 +131,65 @@ func (c *pipeClient) ServeInbound(ctx context.Context, extensionID string, dispa
 
 func (c *pipeClient) Shutdown(_ context.Context) error { return nil }
 func (c *pipeClient) IsHealthy() bool                  { return true }
+
+func TestHostedHelloE2E_PendingApprovalDoesNotHang(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+
+	extDir := filepath.Join(root, ".pi-go", "extensions", "hosted-hello")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{
+		"name": "hosted-hello",
+		"runtime": {
+			"type": "hosted_stdio_jsonrpc",
+			"command": "this-binary-does-not-exist"
+		},
+		"capabilities": ["ui.status"]
+	}`
+	if err := os.WriteFile(filepath.Join(extDir, "extension.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sandbox, err := tools.NewSandbox(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sandbox.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	rt, err := extension.BuildRuntime(ctx, extension.RuntimeConfig{
+		Config:          config.Config{},
+		WorkDir:         root,
+		Sandbox:         sandbox,
+		BaseInstruction: "Base.",
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntime returned error: %v", err)
+	}
+	if rt.Manager == nil {
+		t.Fatal("expected runtime manager")
+	}
+
+	var info *extension.ExtensionInfo
+	for _, ext := range rt.Manager.Extensions() {
+		if ext.ID == "hosted-hello" {
+			found := ext
+			info = &found
+			break
+		}
+	}
+	if info == nil {
+		t.Fatal("expected hosted-hello to appear in Extensions()")
+	}
+	if info.State != extension.StatePending {
+		t.Fatalf("hosted-hello state = %q, want pending", info.State)
+	}
+}
