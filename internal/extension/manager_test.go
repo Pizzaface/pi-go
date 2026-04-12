@@ -805,3 +805,106 @@ func TestManager_StartExtension_RejectsPending(t *testing.T) {
 		t.Fatal("expected start of pending extension to fail")
 	}
 }
+
+func TestManager_RestartExtension(t *testing.T) {
+	client := &mockHostedClient{response: hostproto.HandshakeResponse{
+		ProtocolVersion: hostproto.ProtocolVersion,
+		Accepted:        true,
+	}}
+	launcher := &mockHostedLauncher{client: client}
+	m := NewManager(ManagerOptions{
+		Permissions: NewPermissions([]ApprovalRecord{{
+			ExtensionID:    "ext.hosted",
+			TrustClass:     TrustClassHostedThirdParty,
+			HostedRequired: true,
+		}}),
+		HostedLauncher: launcher,
+	})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.StartExtension(context.Background(), "ext.hosted"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RestartExtension(context.Background(), "ext.hosted"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if launcher.launches != 2 {
+		t.Fatalf("launches = %d, want 2", launcher.launches)
+	}
+	if client.shutdowns != 1 {
+		t.Fatalf("shutdowns = %d, want 1", client.shutdowns)
+	}
+	if info := findExtension(t, m, "ext.hosted"); info.State != StateRunning {
+		t.Fatalf("post-restart state = %q, want running", info.State)
+	}
+}
+
+func TestManager_RevokeApproval(t *testing.T) {
+	dir := t.TempDir()
+	approvalsPath := filepath.Join(dir, "approvals.json")
+
+	seed := NewPermissions([]ApprovalRecord{{
+		ExtensionID:    "ext.hosted",
+		TrustClass:     TrustClassHostedThirdParty,
+		HostedRequired: true,
+	}})
+	if err := seed.Upsert(approvalsPath, ApprovalRecord{
+		ExtensionID:    "ext.hosted",
+		TrustClass:     TrustClassHostedThirdParty,
+		HostedRequired: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &mockHostedClient{response: hostproto.HandshakeResponse{
+		ProtocolVersion: hostproto.ProtocolVersion,
+		Accepted:        true,
+	}}
+	launcher := &mockHostedLauncher{client: client}
+	m := NewManager(ManagerOptions{
+		Permissions: NewPermissions([]ApprovalRecord{{
+			ExtensionID:    "ext.hosted",
+			TrustClass:     TrustClassHostedThirdParty,
+			HostedRequired: true,
+		}}),
+		HostedLauncher: launcher,
+		ApprovalsPath:  approvalsPath,
+	})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.StartExtension(context.Background(), "ext.hosted"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.RevokeApproval(context.Background(), "ext.hosted"); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if client.shutdowns != 1 {
+		t.Fatalf("shutdowns = %d, want 1", client.shutdowns)
+	}
+	if info := findExtension(t, m, "ext.hosted"); info.State != StatePending {
+		t.Fatalf("post-revoke state = %q, want pending", info.State)
+	}
+
+	reloaded, err := LoadPermissions(approvalsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reloaded.Approval("ext.hosted"); ok {
+		t.Fatal("expected approvals.json to no longer contain ext.hosted")
+	}
+}

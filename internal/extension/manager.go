@@ -668,6 +668,53 @@ func (m *Manager) StopExtension(ctx context.Context, id string) error {
 	return nil
 }
 
+// RestartExtension is Stop followed by Start.
+func (m *Manager) RestartExtension(ctx context.Context, id string) error {
+	if err := m.StopExtension(ctx, id); err != nil {
+		return fmt.Errorf("restart: stop: %w", err)
+	}
+	m.mu.Lock()
+	if reg, ok := m.extensions[id]; ok && reg.state == StateStopped {
+		reg.state = StateReady
+		m.extensions[id] = reg
+	}
+	m.mu.Unlock()
+	return m.StartExtension(ctx, id)
+}
+
+// RevokeApproval stops a running extension, removes it from
+// approvals.json, and transitions back to Pending.
+func (m *Manager) RevokeApproval(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+	if err := m.StopExtension(ctx, id); err != nil {
+		return fmt.Errorf("revoke: stop: %w", err)
+	}
+
+	m.mu.Lock()
+	approvalsPath := m.approvalsPath
+	reg, ok := m.extensions[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("extension %q is not registered", id)
+	}
+	reg.state = StatePending
+	reg.lastError = ""
+	m.extensions[id] = reg
+	m.mu.Unlock()
+
+	if approvalsPath != "" {
+		if err := m.permissions.Delete(approvalsPath, id); err != nil {
+			return fmt.Errorf("deleting approval for %q: %w", id, err)
+		}
+	} else {
+		delete(m.permissions.approvals, id)
+	}
+	return nil
+}
+
 // startOneHosted launches, handshakes, and wires the dispatch goroutine
 // for a single hosted extension.
 func (m *Manager) startOneHosted(ctx context.Context, id string, manifest Manifest, trust TrustClass, mode string) error {
