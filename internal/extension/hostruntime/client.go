@@ -74,12 +74,14 @@ func (c *Client) Handshake(ctx context.Context, request hostproto.HandshakeReque
 		request.ProtocolVersion = hostproto.ProtocolVersion
 	}
 
+	// Send the host's handshake request. The v2 spec says the
+	// extension initiates, but sending ours first is harmless (the
+	// SDK ignores it) and allows future host-initiated patterns.
 	id := c.nextID.Add(1)
 	params, err := json.Marshal(request)
 	if err != nil {
 		return hostproto.HandshakeResponse{}, fmt.Errorf("encoding handshake request: %w", err)
 	}
-
 	if err := c.send(hostproto.RPCRequest{
 		JSONRPC: hostproto.JSONRPCVersion,
 		ID:      id,
@@ -90,32 +92,161 @@ func (c *Client) Handshake(ctx context.Context, request hostproto.HandshakeReque
 		return hostproto.HandshakeResponse{}, err
 	}
 
-	response, err := c.receive(ctx)
+	// Read the first message from the extension. In the v2
+	// extension-initiated flow this is the extension's handshake
+	// REQUEST (has a method field). In a hypothetical host-initiated
+	// flow it would be a RESPONSE to the request we just sent.
+	raw, err := c.receiveRaw(ctx)
 	if err != nil {
 		c.healthy.Store(false)
 		return hostproto.HandshakeResponse{}, err
 	}
-	if response.Error != nil {
+
+	var probe struct {
+		Method string          `json:"method"`
+		ID     int64           `json:"id"`
+		Params json.RawMessage `json:"params"`
+		Result json.RawMessage `json:"result"`
+		Error  *hostproto.RPCError `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
 		c.healthy.Store(false)
-		return hostproto.HandshakeResponse{}, fmt.Errorf("handshake rpc error %d: %s", response.Error.Code, response.Error.Message)
+		return hostproto.HandshakeResponse{}, fmt.Errorf("decoding handshake message: %w", err)
 	}
 
-	var result hostproto.HandshakeResponse
-	if err := json.Unmarshal(response.Result, &result); err != nil {
-		c.healthy.Store(false)
-		return hostproto.HandshakeResponse{}, fmt.Errorf("decoding handshake response: %w", err)
+	if probe.Method != "" {
+		// Extension-initiated handshake: parse the extension's
+		// request, accept it, and send back a response.
+		return c.handleExtensionInitiatedHandshake(probe.ID, probe.Params, request)
 	}
-	if err := hostproto.ValidateProtocolCompatibility(result.ProtocolVersion); err != nil {
+
+	// Host-initiated: the extension responded to our request.
+	return c.handleHostInitiatedHandshake(probe.Result, probe.Error)
+}
+
+// handleExtensionInitiatedHandshake parses the extension's handshake
+// request, builds an acceptance response, sends it, and returns the
+// synthetic result. The hostRequest carries the host-side metadata
+// (mode, services) for validation purposes.
+func (c *Client) handleExtensionInitiatedHandshake(
+	requestID int64,
+	params json.RawMessage,
+	_ hostproto.HandshakeRequest,
+) (hostproto.HandshakeResponse, error) {
+	var extReq hostproto.HandshakeRequest
+	if params != nil {
+		if err := json.Unmarshal(params, &extReq); err != nil {
+			c.healthy.Store(false)
+			return hostproto.HandshakeResponse{}, fmt.Errorf("decoding extension handshake request: %w", err)
+		}
+	}
+
+	if err := hostproto.ValidateProtocolCompatibility(extReq.ProtocolVersion); err != nil {
+		// Reject: incompatible protocol.
+		resp := hostproto.HandshakeResponse{
+			ProtocolVersion: hostproto.ProtocolVersion,
+			Accepted:        false,
+			Message:         err.Error(),
+		}
+		c.sendHandshakeResponse(requestID, resp)
 		c.healthy.Store(false)
 		return hostproto.HandshakeResponse{}, err
 	}
-	if !result.Accepted {
+
+	// Accept. Grant all requested services (capability checks happen
+	// at call-time in the services registry).
+	grants := make([]hostproto.ServiceGrant, len(extReq.RequestedServices))
+	for i, svc := range extReq.RequestedServices {
+		grants[i] = hostproto.ServiceGrant{
+			Service: svc.Service,
+			Version: svc.Version,
+			Methods: svc.Methods,
+		}
+	}
+	resp := hostproto.HandshakeResponse{
+		ProtocolVersion: hostproto.ProtocolVersion,
+		Accepted:        true,
+		GrantedServices: grants,
+	}
+	if err := c.sendHandshakeResponse(requestID, resp); err != nil {
 		c.healthy.Store(false)
-		return hostproto.HandshakeResponse{}, fmt.Errorf("handshake rejected: %s", result.Message)
+		return hostproto.HandshakeResponse{}, fmt.Errorf("sending handshake response: %w", err)
 	}
 
 	c.healthy.Store(true)
-	return result, nil
+	return resp, nil
+}
+
+// handleHostInitiatedHandshake processes a response to the host's own
+// handshake request (the in-process fake / legacy path).
+func (c *Client) handleHostInitiatedHandshake(
+	result json.RawMessage,
+	rpcErr *hostproto.RPCError,
+) (hostproto.HandshakeResponse, error) {
+	if rpcErr != nil {
+		c.healthy.Store(false)
+		return hostproto.HandshakeResponse{}, fmt.Errorf("handshake rpc error %d: %s", rpcErr.Code, rpcErr.Message)
+	}
+
+	var resp hostproto.HandshakeResponse
+	if err := json.Unmarshal(result, &resp); err != nil {
+		c.healthy.Store(false)
+		return hostproto.HandshakeResponse{}, fmt.Errorf("decoding handshake response: %w", err)
+	}
+	if err := hostproto.ValidateProtocolCompatibility(resp.ProtocolVersion); err != nil {
+		c.healthy.Store(false)
+		return hostproto.HandshakeResponse{}, err
+	}
+	if !resp.Accepted {
+		c.healthy.Store(false)
+		return hostproto.HandshakeResponse{}, fmt.Errorf("handshake rejected: %s", resp.Message)
+	}
+
+	c.healthy.Store(true)
+	return resp, nil
+}
+
+// sendHandshakeResponse writes an RPCResponse for the given request ID.
+func (c *Client) sendHandshakeResponse(requestID int64, resp hostproto.HandshakeResponse) error {
+	result, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.encoder.Encode(hostproto.RPCResponse{
+		JSONRPC: hostproto.JSONRPCVersion,
+		ID:      requestID,
+		Result:  result,
+	})
+}
+
+// receiveRaw reads a single JSON message from the decoder with context
+// cancellation support. Returns the raw bytes for the caller to probe
+// the message type.
+func (c *Client) receiveRaw(ctx context.Context) (json.RawMessage, error) {
+	type result struct {
+		data json.RawMessage
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		c.readMu.Lock()
+		defer c.readMu.Unlock()
+		var raw json.RawMessage
+		err := c.decoder.Decode(&raw)
+		ch <- result{data: raw, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.err != nil {
+			return nil, fmt.Errorf("reading handshake message: %w", res.err)
+		}
+		return res.data, nil
+	}
 }
 
 func (c *Client) send(request hostproto.RPCRequest) error {
@@ -127,31 +258,6 @@ func (c *Client) send(request hostproto.RPCRequest) error {
 	return nil
 }
 
-func (c *Client) receive(ctx context.Context) (hostproto.RPCResponse, error) {
-	type result struct {
-		response hostproto.RPCResponse
-		err      error
-	}
-	resultCh := make(chan result, 1)
-
-	go func() {
-		c.readMu.Lock()
-		defer c.readMu.Unlock()
-		var response hostproto.RPCResponse
-		err := c.decoder.Decode(&response)
-		resultCh <- result{response: response, err: err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return hostproto.RPCResponse{}, ctx.Err()
-	case res := <-resultCh:
-		if res.err != nil {
-			return hostproto.RPCResponse{}, fmt.Errorf("reading rpc response: %w", res.err)
-		}
-		return res.response, nil
-	}
-}
 
 func (c *Client) Shutdown(ctx context.Context) error {
 	if c.process != nil {
