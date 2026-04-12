@@ -216,9 +216,6 @@ func (s *slashCommandOverlayState) render(width int) string {
 		width = 20
 	}
 	popupWidth := width - 4
-	if popupWidth > 72 {
-		popupWidth = 72
-	}
 	if popupWidth < 20 {
 		popupWidth = width
 	}
@@ -264,7 +261,7 @@ func (s *slashCommandOverlayState) render(width int) string {
 	rendered := borderStyle.Render(strings.TrimRight(body.String(), "\n"))
 	boxLines := strings.Split(rendered, "\n")
 	for i, line := range boxLines {
-		boxLines[i] = lipgloss.PlaceHorizontal(width, lipgloss.Right, line)
+		boxLines[i] = lipgloss.PlaceHorizontal(width, lipgloss.Left, line)
 	}
 	return strings.Join(boxLines, "\n")
 }

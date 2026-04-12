@@ -1,9 +1,9 @@
 ---
 name: extension-tui-approval-lifecycle
 description: In-TUI approval and lifecycle management for hosted extensions, replacing the file-only approval flow and the startup hang on unapproved extensions.
-status: draft
+status: implemented
 created: 2026-04-11T00:00:00Z
-updated: 2026-04-11T00:00:00Z
+updated: 2026-04-12T00:00:00Z
 ---
 
 # Extension TUI Approval & Lifecycle
@@ -287,4 +287,22 @@ Total user-visible hang time: **zero**.
 
 ## Open questions
 
-None at design time. Revisit if implementation surfaces platform-specific issues with the Windows `Kill()` path.
+None remaining.
+
+## Implementation notes
+
+**v2 handshake protocol fix (discovered during implementation).** After the TUI approval flow was wired up, approving
+an extension still hung the TUI. Root cause: a pre-existing v2 protocol deadlock. Both the host and extension sent
+`HandshakeRequest` messages, and neither side responded to the other's request. The in-process test fakes bypassed the
+wire protocol entirely, so the bug was invisible to tests.
+
+Fix: `Client.Handshake` now reads the first raw JSON message from the extension and probes for a `method` field. If
+present, the message is an extension-initiated `HandshakeRequest` — the host validates it, builds a `HandshakeResponse`,
+and sends it back. If absent (has `result` field instead), it is a response to the host's own request (legacy path used
+by in-process fakes). This makes the host handle both extension-initiated and host-initiated flows.
+
+New helpers added to `internal/extension/hostruntime/client.go`: `receiveRaw`, `handleExtensionInitiatedHandshake`,
+`handleHostInitiatedHandshake`, `sendHandshakeResponse`.
+
+The e2e test (`TestHostedHello_V2_EndToEnd`) was updated to use a `pipeLauncher` that exercises the `HostedClient`
+interface directly (including `ServeInbound`), keeping the test cross-platform without needing a real subprocess.

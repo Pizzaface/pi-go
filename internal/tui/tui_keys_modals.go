@@ -126,7 +126,7 @@ func (m *model) handleExtensionsPanelKey(key tea.Key) (bool, tea.Model, tea.Cmd)
 		return true, m, nil
 
 	case key.Code == 'a':
-		if row, ok := m.selectedExtRow(); ok && row.info.State == extension.StatePending {
+		if row, ok := m.selectedExtRow(); ok && (row.info.State == extension.StatePending || row.info.State == extension.StateDenied) {
 			m.openExtApprovalDialog(row.info, extensionDialogApprove)
 		}
 		return true, m, nil

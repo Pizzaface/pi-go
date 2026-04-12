@@ -114,7 +114,7 @@ func (m *model) openSlashCommandOverlay() {
 		return
 	}
 	state := newSlashCommandOverlayState(rows)
-	state.Height = 8
+	state.Height = len(rows)
 	if !state.HasVisibleSelectableRow() {
 		m.slashOverlay = nil
 		return

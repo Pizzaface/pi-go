@@ -92,7 +92,10 @@ Trust classes:
 - `hosted_first_party`
 - `hosted_third_party`
 
-Hosted extensions require explicit approval (`hosted_required: true`) and explicit capability grants.
+Hosted extensions require explicit approval (`hosted_required: true`) and explicit capability grants. An unapproved
+hosted
+extension enters `pending_approval` state at startup and never blocks the TUI. The user approves, denies, or manages
+extensions interactively via `/extensions`.
 
 Example approval entry:
 
@@ -108,6 +111,39 @@ Example approval entry:
   ]
 }
 ```
+
+### Extension states
+
+| State              | Meaning                                         |
+|--------------------|-------------------------------------------------|
+| `pending_approval` | Manifest known, no approval in `approvals.json` |
+| `ready`            | Approved, not yet launched                      |
+| `running`          | Hosted process alive + handshake OK             |
+| `stopped`          | Stopped by user                                 |
+| `errored`          | Launch, handshake, or runtime failure           |
+| `denied`           | User explicitly denied this session (in-memory) |
+
+Declarative and compiled-in extensions go straight to `ready`. Hosted extensions start at `pending_approval` or `ready`
+depending on whether an approval record exists.
+
+### In-TUI lifecycle management
+
+`/extensions` opens a panel showing all extensions grouped by state. From the panel:
+
+| Key | Action                                      |
+|-----|---------------------------------------------|
+| `a` | Approve (pending only) — opens confirmation |
+| `d` | Deny (pending only)                         |
+| `r` | Restart (running/stopped/errored)           |
+| `s` | Stop (running)                              |
+| `x` | Revoke approval (running/stopped)           |
+| `R` | Reload manifests from disk                  |
+
+Scriptable forms: `/extensions approve <id>`, `/extensions deny <id>`, `/extensions stop <id>`,
+`/extensions restart <id>`, `/extensions revoke <id>`, `/extensions reload`.
+
+The status bar shows a compact extension summary (`ext: 1! 2✓ 1✗`) when any pending, running, or errored extensions
+exist.
 
 ## Capabilities
 
@@ -127,27 +163,42 @@ Policy notes:
 - `tools.intercept` is denied for hosted third-party by default unless explicitly approved.
 - Hosted capabilities are checked during registration/assembly, not deferred to TUI time.
 
-## Hosted protocol (stdio JSON-RPC)
+## Hosted protocol (stdio JSON-RPC v2)
 
 Protocol package: `internal/extension/hostproto`.
 
-Current startup flow:
+The v2 protocol replaces the v1 per-capability method set with two generic RPC envelopes:
 
-1. Host launches the extension process from manifest runtime config.
-2. Host sends `pi.extension/handshake`.
-3. Extension returns protocol compatibility and acceptance.
+- `pi.extension/handshake` — capability negotiation
+- `pi.extension/host_call` — extension → host service calls
+- `pi.extension/shutdown` — graceful teardown
 
-Method names currently defined include:
+All other operations (command registration, UI updates, tool registration, etc.) are dispatched through `host_call` to
+a namespaced service registry. See the v2 design spec for the full service catalog.
 
-- `pi.extension/handshake`
-- `pi.extension/event`
-- `pi.extension/intent`
-- `pi.extension/register_command`
-- `pi.extension/register_tool`
-- `pi.extension/render`
-- `pi.extension/health`
-- `pi.extension/shutdown`
-- `pi.extension/reload`
+### Handshake flow
+
+The v2 handshake is **extension-initiated**: the extension sends a `HandshakeRequest` with its `requested_services`,
+and the host responds with a `HandshakeResponse` containing grants and host service availability. The host also sends
+its own handshake request first (which well-behaved SDKs ignore), allowing future host-initiated patterns.
+
+The host detects which flow is in use by probing the first message from the extension: if it contains a `method` field,
+it is an extension-initiated request and the host responds; if it contains a `result` field, it is a response to the
+host's own request (legacy/in-process fakes).
+
+```
+1. Host sends HandshakeRequest (extension ignores or responds)
+2. Extension sends HandshakeRequest with requested_services
+3. Host validates protocol version, grants services, sends HandshakeResponse
+4. Extension begins sending host_call requests
+5. Host runs ServeInbound loop dispatching to the service registry
+```
+
+### Shutdown
+
+`Process.Shutdown` closes stdin first (cross-platform EOF signal), sends `os.Interrupt` on Unix (skipped on Windows),
+then waits with a bounded context. If the process does not exit within the timeout, it is killed via
+`cmd.Process.Kill()`. All call sites use `HostedShutdownTimeout` (3s).
 
 ## Async TUI intents
 

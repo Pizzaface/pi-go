@@ -32,7 +32,9 @@ This spec extends [`2026-04-05-rich-tui-extension-platform-design.md`](./2026-04
 - Web-style hover cards or graphical icons. Terminal-only rendering.
 - Parser support for nested sigils (`[[foo:[[bar]]]]` stays invalid).
 - A migration tool for third-party 1.x extensions (none in the wild).
-- A UI for granting new capabilities interactively; initial approval stays in `approvals.json`.
+- ~~A UI for granting new capabilities interactively; initial approval stays in `approvals.json`.~~ (Implemented: see
+  `2026-04-11-extension-tui-approval-lifecycle-design.md` — `/extensions` panel handles approval, denial, revocation,
+  and lifecycle management.)
 
 ## Current state
 

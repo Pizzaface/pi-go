@@ -95,8 +95,13 @@ func (m *model) View() tea.View {
 		if maxOverlayHeight < 1 {
 			m.slashOverlay = nil
 		} else {
-			if m.slashOverlay.Height <= 0 || m.slashOverlay.Height > maxOverlayHeight {
-				m.slashOverlay.Height = minInt(8, maxOverlayHeight)
+			// Account for title, help line, and border (top+bottom) = 4 chrome lines.
+			maxDataRows := maxOverlayHeight - 4
+			if maxDataRows < 1 {
+				maxDataRows = 1
+			}
+			if m.slashOverlay.Height <= 0 || m.slashOverlay.Height > maxDataRows {
+				m.slashOverlay.Height = maxDataRows
 			}
 			m.slashOverlay.EnsureSelectionVisible()
 			if !m.slashOverlay.HasVisibleSelectableRow() {
