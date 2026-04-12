@@ -92,6 +92,8 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "/restart":
 		return m.handleRestartCommand()
+	case "/extensions":
+		return m.handleExtensionsCommand(parts[1:])
 	case "/exit", "/quit":
 		m.quitting = true
 		return m, tea.Quit
@@ -126,6 +128,68 @@ func (m *model) extensionCommands() []extension.SlashCommand {
 		return m.cfg.ExtensionManager.SlashCommands()
 	}
 	return m.cfg.ExtensionCommands
+}
+
+func (m *model) handleExtensionsCommand(args []string) (tea.Model, tea.Cmd) {
+	if m.cfg.ExtensionManager == nil {
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "assistant",
+			content: "Extensions manager not available.",
+		})
+		return m, nil
+	}
+
+	if len(args) == 0 {
+		rows := buildExtensionPanelRows(m.cfg.ExtensionManager.Extensions())
+		cursor := 0
+		for cursor < len(rows) && rows[cursor].isGroup {
+			cursor++
+		}
+		m.extensionsPanel = &extensionsPanelState{rows: rows, cursor: cursor}
+		return m, nil
+	}
+
+	sub := strings.ToLower(args[0])
+	rest := args[1:]
+
+	switch sub {
+	case "reload":
+		return m, extensionReloadCmd(m.cfg.ExtensionManager, m.cfg.WorkDir)
+	case "approve":
+		if len(rest) == 0 {
+			m.chatModel.Messages = append(m.chatModel.Messages, message{
+				role: "assistant", content: "Usage: `/extensions approve <id>`",
+			})
+			return m, nil
+		}
+		return m, extensionGrantAndStartCmd(m.cfg.ExtensionManager, m.cfg.WorkDir, rest[0], "", nil)
+	case "deny":
+		if len(rest) == 0 {
+			return m, nil
+		}
+		return m, extensionDenyCmd(m.cfg.ExtensionManager, rest[0])
+	case "stop":
+		if len(rest) == 0 {
+			return m, nil
+		}
+		return m, extensionStopCmd(m.cfg.ExtensionManager, rest[0])
+	case "restart":
+		if len(rest) == 0 {
+			return m, nil
+		}
+		return m, extensionRestartCmd(m.cfg.ExtensionManager, rest[0])
+	case "revoke":
+		if len(rest) == 0 {
+			return m, nil
+		}
+		return m, extensionRevokeCmd(m.cfg.ExtensionManager, rest[0])
+	default:
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "assistant",
+			content: fmt.Sprintf("Unknown extensions subcommand: `%s`. Valid: reload, approve, deny, stop, restart, revoke.", sub),
+		})
+		return m, nil
+	}
 }
 
 // handleBranchCommand handles /branch subcommands: create, switch, list.

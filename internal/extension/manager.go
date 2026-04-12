@@ -182,6 +182,7 @@ var defaultBuiltinSlashCommands = []string{
 	"/fork",
 	"/tree",
 	"/settings",
+	"/extensions",
 	"/context",
 	"/branch",
 	"/compact",

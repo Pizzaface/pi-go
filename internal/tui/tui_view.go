@@ -106,6 +106,9 @@ func (m *model) View() tea.View {
 			}
 		}
 	}
+	if m.extensionsPanel != nil {
+		visibleMessages = overlaySlashCommandBlock(visibleMessages, renderExtensionsPanel(m.extensionsPanel, mainWidth))
+	}
 	if m.extensionDialog != nil {
 		visibleMessages = overlaySlashCommandBlock(visibleMessages, m.renderExtensionDialog(mainWidth))
 	}

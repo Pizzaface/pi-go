@@ -90,6 +90,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chatModel.Messages = append(m.chatModel.Messages, message{role: "assistant", content: content})
 		}
 		return m, nil
+	case extensionLifecycleResultMsg:
+		if m.extensionsPanel != nil && m.cfg.ExtensionManager != nil {
+			m.extensionsPanel.rows = buildExtensionPanelRows(m.cfg.ExtensionManager.Extensions())
+			// Re-clamp cursor.
+			if m.extensionsPanel.cursor >= len(m.extensionsPanel.rows) {
+				m.extensionsPanel.cursor = len(m.extensionsPanel.rows) - 1
+			}
+			if m.extensionsPanel.cursor < 0 {
+				m.extensionsPanel.cursor = 0
+			}
+		}
+		return m, nil
 	}
 
 	if m.running {

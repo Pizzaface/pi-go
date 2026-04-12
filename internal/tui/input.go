@@ -645,6 +645,8 @@ func slashCommandDesc(cmd string) string {
 		return "Show the current session branch tree"
 	case "/settings":
 		return "Show config and customization paths"
+	case "/extensions":
+		return "Manage extensions (approve, deny, restart, stop, revoke)"
 	case "/context":
 		return "Show context usage"
 	case "/branch":

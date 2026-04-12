@@ -42,6 +42,9 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if handled, nextM, cmd := m.handleExtensionDialogKey(key); handled {
 		return nextM, cmd
 	}
+	if handled, nextM, cmd := m.handleExtensionsPanelKey(key); handled {
+		return nextM, cmd
+	}
 	if handled, nextM, cmd := m.handleBranchPopupKey(key); handled {
 		return nextM, cmd
 	}

@@ -59,6 +59,7 @@ type model struct {
 	extensionWidgetAbove *extensionWidgetState
 	extensionWidgetBelow *extensionWidgetState
 	extensionDialog      *extensionDialogState
+	extensionsPanel      *extensionsPanelState
 
 	// Effort level for provider reasoning/thinking control.
 	effortLevel provider.EffortLevel
