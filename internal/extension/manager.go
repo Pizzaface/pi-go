@@ -22,6 +22,14 @@ import (
 // hostruntime directly.
 type Dispatcher = hostruntime.Dispatcher
 
+// HostedHandshakeTimeout bounds the initial JSON-RPC handshake with a
+// hosted extension after the process is launched.
+const HostedHandshakeTimeout = 5 * time.Second
+
+// HostedShutdownTimeout bounds the graceful shutdown of a hosted
+// extension subprocess.
+const HostedShutdownTimeout = 3 * time.Second
+
 type commandRegistration struct {
 	command   SlashCommand
 	owner     string
@@ -419,7 +427,7 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 		if err != nil {
 			return fmt.Errorf("launching hosted extension %q: %w", reg.id, err)
 		}
-		handshakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		handshakeCtx, cancel := context.WithTimeout(ctx, HostedHandshakeTimeout)
 		_, err = client.Handshake(handshakeCtx, hostproto.HandshakeRequest{
 			ProtocolVersion:   hostproto.ProtocolVersion,
 			ExtensionID:       reg.id,
@@ -428,7 +436,9 @@ func (m *Manager) StartHostedExtensions(ctx context.Context, mode string) error 
 		})
 		cancel()
 		if err != nil {
-			_ = client.Shutdown(context.Background())
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), HostedShutdownTimeout)
+			_ = client.Shutdown(shutdownCtx)
+			shutdownCancel()
 			return fmt.Errorf("handshake with hosted extension %q failed: %w", reg.id, err)
 		}
 		m.mu.Lock()
@@ -474,7 +484,9 @@ func (m *Manager) ShutdownHostedExtensions(ctx context.Context) {
 	m.mu.Unlock()
 
 	for _, client := range clients {
-		_ = client.Shutdown(ctx)
+		shutdownCtx, cancel := context.WithTimeout(ctx, HostedShutdownTimeout)
+		_ = client.Shutdown(shutdownCtx)
+		cancel()
 	}
 }
 
@@ -814,7 +826,9 @@ func (m *Manager) UnregisterExtension(extensionID string) {
 	m.mu.Unlock()
 
 	if hostedClient != nil {
-		_ = hostedClient.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), HostedShutdownTimeout)
+		_ = hostedClient.Shutdown(shutdownCtx)
+		cancel()
 	}
 }
 
