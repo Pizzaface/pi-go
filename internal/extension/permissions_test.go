@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPermissions_HostedThirdPartyCannotUseInterceptByDefault(t *testing.T) {
@@ -114,5 +115,50 @@ func TestPermissions_AllowsService_GetMethodsNoGate(t *testing.T) {
 	p := EmptyPermissions()
 	if !p.AllowsService("ext.demo", TrustClassHostedThirdParty, "agent", "get_mode") {
 		t.Error("agent.get_mode should be allowed without a grant")
+	}
+}
+
+func TestPermissions_UpsertAndDelete(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "approvals.json")
+
+	p := EmptyPermissions()
+	record := ApprovalRecord{
+		ExtensionID:         "ext.demo",
+		TrustClass:          TrustClassHostedThirdParty,
+		HostedRequired:      true,
+		GrantedCapabilities: []Capability{CapabilityUIStatus},
+		ApprovedAt:          time.Unix(1700000000, 0),
+	}
+
+	if err := p.Upsert(path, record); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	// Reload from disk and verify.
+	reloaded, err := LoadPermissions(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got, ok := reloaded.Approval("ext.demo")
+	if !ok {
+		t.Fatal("expected approval to be persisted")
+	}
+	if got.TrustClass != TrustClassHostedThirdParty {
+		t.Fatalf("trust class = %q, want hosted_third_party", got.TrustClass)
+	}
+	if len(got.GrantedCapabilities) != 1 || got.GrantedCapabilities[0] != CapabilityUIStatus {
+		t.Fatalf("capabilities = %+v", got.GrantedCapabilities)
+	}
+
+	if err := p.Delete(path, "ext.demo"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reloaded, err = LoadPermissions(path)
+	if err != nil {
+		t.Fatalf("reload after delete: %v", err)
+	}
+	if _, ok := reloaded.Approval("ext.demo"); ok {
+		t.Fatal("expected approval to be gone after delete")
 	}
 }

@@ -130,6 +130,76 @@ func SavePermissions(path string, p *Permissions) error {
 	return nil
 }
 
+// Upsert adds or replaces an approval record and persists the full set
+// to path atomically.
+func (p *Permissions) Upsert(path string, record ApprovalRecord) error {
+	if p == nil {
+		return fmt.Errorf("permissions is nil")
+	}
+	id := strings.TrimSpace(record.ExtensionID)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+	record.ExtensionID = id
+	p.approvals[id] = record
+	return savePermissionsAtomic(path, p)
+}
+
+// Delete removes an approval record and persists the remaining set.
+// Deleting an unknown id is a no-op.
+func (p *Permissions) Delete(path, id string) error {
+	if p == nil {
+		return fmt.Errorf("permissions is nil")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("extension_id is required")
+	}
+	delete(p.approvals, id)
+	return savePermissionsAtomic(path, p)
+}
+
+// savePermissionsAtomic writes approvals to a temp file then renames
+// into place to avoid partial writes.
+func savePermissionsAtomic(path string, p *Permissions) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("approvals path is required")
+	}
+	records := make([]ApprovalRecord, 0, len(p.approvals))
+	for _, record := range p.approvals {
+		records = append(records, record)
+	}
+	payload := approvalFile{Approvals: records}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding approvals: %w", err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating approvals dir: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".approvals-*.json")
+	if err != nil {
+		return fmt.Errorf("creating temp approvals file: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("writing temp approvals file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("closing temp approvals file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("renaming temp approvals file: %w", err)
+	}
+	return nil
+}
+
 func (p *Permissions) Approval(extensionID string) (ApprovalRecord, bool) {
 	if p == nil {
 		return ApprovalRecord{}, false
