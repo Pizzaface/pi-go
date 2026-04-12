@@ -7,17 +7,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
-	"time"
 )
-
-// shutdownGracePeriod is the maximum time Shutdown waits for a child
-// to exit gracefully (via stdin EOF + SIGINT on Unix) before killing
-// it. It exists so a Shutdown called with context.Background() or a
-// long-timeout context still terminates promptly — critical on
-// Windows where os.Interrupt is a no-op.
-var shutdownGracePeriod = 2 * time.Second
 
 type ProcessConfig struct {
 	Command string
@@ -63,10 +56,12 @@ func StartProcess(ctx context.Context, cfg ProcessConfig) (*Process, error) {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("opening process stdin: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("opening process stdout: %w", err)
 	}
 
@@ -121,20 +116,15 @@ func (p *Process) Shutdown(ctx context.Context) error {
 	default:
 	}
 
-	// Close stdin first. stdio-based child processes (Claude CLI,
-	// the hosted-hello SDK, etc.) exit cleanly on stdin EOF, and
-	// this is the only shutdown mechanism that works cross-platform:
-	// Go's os.Process.Signal(os.Interrupt) returns
-	// "not supported by windows" on Windows and is a silent no-op,
-	// which previously caused Shutdown to block forever.
+	// Close stdin first — a well-behaved extension sees EOF on its
+	// decoder and exits cleanly. Works on every platform.
 	if p.stdin != nil {
 		_ = p.stdin.Close()
 	}
 
-	// On Unix, also send SIGINT in case the child ignores stdin EOF.
-	// Windows doesn't support os.Interrupt so this is a no-op there,
-	// and we fall back to Kill() below if the child doesn't exit.
-	if p.cmd != nil && p.cmd.Process != nil {
+	// Best-effort interrupt. No-op on Windows (os.Interrupt is unsupported
+	// for child processes) but clean on Unix.
+	if runtime.GOOS != "windows" && p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Signal(os.Interrupt)
 	}
 
@@ -144,44 +134,22 @@ func (p *Process) Shutdown(ctx context.Context) error {
 		close(done)
 	}()
 
-	// Give the child a bounded grace period to exit. This guarantees
-	// Shutdown terminates even when the caller passed a never-canceling
-	// context (e.g. context.Background()) — critical on Windows where
-	// stdin close + os.Interrupt don't affect processes like
-	// `go run .` that buffer stdin until their child compiles.
-	graceTimer := time.NewTimer(shutdownGracePeriod)
-	defer graceTimer.Stop()
-
 	select {
 	case <-done:
+		if p.stdout != nil {
+			_ = p.stdout.Close()
+		}
 		return nil
 	case <-ctx.Done():
-		// Caller ran out of patience first.
-	case <-graceTimer.C:
-		// Grace period elapsed; caller hasn't canceled yet.
+		if p.cmd != nil && p.cmd.Process != nil {
+			_ = p.cmd.Process.Kill()
+		}
+		<-done
+		if p.stdout != nil {
+			_ = p.stdout.Close()
+		}
+		return ctx.Err()
 	}
-
-	// Cancel the exec context so Go's exec package runs its own
-	// kill-and-reap path, then Kill directly as belt-and-suspenders.
-	if p.cancel != nil {
-		p.cancel()
-	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
-	}
-
-	// Bounded wait after Kill. On Windows with process-tree parents
-	// like `go run .`, the grandchild can keep the stdout/stderr
-	// pipes open indefinitely, so cmd.Wait() (which waits for I/O
-	// copy goroutines) may never return. We accept orphaning those
-	// goroutines rather than blocking Shutdown forever.
-	killTimer := time.NewTimer(shutdownGracePeriod)
-	defer killTimer.Stop()
-	select {
-	case <-done:
-	case <-killTimer.C:
-	}
-	return nil
 }
 
 func mergeEnv(base []string, extra map[string]string) []string {
