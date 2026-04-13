@@ -490,6 +490,56 @@ func TestToolCallSummary_Agent(t *testing.T) {
 	}
 }
 
+func TestToolResultSummary_ContentPartsArray(t *testing.T) {
+	// Agent results often come as [{"text":"...","type":"text"}]
+	content := `[{"text":"Audit complete. Found 3 issues.","type":"text"}]`
+	result := toolResultSummary(content)
+	if result != "Audit complete. Found 3 issues." {
+		t.Errorf("expected extracted text, got %q", result)
+	}
+}
+
+func TestToolResultSummary_MultipleContentParts(t *testing.T) {
+	content := `[{"text":"Part one.","type":"text"},{"text":"Part two.","type":"text"}]`
+	result := toolResultSummary(content)
+	if !strings.Contains(result, "Part one.") || !strings.Contains(result, "Part two.") {
+		t.Errorf("expected both parts in result, got %q", result)
+	}
+}
+
+func TestToolResultSummary_GoFormatSinglePart(t *testing.T) {
+	// Go %v format: [map[text:... type:text]]
+	content := "[map[text:Audit complete. Found 3 issues. type:text]]"
+	result := toolResultSummary(content)
+	if result != "Audit complete. Found 3 issues." {
+		t.Errorf("expected extracted text from Go format, got %q", result)
+	}
+}
+
+func TestToolResultSummary_GoFormatMultiline(t *testing.T) {
+	content := "[map[text:Line one.\nLine two.\nLine three. type:text]]"
+	result := toolResultSummary(content)
+	if !strings.Contains(result, "Line one.") || !strings.Contains(result, "Line three.") {
+		t.Errorf("expected multiline text from Go format, got %q", result)
+	}
+}
+
+func TestToolResultSummary_GoFormatMultipleParts(t *testing.T) {
+	content := "[map[text:Part one. type:text] map[text:Part two. type:text]]"
+	result := toolResultSummary(content)
+	if !strings.Contains(result, "Part one.") || !strings.Contains(result, "Part two.") {
+		t.Errorf("expected both parts from Go format, got %q", result)
+	}
+}
+
+func TestToolResultSummary_FallsBackForNonParts(t *testing.T) {
+	// Plain string — not JSON at all
+	result := toolResultSummary("just some text")
+	if result != "just some text" {
+		t.Errorf("expected plain text fallback, got %q", result)
+	}
+}
+
 func TestRenderMessages_CollapsedAgentHidesChildTools(t *testing.T) {
 	chat := NewChatModel(nil)
 	chat.Width = 80
@@ -608,7 +658,7 @@ func TestRenderMessages_ChildToolsAreIndented(t *testing.T) {
 	lines := strings.Split(result, "\n")
 
 	// Find lines containing "read" (child tool) and "bash" (top-level tool).
-	// Child tool lines should have leading whitespace indent.
+	// Child tool lines should have a │ border marker indicating nesting.
 	var childLine, topLine string
 	for _, line := range lines {
 		plain := stripToolANSI(line)
@@ -626,11 +676,12 @@ func TestRenderMessages_ChildToolsAreIndented(t *testing.T) {
 		t.Fatal("could not find top-level tool line containing 'bash'")
 	}
 
-	childIndent := len(childLine) - len(strings.TrimLeft(childLine, " "))
-	topIndent := len(topLine) - len(strings.TrimLeft(topLine, " "))
-	if childIndent <= topIndent {
-		t.Errorf("expected child tool to be more indented (%d) than top-level tool (%d)",
-			childIndent, topIndent)
+	// Child tools should have a │ border marker; top-level tools should not.
+	if !strings.Contains(childLine, "│") {
+		t.Errorf("expected child tool to have │ border marker, got %q", childLine)
+	}
+	if strings.Contains(topLine, "│") {
+		t.Errorf("expected top-level tool to NOT have │ border marker, got %q", topLine)
 	}
 }
 
@@ -665,6 +716,54 @@ func TestRenderMessages_NestedAgentGroups(t *testing.T) {
 	// Inner agent's child should be hidden (inner is collapsed).
 	if strings.Contains(result, "inner_pat") {
 		t.Error("expected inner child 'grep inner_pat' to be hidden (inner collapsed)")
+	}
+}
+
+func TestRenderAgentTool_ShowsToolCallCount(t *testing.T) {
+	td := ToolDisplayModel{Width: 80, AgentChildCount: 3}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Code review",
+		content:   "Done.",
+		collapsed: false,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	if !strings.Contains(result, "(3 tool calls)") {
+		t.Errorf("expected '(3 tool calls)' in Agent header, got %q", result)
+	}
+}
+
+func TestRenderAgentTool_SingularToolCallCount(t *testing.T) {
+	td := ToolDisplayModel{Width: 80, AgentChildCount: 1}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Quick check",
+		content:   "Done.",
+		collapsed: true,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	if !strings.Contains(result, "(1 tool call)") {
+		t.Errorf("expected '(1 tool call)' in Agent header, got %q", result)
+	}
+}
+
+func TestRenderAgentTool_ZeroCountHidden(t *testing.T) {
+	td := ToolDisplayModel{Width: 80, AgentChildCount: 0}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Research",
+		content:   "",
+		collapsed: true,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	if strings.Contains(result, "tool call") {
+		t.Errorf("expected no tool call count when zero, got %q", result)
 	}
 }
 

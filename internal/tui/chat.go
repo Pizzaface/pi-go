@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	glamourstyles "github.com/charmbracelet/glamour/styles"
 
 	"github.com/dimetron/pi-go/internal/extension"
 
@@ -147,11 +148,11 @@ func (c *ChatModel) MaxScroll(height int) int {
 	if availableHeight < 1 {
 		return 0
 	}
-	max := totalLines - availableHeight
-	if max < 0 {
+	maxLines := totalLines - availableHeight
+	if maxLines < 0 {
 		return 0
 	}
-	return max
+	return maxLines
 }
 
 // UpdateRenderer recreates the glamour renderer for the given terminal width.
@@ -161,8 +162,15 @@ func (c *ChatModel) UpdateRenderer(width int) {
 	if contentWidth < 40 {
 		contentWidth = 40
 	}
+	// Start from the dark style and override inline code colors —
+	// the default uses color 203 (salmon/red) which clashes.
+	style := glamourstyles.DarkStyleConfig
+	codeColor := "252"
+	codeBg := "238"
+	style.Code.StylePrimitive.Color = &codeColor
+	style.Code.StylePrimitive.BackgroundColor = &codeBg
 	c.Renderer, _ = glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStyles(style),
 		glamour.WithWordWrap(contentWidth),
 		glamour.WithEmoji(),
 	)
@@ -248,6 +256,14 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		}
 	}
 
+	// Count child tools per Agent group for header display.
+	groupChildCounts := make(map[int]int)
+	for _, msg := range c.Messages {
+		if msg.role == "tool" && msg.agentGroupID > 0 && !isAgentTool(msg.tool) {
+			groupChildCounts[msg.agentGroupID]++
+		}
+	}
+
 	// write appends to the builder and tracks cumulative line count.
 	var b strings.Builder
 	write := func(s string) {
@@ -255,24 +271,49 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		lineCount += strings.Count(s, "\n")
 	}
 
-	// Deferred Agent response — rendered as a conversation message after children.
+	// Agent child border prefix for visual containment.
+	agentBorderPrefix := " │ "
+
+	// Deferred Agent response — rendered as an indented panel after children.
 	type pendingAgentResp struct {
 		groupID int
 		content string
 	}
 	var pendingResp *pendingAgentResp
 
-	// renderAgentResp writes an Agent's response text as a conversation message.
+	// renderAgentResp writes an Agent's response as an indented, bg-styled
+	// panel that visually belongs to the accordion group.
 	renderAgentResp := func(content string) {
 		if content == "" {
 			return
+		}
+		// Extract text from content-part wrappers (JSON or Go %v format).
+		if extracted := extractContentPartsText(content); extracted != "" {
+			content = extracted
 		}
 		rendered := c.RenderMarkdown(content)
 		if rendered == "" {
 			rendered = content
 		}
-		write("\n")
-		write(prefixBlockLines(rendered, assistantPrefix))
+		panelWidth := c.ToolDisplay.Width
+		if panelWidth < 24 {
+			panelWidth = 24
+		}
+		// Apply bg per-line, re-applying after ANSI resets from markdown
+		// rendering so the background stretches to the full panel width.
+		bgOn := "\x1b[48;5;238m"
+		reset := "\x1b[0m"
+		lines := strings.Split(rendered, "\n")
+		for i, line := range lines {
+			prefixed := agentBorderPrefix + line
+			patched := strings.ReplaceAll(prefixed, reset, reset+bgOn)
+			vis := lipgloss.Width(patched)
+			if vis < panelWidth {
+				patched += strings.Repeat(" ", panelWidth-vis)
+			}
+			lines[i] = bgOn + patched + reset
+		}
+		write(strings.Join(lines, "\n"))
 		write("\n")
 	}
 
@@ -283,7 +324,7 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			isChild := msg.role == "tool" && msg.agentGroupID == pendingResp.groupID && !isAgentTool(msg.tool)
 			if !isChild {
 				renderAgentResp(pendingResp.content)
-				prevRole = "assistant"
+				prevRole = "tool" // response is part of the tool group
 				pendingResp = nil
 			}
 		}
@@ -306,6 +347,10 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			if prevRole != "tool" {
 				write("\n")
 			}
+			// Set child count for Agent header rendering.
+			if isAgentTool(msg.tool) {
+				c.ToolDisplay.AgentChildCount = groupChildCounts[msg.agentGroupID]
+			}
 			isChild := msg.agentGroupID > 0 && !isAgentTool(msg.tool)
 			if isChild {
 				c.ToolDisplay.Width -= agentChildIndent
@@ -314,7 +359,7 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			rendered := c.ToolDisplay.RenderToolMessage(msg)
 			if isChild {
 				c.ToolDisplay.Width += agentChildIndent
-				rendered = indentBlock(rendered, strings.Repeat(" ", agentChildIndent))
+				rendered = indentBlock(rendered, agentBorderPrefix)
 			}
 			write(rendered)
 			if isAgentTool(msg.tool) {
@@ -323,13 +368,13 @@ func (c *ChatModel) RenderMessages(running bool) string {
 					endLine:   lineCount,
 					msgIndex:  i,
 				})
-				// Render the Agent's response outside the accordion.
+				// Render the Agent's response below the accordion, indented.
 				if msg.content != "" {
 					if msg.collapsed {
 						// Collapsed: render response immediately after header.
 						renderAgentResp(msg.content)
-						prevRole = "assistant"
-						continue // skip prevRole = msg.role below
+						prevRole = "tool" // response is part of the tool group
+						continue          // skip prevRole = msg.role below
 					}
 					if msg.agentGroupID > 0 {
 						// Expanded: defer until after last child.

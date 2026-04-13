@@ -37,6 +37,8 @@ type ToolDisplayModel struct {
 	RenderTimeout time.Duration
 	// RenderMarkdown renders markdown payloads when extensions return markdown.
 	RenderMarkdown func(string) string
+	// AgentChildCount is the number of child tool calls for the current Agent group.
+	AgentChildCount int
 	// SpinnerFrame is the current animation frame for Agent active spinners.
 	SpinnerFrame int
 }
@@ -134,7 +136,7 @@ func (t *ToolDisplayModel) renderAgentTool(msg message, _ lipgloss.Style) string
 		innerWidth = 1
 	}
 
-	agentColor := lipgloss.Color("141") // purple/violet
+	agentColor := lipgloss.Color("228") // light yellow
 	panelStyle := lipgloss.NewStyle().Background(lipgloss.Color("236")).Padding(0, 1)
 	headerStyle := lipgloss.NewStyle().Foreground(agentColor).Bold(true)
 
@@ -144,6 +146,13 @@ func (t *ToolDisplayModel) renderAgentTool(msg message, _ lipgloss.Style) string
 	}
 
 	headerText := chevron + " " + msg.tool
+	if t.AgentChildCount > 0 {
+		label := "tool calls"
+		if t.AgentChildCount == 1 {
+			label = "tool call"
+		}
+		headerText += fmt.Sprintf(" (%d %s)", t.AgentChildCount, label)
+	}
 	if msg.toolIn != "" {
 		headerText += " — " + msg.toolIn
 	}
@@ -364,10 +373,14 @@ func toolCallSummary(name string, args map[string]any) string {
 
 // toolResultSummary returns a short one-line summary of a tool result.
 func toolResultSummary(content string) string {
-	// Try to parse as JSON and extract a friendly summary.
+	// Try to parse as JSON object and extract a friendly summary.
 	var data map[string]any
 	if json.Unmarshal([]byte(content), &data) == nil {
 		return formatToolResult(data)
+	}
+	// Try to parse as JSON array of content parts (e.g., Agent/LLM results).
+	if text := extractContentPartsText(content); text != "" {
+		return text
 	}
 	// Collapse to single line.
 	content = strings.ReplaceAll(content, "\n", " ")
@@ -375,6 +388,73 @@ func toolResultSummary(content string) string {
 		return content[:117] + "..."
 	}
 	return content
+}
+
+// extractContentPartsText extracts concatenated text from content-part
+// formats returned by Agent/LLM tools. Handles both:
+//   - JSON array:  [{"text":"...","type":"text"}]
+//   - Go %v format: [map[text:... type:text]]
+//
+// Returns "" if the content is not in a recognized format.
+func extractContentPartsText(content string) string {
+	// Try JSON array first.
+	var parts []map[string]any
+	if json.Unmarshal([]byte(content), &parts) == nil {
+		var texts []string
+		for _, part := range parts {
+			if t, ok := part["text"].(string); ok && t != "" {
+				texts = append(texts, t)
+			}
+		}
+		if len(texts) > 0 {
+			return strings.Join(texts, "\n")
+		}
+	}
+
+	// Try Go %v format: [map[text:... type:text]]
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "[map[") {
+		return extractGoMapTexts(trimmed)
+	}
+
+	return ""
+}
+
+// extractGoMapTexts parses Go's fmt %v representation of []map[string]any
+// containing content parts with "text" and "type" keys.
+func extractGoMapTexts(content string) string {
+	var texts []string
+	remaining := content
+
+	for {
+		start := strings.Index(remaining, "map[text:")
+		if start < 0 {
+			break
+		}
+		// Move past "map[text:"
+		inner := remaining[start+len("map[text:"):]
+
+		// Find the closing boundary: " type:" followed by the value and "]"
+		// Use the LAST " type:" before the next "]" to handle text that
+		// might contain those characters.
+		closeBracket := strings.Index(inner, "]")
+		if closeBracket < 0 {
+			break
+		}
+		mapContent := inner[:closeBracket]
+		typeIdx := strings.LastIndex(mapContent, " type:")
+		if typeIdx >= 0 {
+			texts = append(texts, mapContent[:typeIdx])
+		} else {
+			texts = append(texts, mapContent)
+		}
+		remaining = inner[closeBracket+1:]
+	}
+
+	if len(texts) == 0 {
+		return ""
+	}
+	return strings.Join(texts, "\n")
 }
 
 // formatToolResult extracts a readable summary from a parsed tool result.
