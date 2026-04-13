@@ -1145,3 +1145,78 @@ func TestOaiContentsToInputItems(t *testing.T) {
 		}
 	})
 }
+
+func TestOaiGenaiToolsToResponses(t *testing.T) {
+	t.Run("basic tool", func(t *testing.T) {
+		tools := []*genai.Tool{
+			{
+				FunctionDeclarations: []*genai.FunctionDeclaration{
+					{
+						Name:        "read_file",
+						Description: "Read a file",
+						ParametersJsonSchema: map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"path": map[string]any{"type": "string"},
+							},
+							"required": []any{"path"},
+						},
+					},
+				},
+			},
+		}
+		result := oaiGenaiToolsToResponses(tools)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 tool, got %d", len(result))
+		}
+		if result[0].OfFunction == nil {
+			t.Fatal("expected function tool")
+		}
+		if result[0].OfFunction.Name != "read_file" {
+			t.Errorf("name = %q, want read_file", result[0].OfFunction.Name)
+		}
+	})
+
+	t.Run("nil tool entries", func(t *testing.T) {
+		tools := []*genai.Tool{
+			nil,
+			{},
+			{FunctionDeclarations: nil},
+			{FunctionDeclarations: []*genai.FunctionDeclaration{nil}},
+			{
+				FunctionDeclarations: []*genai.FunctionDeclaration{
+					{Name: "test", Description: "test"},
+				},
+			},
+		}
+		result := oaiGenaiToolsToResponses(tools)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 tool, got %d", len(result))
+		}
+	})
+
+	t.Run("default type is object", func(t *testing.T) {
+		tools := []*genai.Tool{
+			{
+				FunctionDeclarations: []*genai.FunctionDeclaration{
+					{
+						Name:        "test",
+						Description: "Test",
+						ParametersJsonSchema: map[string]any{
+							"properties": map[string]any{
+								"arg": map[string]any{"type": "string"},
+							},
+						},
+					},
+				},
+			},
+		}
+		result := oaiGenaiToolsToResponses(tools)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 tool, got %d", len(result))
+		}
+		if result[0].OfFunction.Parameters["type"] != "object" {
+			t.Error("expected type=object default")
+		}
+	})
+}

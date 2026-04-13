@@ -355,6 +355,39 @@ func oaiGenaiToolsToOpenAI(tools []*genai.Tool) []openai.ChatCompletionToolUnion
 	return out
 }
 
+// oaiGenaiToolsToResponses converts genai tools to Responses API tool params.
+func oaiGenaiToolsToResponses(tools []*genai.Tool) []responses.ToolUnionParam {
+	var out []responses.ToolUnionParam
+	for _, t := range tools {
+		if t == nil || t.FunctionDeclarations == nil {
+			continue
+		}
+		for _, fd := range t.FunctionDeclarations {
+			if fd == nil {
+				continue
+			}
+			paramsMap := make(map[string]any)
+			if fd.ParametersJsonSchema != nil {
+				if m, ok := fd.ParametersJsonSchema.(map[string]any); ok {
+					maps.Copy(paramsMap, m)
+				}
+			}
+			if _, ok := paramsMap["type"]; !ok {
+				paramsMap["type"] = "object"
+			}
+			if paramsMap["type"] == "object" {
+				if _, ok := paramsMap["properties"]; !ok {
+					paramsMap["properties"] = map[string]any{}
+				}
+			}
+			tool := responses.ToolParamOfFunction(fd.Name, paramsMap, false)
+			tool.OfFunction.Description = param.NewOpt(fd.Description)
+			out = append(out, tool)
+		}
+	}
+	return out
+}
+
 // oaiStreamState holds accumulated state from processing OpenAI stream chunks.
 type oaiStreamState struct {
 	text             string
