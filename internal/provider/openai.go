@@ -81,39 +81,41 @@ func normalizeOpenAIBaseURL(baseURL string) string {
 
 func (m *openaiModel) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
-		messages, systemInstruction := oaiContentsToMessages(req.Contents, req.Config)
+		items, systemInstruction := oaiContentsToInputItems(req.Contents, req.Config)
 
 		modelName := req.Model
 		if modelName == "" {
 			modelName = m.modelName
 		}
 
-		params := openai.ChatCompletionNewParams{
-			Model:    modelName,
-			Messages: messages,
+		params := responses.ResponseNewParams{
+			Model: shared.ResponsesModel(modelName),
+			Input: responses.ResponseNewParamsInputUnion{
+				OfInputItemList: items,
+			},
+			Store: param.NewOpt(false),
 		}
 		if systemInstruction != "" {
-			params.Messages = append([]openai.ChatCompletionMessageParamUnion{
-				openai.SystemMessage(systemInstruction),
-			}, params.Messages...)
+			params.Instructions = param.NewOpt(systemInstruction)
 		}
 
-		// Apply reasoning effort for models that support it.
 		if re := m.effort.OpenAIReasoningEffort(); re != "" {
-			params.ReasoningEffort = re
+			params.Reasoning = shared.ReasoningParam{
+				Effort: re,
+			}
 		}
 
 		if req.Config != nil && len(req.Config.Tools) > 0 {
-			params.Tools = oaiGenaiToolsToOpenAI(req.Config.Tools)
-			params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
-				OfAuto: openai.String("auto"),
+			params.Tools = oaiGenaiToolsToResponses(req.Config.Tools)
+			params.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
+				OfToolChoiceMode: param.NewOpt(responses.ToolChoiceOptionsAuto),
 			}
 		}
 
 		if stream {
-			oaiRunStreaming(ctx, &m.client, params, yield)
+			oaiRunResponsesStreaming(ctx, &m.client, params, yield)
 		} else {
-			oaiRunNonStreaming(ctx, &m.client, params, yield)
+			oaiRunResponsesNonStreaming(ctx, &m.client, params, yield)
 		}
 	}
 }
@@ -447,6 +449,73 @@ func oaiResponseToLLMResponse(resp *responses.Response) *model.LLMResponse {
 		UsageMetadata: usage,
 		Content:       &genai.Content{Role: string(genai.RoleModel), Parts: parts},
 	}
+}
+
+func oaiRunResponsesStreaming(ctx context.Context, client *openai.Client, params responses.ResponseNewParams, yield func(*model.LLMResponse, error) bool) {
+	stream := client.Responses.NewStreaming(ctx, params)
+	defer func() {
+		_ = stream.Close()
+	}()
+
+	var finalResp *responses.Response
+
+	for stream.Next() {
+		event := stream.Current()
+		switch event.Type {
+		case "response.output_text.delta":
+			if event.Delta != "" {
+				if !yield(&model.LLMResponse{
+					Partial:      true,
+					TurnComplete: false,
+					Content:      &genai.Content{Role: string(genai.RoleModel), Parts: []*genai.Part{{Text: event.Delta}}},
+				}, nil) {
+					return
+				}
+			}
+		case "response.completed":
+			finalResp = &event.Response
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		if ctx.Err() == context.Canceled {
+			return
+		}
+		_ = yield(&model.LLMResponse{
+			ErrorCode:    "STREAM_ERROR",
+			ErrorMessage: llmutil.ResponseErrorText("STREAM_ERROR", err.Error()),
+			TurnComplete: true,
+			FinishReason: genai.FinishReasonOther,
+			Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("STREAM_ERROR", err.Error()), genai.RoleModel),
+		}, nil)
+		return
+	}
+
+	if finalResp != nil {
+		_ = yield(oaiResponseToLLMResponse(finalResp), nil)
+	}
+}
+
+func oaiRunResponsesNonStreaming(ctx context.Context, client *openai.Client, params responses.ResponseNewParams, yield func(*model.LLMResponse, error) bool) {
+	resp, err := client.Responses.New(ctx, params)
+	if err != nil {
+		yield(nil, fmt.Errorf("OpenAI response failed: %w", err))
+		return
+	}
+
+	if resp.Status == responses.ResponseStatusFailed {
+		errMsg := resp.Error.Message
+		yield(&model.LLMResponse{
+			ErrorCode:    "API_ERROR",
+			ErrorMessage: llmutil.ResponseErrorText("API_ERROR", errMsg),
+			TurnComplete: true,
+			FinishReason: genai.FinishReasonOther,
+			Content:      genai.NewContentFromText(llmutil.ResponseErrorDisplayText("API_ERROR", errMsg), genai.RoleModel),
+		}, nil)
+		return
+	}
+
+	yield(oaiResponseToLLMResponse(resp), nil)
 }
 
 // oaiStreamState holds accumulated state from processing OpenAI stream chunks.

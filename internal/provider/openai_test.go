@@ -632,30 +632,34 @@ func TestOaiContentsToMessagesAssistantFunctionCallNoText(t *testing.T) {
 }
 
 func TestOpenAINonStreamingTextResponse(t *testing.T) {
-	// Mock server that returns a successful text completion.
+	// Mock server that returns a successful Responses API response.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "expected POST", http.StatusMethodNotAllowed)
 			return
 		}
 		body := map[string]any{
-			"id":     "chatcmpl-test",
-			"object": "chat.completion",
+			"id":     "resp-test",
+			"object": "response",
 			"model":  "gpt-4o",
-			"choices": []map[string]any{
+			"status": "completed",
+			"output": []map[string]any{
 				{
-					"index": 0,
-					"message": map[string]any{
-						"role":    "assistant",
-						"content": "Hello world",
+					"type": "message",
+					"id":   "msg-001",
+					"role": "assistant",
+					"content": []map[string]any{
+						{
+							"type": "output_text",
+							"text": "Hello world",
+						},
 					},
-					"finish_reason": "stop",
 				},
 			},
 			"usage": map[string]any{
-				"prompt_tokens":     10,
-				"completion_tokens": 5,
-				"total_tokens":      15,
+				"input_tokens":  10,
+				"output_tokens": 5,
+				"total_tokens":  15,
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -715,36 +719,26 @@ func TestOpenAINonStreamingTextResponse(t *testing.T) {
 }
 
 func TestOpenAINonStreamingToolCallResponse(t *testing.T) {
-	// Mock server that returns a tool call in the response.
+	// Mock server that returns a tool call in the Responses API format.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := map[string]any{
-			"id":     "chatcmpl-tool-test",
-			"object": "chat.completion",
+			"id":     "resp-tool-test",
+			"object": "response",
 			"model":  "gpt-4o",
-			"choices": []map[string]any{
+			"status": "completed",
+			"output": []map[string]any{
 				{
-					"index": 0,
-					"message": map[string]any{
-						"role":    "assistant",
-						"content": "",
-						"tool_calls": []map[string]any{
-							{
-								"id":   "call_abc123",
-								"type": "function",
-								"function": map[string]any{
-									"name":      "get_weather",
-									"arguments": `{"location":"San Francisco"}`,
-								},
-							},
-						},
-					},
-					"finish_reason": "tool_calls",
+					"type":      "function_call",
+					"id":        "fc-001",
+					"call_id":   "call_abc123",
+					"name":      "get_weather",
+					"arguments": `{"location":"San Francisco"}`,
 				},
 			},
 			"usage": map[string]any{
-				"prompt_tokens":     15,
-				"completion_tokens": 20,
-				"total_tokens":      35,
+				"input_tokens":  15,
+				"output_tokens": 20,
+				"total_tokens":  35,
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
