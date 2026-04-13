@@ -16,6 +16,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/openai/openai-go/v3/shared/constant"
 	"google.golang.org/adk/model"
@@ -219,6 +220,81 @@ func oaiContentsToMessages(contents []*genai.Content, config *genai.GenerateCont
 		}
 	}
 	return messages, systemInstruction
+}
+
+// oaiContentsToInputItems converts genai.Content to Responses API input items.
+func oaiContentsToInputItems(contents []*genai.Content, config *genai.GenerateContentConfig) (responses.ResponseInputParam, string) {
+	var systemBuilder strings.Builder
+	if config != nil && config.SystemInstruction != nil {
+		for _, p := range config.SystemInstruction.Parts {
+			if p != nil && p.Text != "" {
+				systemBuilder.WriteString(p.Text)
+				systemBuilder.WriteByte('\n')
+			}
+		}
+	}
+	systemInstruction := strings.TrimSpace(systemBuilder.String())
+
+	functionResponses := make(map[string]*genai.FunctionResponse)
+	for _, c := range contents {
+		if c == nil || c.Parts == nil {
+			continue
+		}
+		for _, p := range c.Parts {
+			if p != nil && p.FunctionResponse != nil {
+				functionResponses[p.FunctionResponse.ID] = p.FunctionResponse
+			}
+		}
+	}
+
+	var items responses.ResponseInputParam
+	for _, content := range contents {
+		if content == nil || strings.TrimSpace(content.Role) == "system" {
+			continue
+		}
+		role := strings.TrimSpace(content.Role)
+		var textParts []string
+		var functionCalls []*genai.FunctionCall
+
+		for _, part := range content.Parts {
+			if part == nil {
+				continue
+			}
+			if part.Text != "" {
+				textParts = append(textParts, part.Text)
+			} else if part.FunctionCall != nil {
+				functionCalls = append(functionCalls, part.FunctionCall)
+			}
+		}
+
+		if len(functionCalls) > 0 && (role == "model" || role == "assistant") {
+			if len(textParts) > 0 {
+				items = append(items, responses.ResponseInputItemParamOfMessage(
+					strings.Join(textParts, "\n"),
+					responses.EasyInputMessageRoleAssistant,
+				))
+			}
+			for _, fc := range functionCalls {
+				argsJSON, _ := json.Marshal(fc.Args)
+				items = append(items, responses.ResponseInputItemParamOfFunctionCall(
+					string(argsJSON), fc.ID, fc.Name,
+				))
+				contentStr := "No response available for this function call."
+				if fr := functionResponses[fc.ID]; fr != nil {
+					contentStr = oaiFunctionResponseContent(fr.Response)
+				}
+				items = append(items, responses.ResponseInputItemParamOfFunctionCallOutput(fc.ID, contentStr))
+			}
+		} else if len(textParts) > 0 {
+			text := strings.Join(textParts, "\n")
+			msgRole := responses.EasyInputMessageRoleUser
+			if role == "model" || role == "assistant" {
+				msgRole = responses.EasyInputMessageRoleAssistant
+			}
+			items = append(items, responses.ResponseInputItemParamOfMessage(text, msgRole))
+		}
+	}
+	return items, systemInstruction
 }
 
 func oaiFunctionResponseContent(resp any) string {

@@ -993,3 +993,155 @@ func TestBuildOaiFinalResponse_MaxTokens(t *testing.T) {
 		t.Errorf("FinishReason = %v, want MaxTokens", resp.FinishReason)
 	}
 }
+
+func TestOaiContentsToInputItems(t *testing.T) {
+	t.Run("extracts system instruction", func(t *testing.T) {
+		config := &genai.GenerateContentConfig{
+			SystemInstruction: &genai.Content{
+				Parts: []*genai.Part{{Text: "You are a helpful assistant."}},
+			},
+		}
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: "Hello"}}},
+		}
+		items, sysInstr := oaiContentsToInputItems(contents, config)
+		if sysInstr != "You are a helpful assistant." {
+			t.Errorf("system instruction = %q, want %q", sysInstr, "You are a helpful assistant.")
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		if items[0].OfMessage == nil {
+			t.Fatal("expected message item")
+		}
+	})
+
+	t.Run("converts user and model messages", func(t *testing.T) {
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: "What is Go?"}}},
+			{Role: "model", Parts: []*genai.Part{{Text: "Go is a programming language."}}},
+			{Role: "user", Parts: []*genai.Part{{Text: "Tell me more."}}},
+		}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(items))
+		}
+	})
+
+	t.Run("handles function calls with responses", func(t *testing.T) {
+		fc := genai.NewPartFromFunctionCall("read_file", map[string]any{"path": "/tmp/test.go"})
+		fc.FunctionCall.ID = "call_123"
+		fr := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				ID:       "call_123",
+				Name:     "read_file",
+				Response: map[string]any{"result": "file contents here"},
+			},
+		}
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: "Read the file"}}},
+			{Role: "model", Parts: []*genai.Part{fc}},
+			{Role: "user", Parts: []*genai.Part{fr}},
+		}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(items))
+		}
+		if items[1].OfFunctionCall == nil {
+			t.Error("expected function call item at index 1")
+		}
+		if items[2].OfFunctionCallOutput == nil {
+			t.Error("expected function call output item at index 2")
+		}
+	})
+
+	t.Run("nil config is handled", func(t *testing.T) {
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: "Hello"}}},
+		}
+		items, sysInstr := oaiContentsToInputItems(contents, nil)
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		if sysInstr != "" {
+			t.Errorf("expected empty system instruction, got %q", sysInstr)
+		}
+	})
+
+	t.Run("nil content entries are skipped", func(t *testing.T) {
+		contents := []*genai.Content{nil, {Role: "user", Parts: []*genai.Part{{Text: "Hello"}}}, nil}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+	})
+
+	t.Run("system role content is skipped", func(t *testing.T) {
+		contents := []*genai.Content{
+			{Role: " system ", Parts: []*genai.Part{{Text: "ignored"}}},
+			{Role: "user", Parts: []*genai.Part{{Text: "Hello"}}},
+		}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+	})
+
+	t.Run("assistant message with text and function calls", func(t *testing.T) {
+		fc := genai.NewPartFromFunctionCall("my_tool", map[string]any{"arg": "val"})
+		fc.FunctionCall.ID = "call_abc"
+		fr := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				ID: "call_abc", Name: "my_tool",
+				Response: map[string]any{"result": "tool output text"},
+			},
+		}
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: "Do something"}}},
+			{Role: "model", Parts: []*genai.Part{{Text: "I will call the tool"}, fc}},
+			{Role: "user", Parts: []*genai.Part{fr}},
+		}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		// user_msg + assistant_text_msg + function_call + function_call_output = 4
+		if len(items) != 4 {
+			t.Fatalf("expected 4 items, got %d", len(items))
+		}
+	})
+
+	t.Run("function call without matching response", func(t *testing.T) {
+		fc := genai.NewPartFromFunctionCall("orphan_tool", map[string]any{})
+		fc.FunctionCall.ID = "call_orphan"
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: "Call it"}}},
+			{Role: "model", Parts: []*genai.Part{fc}},
+		}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		// user_msg + function_call + function_call_output(default) = 3
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(items))
+		}
+	})
+
+	t.Run("empty text parts produce no item", func(t *testing.T) {
+		contents := []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: ""}}},
+		}
+		items, _ := oaiContentsToInputItems(contents, nil)
+		if len(items) != 0 {
+			t.Fatalf("expected 0 items for empty text, got %d", len(items))
+		}
+	})
+
+	t.Run("system instruction with multiple parts", func(t *testing.T) {
+		config := &genai.GenerateContentConfig{
+			SystemInstruction: &genai.Content{
+				Parts: []*genai.Part{{Text: "Part one."}, nil, {Text: "Part two."}},
+			},
+		}
+		contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: "Hi"}}}}
+		_, sysInstr := oaiContentsToInputItems(contents, config)
+		if sysInstr != "Part one.\nPart two." {
+			t.Errorf("system instruction = %q, want %q", sysInstr, "Part one.\nPart two.")
+		}
+	})
+}
