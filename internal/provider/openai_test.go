@@ -3,10 +3,12 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/openai/openai-go/v3/responses"
 	"google.golang.org/adk/model"
 
 	"google.golang.org/genai"
@@ -1146,6 +1148,126 @@ func TestOaiContentsToInputItems(t *testing.T) {
 	})
 }
 
+func TestOaiStatusToFinishReason(t *testing.T) {
+	tests := []struct {
+		name   string
+		status responses.ResponseStatus
+		reason string
+		want   genai.FinishReason
+	}{
+		{"completed", responses.ResponseStatusCompleted, "", genai.FinishReasonStop},
+		{"incomplete max tokens", responses.ResponseStatusIncomplete, "max_output_tokens", genai.FinishReasonMaxTokens},
+		{"incomplete content filter", responses.ResponseStatusIncomplete, "content_filter", genai.FinishReasonSafety},
+		{"incomplete other", responses.ResponseStatusIncomplete, "", genai.FinishReasonOther},
+		{"failed", responses.ResponseStatusFailed, "", genai.FinishReasonOther},
+		{"cancelled", responses.ResponseStatusCancelled, "", genai.FinishReasonOther},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &responses.Response{
+				Status:            tt.status,
+				IncompleteDetails: responses.ResponseIncompleteDetails{Reason: tt.reason},
+			}
+			got := oaiStatusToFinishReason(resp)
+			if got != tt.want {
+				t.Errorf("oaiStatusToFinishReason() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOaiResponseToLLMResponse_TextOnly(t *testing.T) {
+	resp := &responses.Response{
+		Status: responses.ResponseStatusCompleted,
+		Output: []responses.ResponseOutputItemUnion{
+			fakeOutputMessage("Hello world"),
+		},
+		Usage: responses.ResponseUsage{InputTokens: 10, OutputTokens: 5},
+	}
+	result := oaiResponseToLLMResponse(resp)
+	if result.Partial {
+		t.Error("expected Partial = false")
+	}
+	if !result.TurnComplete {
+		t.Error("expected TurnComplete = true")
+	}
+	if result.FinishReason != genai.FinishReasonStop {
+		t.Errorf("FinishReason = %v, want Stop", result.FinishReason)
+	}
+	if len(result.Content.Parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(result.Content.Parts))
+	}
+	if result.Content.Parts[0].Text != "Hello world" {
+		t.Errorf("text = %q", result.Content.Parts[0].Text)
+	}
+	if result.UsageMetadata.PromptTokenCount != 10 {
+		t.Errorf("PromptTokenCount = %d, want 10", result.UsageMetadata.PromptTokenCount)
+	}
+	if result.UsageMetadata.CandidatesTokenCount != 5 {
+		t.Errorf("CandidatesTokenCount = %d, want 5", result.UsageMetadata.CandidatesTokenCount)
+	}
+}
+
+func TestOaiResponseToLLMResponse_WithFunctionCall(t *testing.T) {
+	resp := &responses.Response{
+		Status: responses.ResponseStatusCompleted,
+		Output: []responses.ResponseOutputItemUnion{
+			fakeOutputFunctionCall("call_abc", "get_weather", `{"location":"San Francisco"}`),
+		},
+		Usage: responses.ResponseUsage{InputTokens: 15, OutputTokens: 20},
+	}
+	result := oaiResponseToLLMResponse(resp)
+	var fcPart *genai.Part
+	for _, p := range result.Content.Parts {
+		if p.FunctionCall != nil {
+			fcPart = p
+			break
+		}
+	}
+	if fcPart == nil {
+		t.Fatal("expected a FunctionCall part")
+	}
+	if fcPart.FunctionCall.Name != "get_weather" {
+		t.Errorf("function name = %q, want get_weather", fcPart.FunctionCall.Name)
+	}
+	if fcPart.FunctionCall.ID != "call_abc" {
+		t.Errorf("function call ID = %q, want call_abc", fcPart.FunctionCall.ID)
+	}
+	loc, _ := fcPart.FunctionCall.Args["location"].(string)
+	if loc != "San Francisco" {
+		t.Errorf("location arg = %q, want San Francisco", loc)
+	}
+}
+
+func TestOaiResponseToLLMResponse_Empty(t *testing.T) {
+	resp := &responses.Response{
+		Status: responses.ResponseStatusCompleted,
+		Output: []responses.ResponseOutputItemUnion{},
+	}
+	result := oaiResponseToLLMResponse(resp)
+	if len(result.Content.Parts) != 0 {
+		t.Errorf("expected 0 parts, got %d", len(result.Content.Parts))
+	}
+	if result.UsageMetadata != nil {
+		t.Error("expected nil UsageMetadata when tokens are 0")
+	}
+}
+
+func TestOaiResponseToLLMResponse_MaxTokens(t *testing.T) {
+	resp := &responses.Response{
+		Status:            responses.ResponseStatusIncomplete,
+		IncompleteDetails: responses.ResponseIncompleteDetails{Reason: "max_output_tokens"},
+		Output: []responses.ResponseOutputItemUnion{
+			fakeOutputMessage("truncated"),
+		},
+		Usage: responses.ResponseUsage{InputTokens: 100, OutputTokens: 4096},
+	}
+	result := oaiResponseToLLMResponse(resp)
+	if result.FinishReason != genai.FinishReasonMaxTokens {
+		t.Errorf("FinishReason = %v, want MaxTokens", result.FinishReason)
+	}
+}
+
 func TestOaiGenaiToolsToResponses(t *testing.T) {
 	t.Run("basic tool", func(t *testing.T) {
 		tools := []*genai.Tool{
@@ -1219,4 +1341,26 @@ func TestOaiGenaiToolsToResponses(t *testing.T) {
 			t.Error("expected type=object default")
 		}
 	})
+}
+
+// --- Test helpers for Responses API output items ---
+
+func fakeOutputMessage(text string) responses.ResponseOutputItemUnion {
+	raw := fmt.Sprintf(`{"type":"message","id":"msg_test","role":"assistant","status":"completed","content":[{"type":"output_text","text":%s}]}`, mustJSON(text))
+	var item responses.ResponseOutputItemUnion
+	_ = json.Unmarshal([]byte(raw), &item)
+	return item
+}
+
+func fakeOutputFunctionCall(callID, name, arguments string) responses.ResponseOutputItemUnion {
+	raw := fmt.Sprintf(`{"type":"function_call","id":"fc_test","call_id":%s,"name":%s,"arguments":%s,"status":"completed"}`,
+		mustJSON(callID), mustJSON(name), mustJSON(arguments))
+	var item responses.ResponseOutputItemUnion
+	_ = json.Unmarshal([]byte(raw), &item)
+	return item
+}
+
+func mustJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

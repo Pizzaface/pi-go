@@ -388,6 +388,67 @@ func oaiGenaiToolsToResponses(tools []*genai.Tool) []responses.ToolUnionParam {
 	return out
 }
 
+// oaiStatusToFinishReason maps a Responses API status to genai.FinishReason.
+func oaiStatusToFinishReason(resp *responses.Response) genai.FinishReason {
+	switch resp.Status {
+	case responses.ResponseStatusIncomplete:
+		switch resp.IncompleteDetails.Reason {
+		case "max_output_tokens":
+			return genai.FinishReasonMaxTokens
+		case "content_filter":
+			return genai.FinishReasonSafety
+		default:
+			return genai.FinishReasonOther
+		}
+	case responses.ResponseStatusFailed, responses.ResponseStatusCancelled:
+		return genai.FinishReasonOther
+	default:
+		return genai.FinishReasonStop
+	}
+}
+
+// oaiResponseToLLMResponse converts a Responses API Response to model.LLMResponse.
+func oaiResponseToLLMResponse(resp *responses.Response) *model.LLMResponse {
+	var parts []*genai.Part
+
+	for _, item := range resp.Output {
+		switch item.Type {
+		case "message":
+			msg := item.AsMessage()
+			for _, c := range msg.Content {
+				if c.Type == "output_text" && c.Text != "" {
+					parts = append(parts, &genai.Part{Text: c.Text})
+				}
+			}
+		case "function_call":
+			fc := item.AsFunctionCall()
+			var args map[string]any
+			if fc.Arguments != "" {
+				_ = json.Unmarshal([]byte(fc.Arguments), &args)
+			}
+			p := genai.NewPartFromFunctionCall(fc.Name, args)
+			p.FunctionCall.ID = fc.CallID
+			parts = append(parts, p)
+		}
+	}
+
+	var usage *genai.GenerateContentResponseUsageMetadata
+	if resp.Usage.InputTokens > 0 || resp.Usage.OutputTokens > 0 {
+		usage = &genai.GenerateContentResponseUsageMetadata{
+			PromptTokenCount:     int32(resp.Usage.InputTokens),
+			CandidatesTokenCount: int32(resp.Usage.OutputTokens),
+		}
+	}
+
+	return &model.LLMResponse{
+		Partial:       false,
+		TurnComplete:  true,
+		FinishReason:  oaiStatusToFinishReason(resp),
+		UsageMetadata: usage,
+		Content:       &genai.Content{Role: string(genai.RoleModel), Parts: parts},
+	}
+}
+
 // oaiStreamState holds accumulated state from processing OpenAI stream chunks.
 type oaiStreamState struct {
 	text             string
