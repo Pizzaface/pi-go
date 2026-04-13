@@ -5,6 +5,16 @@ import (
 )
 
 func (m *model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	// Map screen Y to absolute rendered line and check for Agent accordion toggles.
+	absLine := m.lastViewStartLine + msg.Y
+	for _, r := range m.chatModel.AgentLineRanges {
+		if absLine >= r.startLine && absLine < r.endLine {
+			if r.msgIndex >= 0 && r.msgIndex < len(m.chatModel.Messages) {
+				m.chatModel.Messages[r.msgIndex].collapsed = !m.chatModel.Messages[r.msgIndex].collapsed
+			}
+			break
+		}
+	}
 	return m, nil
 }
 

@@ -134,12 +134,12 @@ func (r *Registry) AddBuiltins() {
 				Match:          []MatchRule{{Prefix: "openrouter/", StripPrefix: true}},
 			},
 			{
-				Name:           "azure-openai",
-				Family:         "openai", // OpenAI-compatible
-				APIKeyEnv:      []string{"AZURE_OPENAI_API_KEY"},
-				BaseURLEnv:     "AZURE_OPENAI_BASE_URL",
-				PingEndpoint:   "/openai/models",
-				Match:          []MatchRule{{Prefix: "azure/", StripPrefix: true}},
+				Name:         "azure-openai",
+				Family:       "openai", // OpenAI-compatible
+				APIKeyEnv:    []string{"AZURE_OPENAI_API_KEY"},
+				BaseURLEnv:   "AZURE_OPENAI_BASE_URL",
+				PingEndpoint: "/openai/models",
+				Match:        []MatchRule{{Prefix: "azure/", StripPrefix: true}},
 			},
 			{
 				Name:   "claudecli",

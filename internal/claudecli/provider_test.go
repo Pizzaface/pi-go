@@ -222,6 +222,26 @@ func TestGenerateContentClosed(t *testing.T) {
 	}
 }
 
+func TestResetSession(t *testing.T) {
+	p := New(Config{})
+	// ResetSession on a provider with no active session should be a no-op.
+	if err := p.ResetSession(); err != nil {
+		t.Fatalf("ResetSession() on idle provider: %v", err)
+	}
+	if p.session != nil {
+		t.Error("expected session to remain nil")
+	}
+}
+
+func TestResetSessionClearsState(t *testing.T) {
+	p := New(Config{})
+	// After reset, the provider should not be marked closed (unlike Close).
+	_ = p.ResetSession()
+	if p.closed {
+		t.Error("ResetSession should not mark provider as closed")
+	}
+}
+
 func TestToolUseSummary(t *testing.T) {
 	tests := []struct {
 		name  string

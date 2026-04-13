@@ -9,12 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/adk/tool"
+
 	"github.com/dimetron/pi-go/internal/extension/hostproto"
 	"github.com/dimetron/pi-go/internal/extension/hostruntime"
 	"github.com/dimetron/pi-go/internal/extension/services"
 	commandsservice "github.com/dimetron/pi-go/internal/extension/services/commands"
 	uiservice "github.com/dimetron/pi-go/internal/extension/services/ui"
-	"google.golang.org/adk/tool"
 )
 
 // Dispatcher is re-exported from hostruntime so HostedClient

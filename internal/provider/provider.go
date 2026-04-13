@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/claudecli"
 	"google.golang.org/adk/model"
+
+	"github.com/dimetron/pi-go/internal/claudecli"
 )
 
 // BuildTransport creates an http.Transport with optional TLS skip and extra headers.

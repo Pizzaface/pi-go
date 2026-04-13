@@ -42,6 +42,12 @@ type model struct {
 	running bool
 	agentCh chan agentMsg // channel for receiving agent events
 
+	// Agent group tracking for accordion nesting. When the LLM invokes an
+	// Agent tool, all child tool calls that occur before the Agent result
+	// share the same group ID so they can be collapsed together.
+	agentGroupStack  []int // stack of active agent group IDs (supports nesting)
+	nextAgentGroupID int   // monotonic counter for generating unique group IDs
+
 	// Agent face renderer with mood expressions.
 	face *FaceRenderer
 
@@ -98,6 +104,10 @@ type model struct {
 	// steeringNotify signals the agent loop that a steering message is available.
 	// Buffered channel of size 1; the agent loop selects on this between tool rounds.
 	steeringNotify chan struct{}
+
+	// lastViewStartLine is the first visible message line in the last render.
+	// Set by View(), used by handleMouseClick() for Agent accordion toggle.
+	lastViewStartLine int
 
 	// Quit.
 	quitting bool

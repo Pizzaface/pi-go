@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+
 	"github.com/dimetron/pi-go/internal/extension"
 
 	"charm.land/lipgloss/v2"
@@ -47,6 +48,8 @@ type message struct {
 	tool           string // tool name (for role=="tool")
 	toolIn         string // tool input args (for role=="tool")
 	extensionOwner string // optional extension id for custom render surfaces
+	collapsed      bool   // per-message collapse state (used by Agent accordion)
+	agentGroupID   int    // >0 means this tool belongs to an Agent invocation group
 }
 
 // traceEntry represents a single entry in the debug trace log.
@@ -55,6 +58,14 @@ type traceEntry struct {
 	kind    string // "llm", "tool_call", "tool_result", "error"
 	summary string // short one-line summary
 	detail  string // full content (args, response, etc.)
+}
+
+// agentLineRange maps a range of rendered lines to an Agent tool message index.
+// Used by the mouse click handler to toggle Agent accordions.
+type agentLineRange struct {
+	startLine int // first line of the Agent panel (inclusive)
+	endLine   int // last line of the Agent panel (exclusive)
+	msgIndex  int // index into ChatModel.Messages
 }
 
 // ChatModel manages the conversation message display, scrolling, and markdown rendering.
@@ -69,6 +80,9 @@ type ChatModel struct {
 	ToolDisplay      ToolDisplayModel
 	ExtensionManager *extension.Manager
 	RenderTimeout    time.Duration
+	// AgentLineRanges tracks rendered line ranges for Agent tool accordions.
+	// Populated by RenderMessages(), consumed by mouse click handler.
+	AgentLineRanges []agentLineRange
 }
 
 // NewChatModel creates a ChatModel with the given markdown renderer.
@@ -209,6 +223,7 @@ func trimMarkdownLineIndent(line string) string {
 }
 
 // RenderMessages renders all messages into a string for display.
+// It also populates AgentLineRanges for click-to-toggle accordion support.
 func (c *ChatModel) RenderMessages(running bool) string {
 	if len(c.Messages) == 0 {
 		return renderWelcome()
@@ -222,30 +237,116 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	const assistantPrefix = "● "
 	const userPrefix = "> "
 
+	c.AgentLineRanges = c.AgentLineRanges[:0]
+	lineCount := 0
+
+	// Build a set of collapsed agent group IDs so child tools can be skipped.
+	collapsedGroups := make(map[int]bool)
+	for _, msg := range c.Messages {
+		if isAgentTool(msg.tool) && msg.collapsed && msg.agentGroupID > 0 {
+			collapsedGroups[msg.agentGroupID] = true
+		}
+	}
+
+	// write appends to the builder and tracks cumulative line count.
 	var b strings.Builder
+	write := func(s string) {
+		b.WriteString(s)
+		lineCount += strings.Count(s, "\n")
+	}
+
+	// Deferred Agent response — rendered as a conversation message after children.
+	type pendingAgentResp struct {
+		groupID int
+		content string
+	}
+	var pendingResp *pendingAgentResp
+
+	// renderAgentResp writes an Agent's response text as a conversation message.
+	renderAgentResp := func(content string) {
+		if content == "" {
+			return
+		}
+		rendered := c.RenderMarkdown(content)
+		if rendered == "" {
+			rendered = content
+		}
+		write("\n")
+		write(prefixBlockLines(rendered, assistantPrefix))
+		write("\n")
+	}
+
 	prevRole := ""
 	for i, msg := range c.Messages {
+		// Flush deferred Agent response when leaving the group.
+		if pendingResp != nil {
+			isChild := msg.role == "tool" && msg.agentGroupID == pendingResp.groupID && !isAgentTool(msg.tool)
+			if !isChild {
+				renderAgentResp(pendingResp.content)
+				prevRole = "assistant"
+				pendingResp = nil
+			}
+		}
+
+		// Skip child tools whose parent Agent accordion is collapsed.
+		if msg.role == "tool" && msg.agentGroupID > 0 && !isAgentTool(msg.tool) && collapsedGroups[msg.agentGroupID] {
+			continue
+		}
+
 		switch msg.role {
 		case "user":
 			if i > 0 {
-				b.WriteString("\n")
+				write("\n")
 			}
-			b.WriteString(renderWrappedPrefixBlock(msg.content, userPrefix, c.Width))
-			b.WriteString("\n")
+			write(renderWrappedPrefixBlock(msg.content, userPrefix, c.Width))
+			write("\n")
 
 		case "tool":
 			// Add spacing before the first tool in a sequence, not between tools.
 			if prevRole != "tool" {
-				b.WriteString("\n")
+				write("\n")
 			}
-			b.WriteString(c.ToolDisplay.RenderToolMessage(msg))
+			isChild := msg.agentGroupID > 0 && !isAgentTool(msg.tool)
+			if isChild {
+				c.ToolDisplay.Width -= agentChildIndent
+			}
+			startLine := lineCount
+			rendered := c.ToolDisplay.RenderToolMessage(msg)
+			if isChild {
+				c.ToolDisplay.Width += agentChildIndent
+				rendered = indentBlock(rendered, strings.Repeat(" ", agentChildIndent))
+			}
+			write(rendered)
+			if isAgentTool(msg.tool) {
+				c.AgentLineRanges = append(c.AgentLineRanges, agentLineRange{
+					startLine: startLine,
+					endLine:   lineCount,
+					msgIndex:  i,
+				})
+				// Render the Agent's response outside the accordion.
+				if msg.content != "" {
+					if msg.collapsed {
+						// Collapsed: render response immediately after header.
+						renderAgentResp(msg.content)
+						prevRole = "assistant"
+						continue // skip prevRole = msg.role below
+					}
+					if msg.agentGroupID > 0 {
+						// Expanded: defer until after last child.
+						pendingResp = &pendingAgentResp{
+							groupID: msg.agentGroupID,
+							content: msg.content,
+						}
+					}
+				}
+			}
 
 		case "thinking":
 			if msg.content != "" {
 				thinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
 				thinkBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render("💭 ")
-				b.WriteString("\n")
-				b.WriteString(thinkBullet)
+				write("\n")
+				write(thinkBullet)
 				// Show last few lines of thinking to keep it compact.
 				lines := strings.Split(msg.content, "\n")
 				maxLines := 6
@@ -254,14 +355,14 @@ func (c *ChatModel) RenderMessages(running bool) string {
 				}
 				for j, line := range lines {
 					if j > 0 {
-						b.WriteString("   ")
+						write("   ")
 					}
-					b.WriteString(thinkStyle.Render(line))
+					write(thinkStyle.Render(line))
 					if j < len(lines)-1 {
-						b.WriteString("\n")
+						write("\n")
 					}
 				}
-				b.WriteString("\n")
+				write("\n")
 			}
 
 		case "assistant":
@@ -272,24 +373,29 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			if content != "" {
 				// Add extra spacing after a tool sequence before the assistant response.
 				if prevRole == "tool" {
-					b.WriteString("\n")
+					write("\n")
 				}
-				b.WriteString("\n")
+				write("\n")
 				if msg.isWarning {
 					warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
 					warnContent := prefixBlockLines(warnStyle.Render(content), "⚠ ")
-					b.WriteString(warnContent)
+					write(warnContent)
 				} else {
 					rendered, ok := c.renderCustomAssistantMessage(msg, content)
 					if !ok {
 						rendered = c.RenderMarkdown(content)
 					}
-					b.WriteString(prefixBlockLines(rendered, assistantPrefix))
+					write(prefixBlockLines(rendered, assistantPrefix))
 				}
-				b.WriteString("\n")
+				write("\n")
 			}
 		}
 		prevRole = msg.role
+	}
+
+	// Flush any remaining deferred Agent response at the end.
+	if pendingResp != nil {
+		renderAgentResp(pendingResp.content)
 	}
 
 	return b.String()

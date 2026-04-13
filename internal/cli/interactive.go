@@ -74,18 +74,18 @@ func runInteractive(
 	}
 
 	tuiErr := tui.Run(ctx, tui.Config{
-		LLM:                llm,
-		ModelName:          modelName,
-		ProviderName:       info.Provider,
-		ActiveRole:         activeRole,
-		Roles:              cfg.Roles,
-		ProviderRegistry:   reg,
-		WorkDir:            cwd,
-		ThemeName:          cfg.Theme,
-		EffortLevel:        provider.ParseEffortLevel(cfg.ThinkingLevel),
-		DeferredInit:       initCh,
-		DebugTracer:        debugTracer,
-		NoModelConfigured:  noModelConfigured,
+		LLM:               llm,
+		ModelName:         modelName,
+		ProviderName:      info.Provider,
+		ActiveRole:        activeRole,
+		Roles:             cfg.Roles,
+		ProviderRegistry:  reg,
+		WorkDir:           cwd,
+		ThemeName:         cfg.Theme,
+		EffortLevel:       provider.ParseEffortLevel(cfg.ThinkingLevel),
+		DeferredInit:      initCh,
+		DebugTracer:       debugTracer,
+		NoModelConfigured: noModelConfigured,
 	})
 
 	initCancel() // signal deferred init to stop

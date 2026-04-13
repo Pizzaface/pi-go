@@ -103,10 +103,10 @@ func (c *Client) Handshake(ctx context.Context, request hostproto.HandshakeReque
 	}
 
 	var probe struct {
-		Method string          `json:"method"`
-		ID     int64           `json:"id"`
-		Params json.RawMessage `json:"params"`
-		Result json.RawMessage `json:"result"`
+		Method string              `json:"method"`
+		ID     int64               `json:"id"`
+		Params json.RawMessage     `json:"params"`
+		Result json.RawMessage     `json:"result"`
 		Error  *hostproto.RPCError `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
@@ -257,7 +257,6 @@ func (c *Client) send(request hostproto.RPCRequest) error {
 	}
 	return nil
 }
-
 
 func (c *Client) Shutdown(ctx context.Context) error {
 	if c.process != nil {

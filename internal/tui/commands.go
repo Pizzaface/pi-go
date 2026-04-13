@@ -348,6 +348,19 @@ func (m *model) handleNewCommand(args []string) {
 		m.appendAssistant(fmt.Sprintf("Error creating session: %v", err))
 		return
 	}
+
+	// If the LLM provider manages its own conversation state (e.g. Claude CLI),
+	// reset it so the new session starts with a clean conversation.
+	type sessionResetter interface {
+		ResetSession() error
+	}
+	if resetter, ok := m.cfg.LLM.(sessionResetter); ok {
+		if err := resetter.ResetSession(); err != nil {
+			m.appendAssistant(fmt.Sprintf("Error resetting provider session: %v", err))
+			return
+		}
+	}
+
 	m.cfg.SessionID = sessionID
 	m.chatModel.Messages = nil
 	m.chatModel.Scroll = 0

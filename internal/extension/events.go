@@ -10,8 +10,8 @@ const (
 type EventType string
 
 const (
-	EventStartup      EventType = EventType(LifecycleEventStartup)
-	EventSessionStart EventType = EventType(LifecycleEventSessionStart)
+	EventStartup                = EventType(LifecycleEventStartup)
+	EventSessionStart           = EventType(LifecycleEventSessionStart)
 	EventCommand      EventType = "command_invoked"
 	EventToolStart    EventType = "tool_start"
 	EventToolResult   EventType = "tool_result"

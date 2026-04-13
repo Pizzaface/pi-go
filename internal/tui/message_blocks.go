@@ -86,6 +86,20 @@ func renderWrappedPrefixBlock(content, prefix string, width int) string {
 	return prefixBlockLines(wrapPlainText(content, innerWidth), prefix)
 }
 
+// indentBlock prefixes every line of content with the given indent string.
+func indentBlock(content, indent string) string {
+	if content == "" || indent == "" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = indent + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func padBlockWidth(content string, width int) string {
 	if width <= 0 || content == "" {
 		return content

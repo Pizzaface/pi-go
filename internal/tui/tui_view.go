@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
 	"github.com/dimetron/pi-go/internal/extension"
 )
 
@@ -82,6 +83,7 @@ func (m *model) View() tea.View {
 	if endLine > totalLines {
 		endLine = totalLines
 	}
+	m.lastViewStartLine = startLine
 
 	visibleMessages := strings.Join(msgLines[startLine:endLine], "\n")
 	visibleLineCount := strings.Count(visibleMessages, "\n") + 1

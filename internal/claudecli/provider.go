@@ -141,6 +141,21 @@ func (p *Provider) Close() error {
 	return nil
 }
 
+// ResetSession closes the current CLI subprocess so the next GenerateContent
+// call spawns a fresh one. This is called when the user starts a new
+// conversation (e.g. /new) so the Claude CLI process doesn't carry over
+// conversation history from the previous session.
+func (p *Provider) ResetSession() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.session != nil {
+		err := p.session.Close()
+		p.session = nil
+		return err
+	}
+	return nil
+}
+
 // GenerateContent sends a user message to the Claude CLI and streams back
 // responses as model.LLMResponse events. Claude CLI handles tool execution
 // internally; tool activity is surfaced as structured text in the response.

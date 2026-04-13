@@ -3,9 +3,19 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+// spinnerTickMsg drives the Agent active spinner animation.
+type spinnerTickMsg time.Time
+
+func spinnerTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return spinnerTickMsg(t)
+	})
+}
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -59,6 +69,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleAgentToolResult(msg)
 	case agentTraceMsg:
 		return m.handleAgentTrace(msg)
+	case spinnerTickMsg:
+		if m.running {
+			m.chatModel.ToolDisplay.SpinnerFrame++
+			return m, spinnerTick()
+		}
+		return m, nil
 	case agentDoneMsg:
 		return m.handleAgentDone(msg)
 	case loginSSOResultMsg:

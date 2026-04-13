@@ -121,9 +121,9 @@ func Providers() []Provider {
 			ClientID: "app_EMoamEEZ73f0CkXaXp7hrann",
 			Scopes:   []string{"openid", "profile", "email", "offline_access"},
 			ExtraParams: map[string]string{
-				"id_token_add_organizations":  "true",
-				"codex_cli_simplified_flow":   "true",
-				"originator":                  "pi",
+				"id_token_add_organizations": "true",
+				"codex_cli_simplified_flow":  "true",
+				"originator":                 "pi",
 			},
 			TokenToKey: func(tok *TokenResponse) string {
 				if tok.APIKey != "" {

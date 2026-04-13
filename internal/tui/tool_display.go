@@ -12,10 +12,14 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+
 	"github.com/dimetron/pi-go/internal/extension"
 
 	"charm.land/lipgloss/v2"
 )
+
+// spinnerFrames are the braille-dot frames for the Agent active spinner.
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // ToolDisplayModel manages the formatting and rendering of tool call/result
 // messages in the chat view. It owns per-tool formatters, syntax highlighting,
@@ -33,15 +37,26 @@ type ToolDisplayModel struct {
 	RenderTimeout time.Duration
 	// RenderMarkdown renders markdown payloads when extensions return markdown.
 	RenderMarkdown func(string) string
+	// SpinnerFrame is the current animation frame for Agent active spinners.
+	SpinnerFrame int
+}
+
+// isAgentTool returns true if the tool name represents a sub-agent invocation.
+func isAgentTool(name string) bool {
+	return strings.EqualFold(name, "agent")
 }
 
 // RenderToolMessage renders a tool message (role=="tool") into a styled string.
 // When CompactTools is true, renders a one-line summary instead of full output.
+// Agent tools render as individually collapsible accordions.
 func (t *ToolDisplayModel) RenderToolMessage(msg message) string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	if t.CompactTools {
 		return t.renderCompactTool(msg, dim)
+	}
+	if isAgentTool(msg.tool) {
+		return t.renderAgentTool(msg, dim)
 	}
 	if t.CollapsedTools {
 		return t.renderCollapsedTool(msg, dim)
@@ -98,6 +113,50 @@ func (t *ToolDisplayModel) renderCompactTool(msg message, dim lipgloss.Style) st
 
 func (t *ToolDisplayModel) renderCollapsedTool(msg message, dim lipgloss.Style) string {
 	return t.renderTool(msg, dim, true)
+}
+
+// agentChildIndent is the number of columns child tools are indented under
+// their parent Agent accordion.
+const agentChildIndent = 3
+
+// renderAgentTool renders an Agent tool call as a collapsible accordion header.
+// Uses a chevron (▶/▼) and purple accent to distinguish from regular tools.
+// Shows an animated spinner when the agent is still running (no result yet).
+// The Agent's response content is rendered separately by RenderMessages as a
+// conversation message after the child tools, not inside the accordion.
+func (t *ToolDisplayModel) renderAgentTool(msg message, _ lipgloss.Style) string {
+	panelWidth := t.Width
+	if panelWidth < 24 {
+		panelWidth = 24
+	}
+	innerWidth := panelWidth - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+
+	agentColor := lipgloss.Color("141") // purple/violet
+	panelStyle := lipgloss.NewStyle().Background(lipgloss.Color("236")).Padding(0, 1)
+	headerStyle := lipgloss.NewStyle().Foreground(agentColor).Bold(true)
+
+	chevron := "▶"
+	if !msg.collapsed {
+		chevron = "▼"
+	}
+
+	headerText := chevron + " " + msg.tool
+	if msg.toolIn != "" {
+		headerText += " — " + msg.toolIn
+	}
+	header := headerStyle.Render(wrapPlainText(headerText, innerWidth))
+
+	// Animated spinner when the agent has no result yet.
+	if msg.content == "" {
+		frame := spinnerFrames[t.SpinnerFrame%len(spinnerFrames)]
+		activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+		header += " " + activeStyle.Render(frame)
+	}
+
+	return panelStyle.Width(panelWidth).Render(header) + "\n"
 }
 
 // renderRegularTool renders a standard tool message with name, args, and
@@ -286,6 +345,19 @@ func toolCallSummary(name string, args map[string]any) string {
 			return fmt.Sprintf("%s (depth %d)", p, int(d))
 		}
 		return p
+	case "Agent", "agent":
+		if desc, ok := args["description"].(string); ok {
+			return desc
+		}
+		if subType, ok := args["subagent_type"].(string); ok {
+			return subType
+		}
+		if prompt, ok := args["prompt"].(string); ok {
+			if len(prompt) > 80 {
+				prompt = prompt[:77] + "..."
+			}
+			return prompt
+		}
 	}
 	return ""
 }

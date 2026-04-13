@@ -304,6 +304,370 @@ func TestRenderToolMessage_WrapsLongHeaderAtWidth(t *testing.T) {
 	}
 }
 
+func TestRenderAgentTool_CollapsedShowsChevronOnly(t *testing.T) {
+	td := ToolDisplayModel{Width: 80}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Branch ship-readiness audit",
+		content:   "All checks pass.\nNo issues found.",
+		collapsed: true,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	if !strings.Contains(result, "▶") {
+		t.Error("expected collapsed chevron ▶ in Agent accordion")
+	}
+	if strings.Contains(result, "▼") {
+		t.Error("expected no expanded chevron ▼ when collapsed")
+	}
+	if strings.Contains(result, "All checks pass") {
+		t.Error("expected collapsed Agent to hide body content")
+	}
+	if !strings.Contains(result, "Agent") {
+		t.Error("expected tool name in Agent header")
+	}
+	if !strings.Contains(result, "Branch ship-readiness audit") {
+		t.Error("expected description in Agent header")
+	}
+}
+
+func TestRenderAgentTool_ExpandedIsHeaderOnly(t *testing.T) {
+	td := ToolDisplayModel{Width: 80}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Code review",
+		content:   "Found 3 issues.\nLine 42: missing error check.",
+		collapsed: false,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	if !strings.Contains(result, "▼") {
+		t.Error("expected expanded chevron ▼ in Agent accordion")
+	}
+	if strings.Contains(result, "▶") {
+		t.Error("expected no collapsed chevron ▶ when expanded")
+	}
+	// Body content is rendered by RenderMessages, not the accordion panel.
+	if strings.Contains(result, "Found 3 issues") {
+		t.Error("expected Agent accordion to NOT contain body content (rendered externally)")
+	}
+}
+
+func TestRenderAgentTool_ChevronDiffersBetweenStates(t *testing.T) {
+	td := ToolDisplayModel{Width: 80}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Test audit",
+		content:   "Tests passed.",
+		collapsed: true,
+	}
+
+	collapsed := stripToolANSI(td.RenderToolMessage(msg))
+	msg.collapsed = false
+	expanded := stripToolANSI(td.RenderToolMessage(msg))
+
+	if !strings.Contains(collapsed, "▶") {
+		t.Error("expected ▶ in collapsed output")
+	}
+	if !strings.Contains(expanded, "▼") {
+		t.Error("expected ▼ in expanded output")
+	}
+}
+
+func TestRenderAgentTool_SpinnerWhenNoResult(t *testing.T) {
+	td := ToolDisplayModel{Width: 80, SpinnerFrame: 0}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Research task",
+		content:   "",
+		collapsed: true,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	// First spinner frame is "⠋"
+	if !strings.Contains(result, spinnerFrames[0]) {
+		t.Errorf("expected spinner frame %q when Agent has no result, got %q", spinnerFrames[0], result)
+	}
+
+	// Advancing the frame changes the character.
+	td.SpinnerFrame = 3
+	result2 := stripToolANSI(td.RenderToolMessage(msg))
+	if !strings.Contains(result2, spinnerFrames[3]) {
+		t.Errorf("expected spinner frame %q at frame 3, got %q", spinnerFrames[3], result2)
+	}
+}
+
+func TestRenderAgentTool_NoActiveIndicatorWhenDone(t *testing.T) {
+	td := ToolDisplayModel{Width: 80}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Research task",
+		content:   "Done.",
+		collapsed: true,
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	// The chevron ▶ is expected, but no extra ● indicator
+	stripped := strings.ReplaceAll(result, "▶", "")
+	if strings.Contains(stripped, "●") {
+		t.Error("expected no active indicator when Agent has content (done)")
+	}
+}
+
+func TestRenderAgentTool_NotAffectedByGlobalCollapsed(t *testing.T) {
+	td := ToolDisplayModel{Width: 80, CollapsedTools: true}
+	msg := message{
+		role:      "tool",
+		tool:      "Agent",
+		toolIn:    "Research task",
+		content:   "Found relevant info.",
+		collapsed: false, // Explicitly expanded
+	}
+
+	result := stripToolANSI(td.RenderToolMessage(msg))
+	// Agent accordion renders its own header regardless of global CollapsedTools.
+	if !strings.Contains(result, "▼") {
+		t.Error("expected expanded chevron for explicitly expanded Agent")
+	}
+	if !strings.Contains(result, "Agent") {
+		t.Error("expected Agent name in header")
+	}
+}
+
+func TestIsAgentTool(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"Agent", true},
+		{"agent", true},
+		{"AGENT", true},
+		{"read", false},
+		{"bash", false},
+		{"AgentX", false},
+	}
+	for _, tt := range tests {
+		if got := isAgentTool(tt.name); got != tt.want {
+			t.Errorf("isAgentTool(%q) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestToolCallSummary_Agent(t *testing.T) {
+	tests := []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{
+			name: "with description",
+			args: map[string]any{"description": "Branch audit", "prompt": "Check everything"},
+			want: "Branch audit",
+		},
+		{
+			name: "with subagent_type",
+			args: map[string]any{"subagent_type": "code-reviewer", "prompt": "Review code"},
+			want: "code-reviewer",
+		},
+		{
+			name: "with prompt only",
+			args: map[string]any{"prompt": "Do something complex"},
+			want: "Do something complex",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toolCallSummary("Agent", tt.args)
+			if got != tt.want {
+				t.Errorf("toolCallSummary(Agent, %v) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderMessages_CollapsedAgentHidesChildTools(t *testing.T) {
+	chat := NewChatModel(nil)
+	chat.Width = 80
+	chat.Messages = []message{
+		{role: "user", content: "do something"},
+		{role: "tool", tool: "Agent", toolIn: "Research task", content: "Done.", collapsed: true, agentGroupID: 1},
+		{role: "tool", tool: "read", toolIn: "main.go", content: "package main", agentGroupID: 1},
+		{role: "tool", tool: "grep", toolIn: "pattern", content: "file:1: match", agentGroupID: 1},
+		{role: "assistant", content: "Finished."},
+	}
+
+	result := stripToolANSI(chat.RenderMessages(false))
+	if !strings.Contains(result, "Agent") {
+		t.Error("expected Agent header to be visible when collapsed")
+	}
+	if strings.Contains(result, "main.go") {
+		t.Error("expected child tool 'read main.go' to be hidden when Agent is collapsed")
+	}
+	if strings.Contains(result, "pattern") {
+		t.Error("expected child tool 'grep pattern' to be hidden when Agent is collapsed")
+	}
+	// Agent response should still appear as a conversation message even when collapsed.
+	if !strings.Contains(result, "Done.") {
+		t.Error("expected Agent response to be visible as conversation message")
+	}
+	if !strings.Contains(result, "Finished") {
+		t.Error("expected assistant message to still be visible")
+	}
+}
+
+func TestRenderMessages_AgentResponseAppearsAfterChildren(t *testing.T) {
+	chat := NewChatModel(nil)
+	chat.Width = 80
+	chat.Messages = []message{
+		{role: "user", content: "go"},
+		{role: "tool", tool: "Agent", toolIn: "Audit", content: "Audit complete.", collapsed: false, agentGroupID: 1},
+		{role: "tool", tool: "read", toolIn: "main.go", content: "package main", agentGroupID: 1},
+		{role: "assistant", content: "All done."},
+	}
+
+	result := stripToolANSI(chat.RenderMessages(false))
+
+	// The Agent response should be in the output as a conversation message.
+	if !strings.Contains(result, "Audit complete.") {
+		t.Error("expected Agent response 'Audit complete.' to appear in output")
+	}
+	// It should appear AFTER the child tool, not inside the accordion header.
+	agentIdx := strings.Index(result, "Agent")
+	childIdx := strings.Index(result, "main.go")
+	respIdx := strings.Index(result, "Audit complete.")
+	if respIdx < childIdx {
+		t.Errorf("expected Agent response (pos %d) to appear after child tool (pos %d)", respIdx, childIdx)
+	}
+	_ = agentIdx // Agent header comes first
+}
+
+func TestRenderMessages_ExpandedAgentShowsChildTools(t *testing.T) {
+	chat := NewChatModel(nil)
+	chat.Width = 80
+	chat.Messages = []message{
+		{role: "user", content: "do something"},
+		{role: "tool", tool: "Agent", toolIn: "Research task", content: "Done.", collapsed: false, agentGroupID: 1},
+		{role: "tool", tool: "read", toolIn: "main.go", content: "package main", agentGroupID: 1},
+		{role: "tool", tool: "grep", toolIn: "pattern", content: "file:1: match", agentGroupID: 1},
+		{role: "assistant", content: "Finished."},
+	}
+
+	result := stripToolANSI(chat.RenderMessages(false))
+	if !strings.Contains(result, "Agent") {
+		t.Error("expected Agent header to be visible")
+	}
+	if !strings.Contains(result, "main.go") {
+		t.Error("expected child tool 'read main.go' to be visible when Agent is expanded")
+	}
+	if !strings.Contains(result, "pattern") {
+		t.Error("expected child tool 'grep pattern' to be visible when Agent is expanded")
+	}
+}
+
+func TestRenderMessages_UngroupedToolsUnaffectedByAgentCollapse(t *testing.T) {
+	chat := NewChatModel(nil)
+	chat.Width = 80
+	chat.Messages = []message{
+		{role: "tool", tool: "bash", toolIn: "ls", content: "file1 file2"},
+		{role: "tool", tool: "Agent", toolIn: "Audit", content: "OK.", collapsed: true, agentGroupID: 1},
+		{role: "tool", tool: "read", toolIn: "f.go", content: "pkg", agentGroupID: 1},
+		{role: "tool", tool: "write", toolIn: "out.txt", content: "wrote"},
+		{role: "assistant", content: "Done."},
+	}
+
+	result := stripToolANSI(chat.RenderMessages(false))
+	// Ungrouped tools (agentGroupID==0) should always render.
+	if !strings.Contains(result, "bash") {
+		t.Error("expected ungrouped 'bash' tool to be visible")
+	}
+	if !strings.Contains(result, "write") {
+		t.Error("expected ungrouped 'write' tool to be visible")
+	}
+	// Grouped child should be hidden.
+	if strings.Contains(result, "f.go") {
+		t.Error("expected grouped child 'read f.go' to be hidden")
+	}
+}
+
+func TestRenderMessages_ChildToolsAreIndented(t *testing.T) {
+	chat := NewChatModel(nil)
+	chat.Width = 80
+	chat.Messages = []message{
+		{role: "tool", tool: "Agent", toolIn: "Audit", content: "OK.", collapsed: false, agentGroupID: 1},
+		{role: "tool", tool: "read", toolIn: "main.go", content: "package main", agentGroupID: 1},
+		{role: "tool", tool: "bash", toolIn: "ls", content: "file1 file2"},
+		{role: "assistant", content: "Done."},
+	}
+
+	result := chat.RenderMessages(false)
+	lines := strings.Split(result, "\n")
+
+	// Find lines containing "read" (child tool) and "bash" (top-level tool).
+	// Child tool lines should have leading whitespace indent.
+	var childLine, topLine string
+	for _, line := range lines {
+		plain := stripToolANSI(line)
+		if strings.Contains(plain, "read") && strings.Contains(plain, "main.go") {
+			childLine = plain
+		}
+		if strings.Contains(plain, "bash") {
+			topLine = plain
+		}
+	}
+	if childLine == "" {
+		t.Fatal("could not find child tool line containing 'read' + 'main.go'")
+	}
+	if topLine == "" {
+		t.Fatal("could not find top-level tool line containing 'bash'")
+	}
+
+	childIndent := len(childLine) - len(strings.TrimLeft(childLine, " "))
+	topIndent := len(topLine) - len(strings.TrimLeft(topLine, " "))
+	if childIndent <= topIndent {
+		t.Errorf("expected child tool to be more indented (%d) than top-level tool (%d)",
+			childIndent, topIndent)
+	}
+}
+
+func TestRenderMessages_NestedAgentGroups(t *testing.T) {
+	chat := NewChatModel(nil)
+	chat.Width = 80
+	chat.Messages = []message{
+		{role: "user", content: "go"},
+		// Outer Agent (expanded) — group 1
+		{role: "tool", tool: "Agent", toolIn: "Outer", content: "outer done", collapsed: false, agentGroupID: 1},
+		{role: "tool", tool: "read", toolIn: "a.go", content: "pkg a", agentGroupID: 1},
+		// Inner Agent (collapsed) — group 2
+		{role: "tool", tool: "Agent", toolIn: "Inner", content: "inner done", collapsed: true, agentGroupID: 2},
+		{role: "tool", tool: "grep", toolIn: "inner_pat", content: "inner match", agentGroupID: 2},
+		// Back to outer child
+		{role: "tool", tool: "write", toolIn: "b.go", content: "pkg b", agentGroupID: 1},
+		{role: "assistant", content: "All done."},
+	}
+
+	result := stripToolANSI(chat.RenderMessages(false))
+	// Outer agent is expanded, so its direct children should be visible.
+	if !strings.Contains(result, "a.go") {
+		t.Error("expected outer child 'read a.go' to be visible (outer expanded)")
+	}
+	if !strings.Contains(result, "b.go") {
+		t.Error("expected outer child 'write b.go' to be visible (outer expanded)")
+	}
+	// Inner agent header should be visible (it's a child of expanded outer).
+	if !strings.Contains(result, "Inner") {
+		t.Error("expected inner Agent header to be visible")
+	}
+	// Inner agent's child should be hidden (inner is collapsed).
+	if strings.Contains(result, "inner_pat") {
+		t.Error("expected inner child 'grep inner_pat' to be hidden (inner collapsed)")
+	}
+}
+
 func stripToolANSI(s string) string {
 	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	return ansi.ReplaceAllString(s, "")

@@ -77,6 +77,7 @@ func (m *model) cancelAgent() {
 	}
 	m.steeringNotify = nil
 	m.messageQueue.Clear()
+	m.agentGroupStack = m.agentGroupStack[:0]
 }
 
 // steeringCheckMsg is sent by the agent loop when it detects steering messages.
@@ -145,7 +146,7 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 	m.messageQueue.Clear()
 	go m.runAgentLoop(runCtx, promptText)
 
-	return m, waitForAgent(m.agentCh)
+	return m, tea.Batch(waitForAgent(m.agentCh), spinnerTick())
 }
 
 // runAgentLoop runs the agent and sends events to the channel.
@@ -358,6 +359,18 @@ func (m *model) handleAgentToolCall(msg agentToolCallMsg) (tea.Model, tea.Cmd) {
 	toolIn := toolCallSummary(msg.name, msg.args)
 	newMsg := message{
 		role: "tool", tool: msg.name, toolIn: toolIn,
+		collapsed: isAgentTool(msg.name),
+	}
+
+	// Assign agent group membership for accordion nesting.
+	if isAgentTool(msg.name) {
+		// This is a new Agent invocation — assign a fresh group ID and push.
+		m.nextAgentGroupID++
+		newMsg.agentGroupID = m.nextAgentGroupID
+		m.agentGroupStack = append(m.agentGroupStack, m.nextAgentGroupID)
+	} else if len(m.agentGroupStack) > 0 {
+		// This is a child tool of the current Agent — inherit its group ID.
+		newMsg.agentGroupID = m.agentGroupStack[len(m.agentGroupStack)-1]
 	}
 
 	// Insert the tool message before any trailing assistant placeholder so
@@ -396,6 +409,10 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 			m.chatModel.Messages[i].content = toolResultSummary(msg.content)
 			break
 		}
+	}
+	// Pop agent group stack when an Agent tool completes.
+	if isAgentTool(msg.name) && len(m.agentGroupStack) > 0 {
+		m.agentGroupStack = m.agentGroupStack[:len(m.agentGroupStack)-1]
 	}
 	m.refreshDiffStats()
 	return m, waitForAgent(m.agentCh)
@@ -462,6 +479,7 @@ func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	m.runCancel = nil
 	m.agentCh = nil
 	m.steeringNotify = nil
+	m.agentGroupStack = m.agentGroupStack[:0]
 	m.refreshDiffStats()
 
 	// Check for queued follow-up messages. Drain one and auto-submit it.
