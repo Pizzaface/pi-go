@@ -47,7 +47,6 @@ func (m *model) View() tea.View {
 	widgetAbove := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetAbove), mainWidth)
 	widgetBelow := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetBelow), mainWidth)
 
-	statusLines := lipgloss.Height(statusBar)
 	inputLines := lipgloss.Height(inputArea)
 	widgetAboveLines := 0
 	if widgetAbove != "" {
@@ -63,7 +62,24 @@ func (m *model) View() tea.View {
 		queueIndicatorLines = 1
 	}
 
-	availableHeight := m.height - statusLines - inputLines - 2
+	// Bottom area: slash command popover (replaces status bar) or normal status bar.
+	var bottomArea string
+	if m.slashOverlay != nil {
+		maxPopoverRows := (m.height / 2) - 4 // leave at least half screen for messages
+		if maxPopoverRows < 1 {
+			maxPopoverRows = 1
+		}
+		if m.slashOverlay.Height <= 0 || m.slashOverlay.Height > maxPopoverRows {
+			m.slashOverlay.Height = maxPopoverRows
+		}
+		m.slashOverlay.EnsureSelectionVisible()
+		bottomArea = padBlockWidth(m.slashOverlay.render(mainWidth), mainWidth)
+	} else {
+		bottomArea = statusBar
+	}
+	bottomLines := lipgloss.Height(bottomArea)
+
+	availableHeight := m.height - bottomLines - inputLines - 2
 	availableHeight -= widgetAboveLines + widgetBelowLines + queueIndicatorLines
 	if m.chatModel.Scroll > 0 {
 		availableHeight--
@@ -92,27 +108,6 @@ func (m *model) View() tea.View {
 		visibleLineCount++
 	}
 
-	if m.slashOverlay != nil {
-		maxOverlayHeight := availableHeight - 1
-		if maxOverlayHeight < 1 {
-			m.slashOverlay = nil
-		} else {
-			// Account for title, help line, and border (top+bottom) = 4 chrome lines.
-			maxDataRows := maxOverlayHeight - 4
-			if maxDataRows < 1 {
-				maxDataRows = 1
-			}
-			if m.slashOverlay.Height <= 0 || m.slashOverlay.Height > maxDataRows {
-				m.slashOverlay.Height = maxDataRows
-			}
-			m.slashOverlay.EnsureSelectionVisible()
-			if !m.slashOverlay.HasVisibleSelectableRow() {
-				m.slashOverlay = nil
-			} else {
-				visibleMessages = overlaySlashCommandBlock(visibleMessages, m.slashOverlay.render(mainWidth))
-			}
-		}
-	}
 	if m.extensionsPanel != nil {
 		visibleMessages = overlaySlashCommandBlock(visibleMessages, renderExtensionsPanel(m.extensionsPanel, mainWidth))
 	}
@@ -164,7 +159,7 @@ func (m *model) View() tea.View {
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString(statusBar)
+	b.WriteString(bottomArea)
 
 	leftPanel := b.String()
 	if m.cfg.Screen != nil {
@@ -210,13 +205,6 @@ func (m *model) eyes() string {
 		return m.face.Eyes()
 	}
 	return MoodIdle.Eyes()
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // renderQueueIndicator renders a status line showing queued steering/follow-up counts.

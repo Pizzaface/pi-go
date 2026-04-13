@@ -7,6 +7,8 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// NOTE: AllRows holds the unfiltered set; Rows is the filtered (displayed) subset.
+
 type slashCommandOverlayRowKind int
 
 const (
@@ -26,14 +28,16 @@ func (r slashCommandOverlayRow) Selectable() bool {
 }
 
 type slashCommandOverlayState struct {
-	Rows          []slashCommandOverlayRow
+	AllRows       []slashCommandOverlayRow // unfiltered complete set
+	Rows          []slashCommandOverlayRow // filtered (currently displayed)
 	SelectedIndex int
 	ScrollOffset  int
 	Height        int
+	Filter        string // text after "/" used for live filtering
 }
 
 func newSlashCommandOverlayState(rows []slashCommandOverlayRow) slashCommandOverlayState {
-	state := slashCommandOverlayState{Rows: rows, SelectedIndex: -1, ScrollOffset: 0, Height: 0}
+	state := slashCommandOverlayState{AllRows: rows, Rows: rows, SelectedIndex: -1, ScrollOffset: 0, Height: 0}
 	for i, row := range rows {
 		if row.Selectable() {
 			state.SelectedIndex = i
@@ -41,6 +45,44 @@ func newSlashCommandOverlayState(rows []slashCommandOverlayRow) slashCommandOver
 		}
 	}
 	return state
+}
+
+// ApplyFilter filters the displayed rows to commands matching filter text.
+// filter is the text after "/" (e.g., if input is "/he", filter is "he").
+func (s *slashCommandOverlayState) ApplyFilter(filter string) {
+	s.Filter = filter
+	if filter == "" {
+		s.Rows = s.AllRows
+	} else {
+		lower := strings.ToLower(filter)
+		var filtered []slashCommandOverlayRow
+		var pendingHeader *slashCommandOverlayRow
+		for _, row := range s.AllRows {
+			if row.Kind == slashCommandOverlayRowHeader {
+				h := row
+				pendingHeader = &h
+				continue
+			}
+			name := strings.ToLower(strings.TrimPrefix(row.Name, "/"))
+			desc := strings.ToLower(row.Description)
+			if strings.Contains(name, lower) || strings.Contains(desc, lower) {
+				if pendingHeader != nil {
+					filtered = append(filtered, *pendingHeader)
+					pendingHeader = nil
+				}
+				filtered = append(filtered, row)
+			}
+		}
+		s.Rows = filtered
+	}
+	s.SelectedIndex = -1
+	s.ScrollOffset = 0
+	for i, row := range s.Rows {
+		if row.Selectable() {
+			s.SelectedIndex = i
+			break
+		}
+	}
 }
 
 func (s slashCommandOverlayState) SelectedRow() (slashCommandOverlayRow, bool) {
@@ -204,14 +246,6 @@ func (s *slashCommandOverlayState) selectedOrdinal() int {
 }
 
 func (s *slashCommandOverlayState) render(width int) string {
-	if len(s.Rows) == 0 {
-		return ""
-	}
-	s.EnsureSelectionVisible()
-	visible := s.VisibleRows()
-	if len(visible) == 0 {
-		return ""
-	}
 	if width < 20 {
 		width = 20
 	}
@@ -224,17 +258,38 @@ func (s *slashCommandOverlayState) render(width int) string {
 		innerWidth = 1
 	}
 
-	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Bold(true)
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")).Bold(true)
-	commandStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	borderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		Foreground(lipgloss.Color("252")).
 		Padding(0, 1).
 		Width(popupWidth)
+
+	// No matches after filtering.
+	if len(s.Rows) == 0 || s.selectableCount() == 0 {
+		var body strings.Builder
+		body.WriteString(titleStyle.Render(truncateOverlayText("Slash Commands", innerWidth)))
+		body.WriteByte('\n')
+		body.WriteString(helpStyle.Render(truncateOverlayText("No matching commands", innerWidth)))
+		rendered := borderStyle.Render(strings.TrimRight(body.String(), "\n"))
+		boxLines := strings.Split(rendered, "\n")
+		for i, line := range boxLines {
+			boxLines[i] = lipgloss.PlaceHorizontal(width, lipgloss.Left, line)
+		}
+		return strings.Join(boxLines, "\n")
+	}
+
+	s.EnsureSelectionVisible()
+	visible := s.VisibleRows()
+	if len(visible) == 0 {
+		visible = s.Rows
+	}
+
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Bold(true)
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")).Bold(true)
+	commandStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 
 	var body strings.Builder
 	body.WriteString(titleStyle.Render(truncateOverlayText(fmt.Sprintf("Slash Commands  %d/%d", s.selectedOrdinal(), s.selectableCount()), innerWidth)))

@@ -858,6 +858,54 @@ func TestAgentText_ThinkingThenTextPersists(t *testing.T) {
 	}
 }
 
+// TestAgentText_TextBeforeToolStaysAbove verifies that when text precedes a
+// tool call, the text is frozen above the tool and subsequent post-tool text
+// appears separately below it — not concatenated or overwritten.
+func TestAgentText_TextBeforeToolStaysAbove(t *testing.T) {
+	// Start: [user, assistant("")]
+	m := &model{
+		chatModel: ChatModel{Messages: []message{
+			{role: "user", content: "check the file"},
+			{role: "assistant", content: ""},
+		}},
+		running: true,
+		agentCh: make(chan agentMsg, 64),
+	}
+
+	// 1. Text streams in before the tool call.
+	newM, _ := m.Update(agentTextMsg{text: "Let me check.", partial: true})
+	mm := newM.(*model)
+
+	// 2. Tool call arrives — pre-tool text should be frozen.
+	newM, _ = mm.Update(agentToolCallMsg{name: "read", args: map[string]any{"file_path": "a.go"}})
+	mm = newM.(*model)
+
+	// Streaming buffer should be cleared for the next text segment.
+	if mm.chatModel.Streaming != "" {
+		t.Errorf("expected empty Streaming after tool call, got %q", mm.chatModel.Streaming)
+	}
+
+	// 3. Post-tool text arrives.
+	newM, _ = mm.Update(agentTextMsg{text: "Here's what I found.", partial: true})
+	mm = newM.(*model)
+
+	msgs := mm.chatModel.Messages
+	// Expected order:
+	//   [user, assistant("Let me check."), tool(read), assistant("Here's what I found.")]
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 messages, got %d: %+v", len(msgs), msgs)
+	}
+	if msgs[1].role != "assistant" || msgs[1].content != "Let me check." {
+		t.Errorf("msgs[1] should be frozen assistant text, got role=%q content=%q", msgs[1].role, msgs[1].content)
+	}
+	if msgs[2].role != "tool" || msgs[2].tool != "read" {
+		t.Errorf("msgs[2] should be tool/read, got %q/%q", msgs[2].role, msgs[2].tool)
+	}
+	if msgs[3].role != "assistant" || msgs[3].content != "Here's what I found." {
+		t.Errorf("msgs[3] should be new assistant text, got role=%q content=%q", msgs[3].role, msgs[3].content)
+	}
+}
+
 func TestAgentToolResultMsg_ClearsActiveTool(t *testing.T) {
 	m := &model{
 		chatModel: ChatModel{Messages: []message{{role: "tool", tool: "read", content: ""}}},

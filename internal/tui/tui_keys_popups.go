@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -132,8 +134,13 @@ func (m *model) handleSlashOverlayKey(msg tea.KeyPressMsg, key tea.Key) (bool, t
 		return true, m, nil
 	default:
 		cmd := m.inputModel.HandleKey(msg, m.running)
-		if m.inputModel.Text != "/" {
+		// Close overlay if input no longer starts with "/".
+		if !strings.HasPrefix(m.inputModel.Text, "/") || m.inputModel.Text == "" {
 			m.slashOverlay = nil
+		} else {
+			// Live-filter the overlay based on text after "/".
+			filter := m.inputModel.Text[1:] // strip leading "/"
+			m.slashOverlay.ApplyFilter(filter)
 		}
 		return true, m, cmd
 	}

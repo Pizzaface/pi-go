@@ -970,7 +970,7 @@ func TestHandleKey_ShiftTabWhileSlashOverlayOpenDoesNotInsert(t *testing.T) {
 	}
 }
 
-func TestHandleKey_TypingAfterSlashClosesOverlay(t *testing.T) {
+func TestHandleKey_TypingAfterSlashFiltersOverlay(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.Text = "/"
 	m.inputModel.CursorPos = 1
@@ -978,13 +978,20 @@ func TestHandleKey_TypingAfterSlashClosesOverlay(t *testing.T) {
 	if m.slashOverlay == nil {
 		t.Fatal("expected slash overlay to open")
 	}
+	allCount := m.slashOverlay.selectableCount()
 
 	m.handleKey(makeTextKey("m"))
-	if m.slashOverlay != nil {
-		t.Fatal("expected slash overlay to close after typing")
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to stay open and filter")
 	}
 	if m.inputModel.Text != "/m" {
 		t.Fatalf("expected text /m, got %q", m.inputModel.Text)
+	}
+	if m.slashOverlay.Filter != "m" {
+		t.Fatalf("expected filter 'm', got %q", m.slashOverlay.Filter)
+	}
+	if m.slashOverlay.selectableCount() >= allCount {
+		t.Fatalf("expected fewer commands after filtering, got %d (was %d)", m.slashOverlay.selectableCount(), allCount)
 	}
 	if m.inputModel.CompletionMode {
 		t.Fatal("expected normal completion UI to stay closed until next explicit tab")

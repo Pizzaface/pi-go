@@ -80,13 +80,6 @@ func (m *model) cancelAgent() {
 	m.agentGroupStack = m.agentGroupStack[:0]
 }
 
-// steeringCheckMsg is sent by the agent loop when it detects steering messages.
-type steeringCheckMsg struct {
-	messages []QueuedMessage
-}
-
-func (steeringCheckMsg) agentMsg() {}
-
 // submitPrompt sends a user prompt to the agent.
 func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd) {
 	// Block prompt submission when no model is configured.
@@ -373,16 +366,34 @@ func (m *model) handleAgentToolCall(msg agentToolCallMsg) (tea.Model, tea.Cmd) {
 		newMsg.agentGroupID = m.agentGroupStack[len(m.agentGroupStack)-1]
 	}
 
-	// Insert the tool message before any trailing assistant placeholder so
-	// that tools render above the final response text, not below it.
+	// Insert the tool message relative to the trailing assistant message.
+	// If the assistant already has content (text that preceded the tool call),
+	// freeze it in place so it renders above the tool, then create a fresh
+	// empty placeholder after the tool for subsequent text. If the assistant
+	// is empty (no text before the tool), insert the tool before it as before.
 	msgs := m.chatModel.Messages
 	lastIdx := len(msgs) - 1
 	if lastIdx >= 0 && msgs[lastIdx].role == "assistant" {
-		tail := msgs[lastIdx]
-		m.chatModel.Messages = append(msgs[:lastIdx:lastIdx], newMsg, tail)
+		if msgs[lastIdx].content != "" {
+			// Freeze the current assistant text above the tool and start
+			// a fresh placeholder for whatever text follows the tool.
+			m.chatModel.Messages = append(msgs, newMsg, message{role: "assistant"})
+		} else {
+			// Empty placeholder — insert tool before it.
+			tail := msgs[lastIdx]
+			m.chatModel.Messages = append(msgs[:lastIdx:lastIdx], newMsg, tail)
+		}
 	} else {
 		m.chatModel.Messages = append(m.chatModel.Messages, newMsg)
 	}
+
+	// Clear the streaming buffer so the next text segment starts fresh.
+	// Without this, providers that emit multiple text+tool cycles in a
+	// single GenerateContent call (e.g. Claude CLI) accumulate text across
+	// tool boundaries — the post-tool text gets concatenated with the
+	// pre-tool text.
+	m.chatModel.Streaming = ""
+
 	return m, waitForAgent(m.agentCh)
 }
 
