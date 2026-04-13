@@ -367,6 +367,10 @@ func (m *Manager) GrantApproval(input GrantInput) error {
 	reg.state = StateReady
 	reg.lastError = ""
 	m.extensions[id] = reg
+	// Register manifest TUI commands that were deferred while pending.
+	for _, command := range reg.manifest.TUI.Commands {
+		_ = m.registerCommandLocked(id, command, true)
+	}
 	approvalsPath := m.approvalsPath
 	m.mu.Unlock()
 
@@ -704,6 +708,13 @@ func (m *Manager) RevokeApproval(ctx context.Context, id string) error {
 	reg.state = StatePending
 	reg.lastError = ""
 	m.extensions[id] = reg
+	// Unregister any manifest commands that StopExtension may have
+	// missed (e.g. the extension was Ready but never Running).
+	for name, registration := range m.commands {
+		if registration.owner == id {
+			delete(m.commands, name)
+		}
+	}
 	m.mu.Unlock()
 
 	if approvalsPath != "" {

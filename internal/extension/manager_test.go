@@ -973,3 +973,77 @@ func TestManager_RevokeApproval(t *testing.T) {
 		t.Fatal("expected approvals.json to no longer contain ext.hosted")
 	}
 }
+
+func TestManager_GrantApproval_RegistersManifestCommands(t *testing.T) {
+	m := NewManager(ManagerOptions{Permissions: EmptyPermissions()})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+		TUI: TUIConfig{
+			Commands: []SlashCommand{
+				{Name: "ext-cmd", Description: "Extension command", Prompt: "do {{args}}"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// While pending, commands should not be registered.
+	if cmds := m.SlashCommands(); len(cmds) != 0 {
+		t.Fatalf("expected no commands while pending, got %v", cmds)
+	}
+
+	if err := m.GrantApproval(GrantInput{
+		ExtensionID: "ext.hosted",
+		TrustClass:  TrustClassHostedThirdParty,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cmds := m.SlashCommands()
+	if len(cmds) != 1 {
+		t.Fatalf("expected 1 command after grant, got %d", len(cmds))
+	}
+	if cmds[0].Name != "ext-cmd" {
+		t.Fatalf("expected command name %q, got %q", "ext-cmd", cmds[0].Name)
+	}
+}
+
+func TestManager_RevokeApproval_UnregistersManifestCommands(t *testing.T) {
+	perms := NewPermissions([]ApprovalRecord{{
+		ExtensionID:    "ext.hosted",
+		TrustClass:     TrustClassHostedThirdParty,
+		HostedRequired: true,
+	}})
+	m := NewManager(ManagerOptions{Permissions: perms})
+	if err := m.RegisterManifest(Manifest{
+		Name: "ext.hosted",
+		Runtime: RuntimeSpec{
+			Type:    RuntimeTypeHostedStdioJSONRPC,
+			Command: "hosted-ext",
+		},
+		TUI: TUIConfig{
+			Commands: []SlashCommand{
+				{Name: "ext-cmd", Description: "Extension command"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-approved extension starts Ready with commands registered.
+	if cmds := m.SlashCommands(); len(cmds) != 1 {
+		t.Fatalf("expected 1 command before revoke, got %d", len(cmds))
+	}
+
+	if err := m.RevokeApproval(context.Background(), "ext.hosted"); err != nil {
+		t.Fatal(err)
+	}
+
+	if cmds := m.SlashCommands(); len(cmds) != 0 {
+		t.Fatalf("expected no commands after revoke, got %v", cmds)
+	}
+}
