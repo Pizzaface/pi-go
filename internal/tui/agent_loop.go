@@ -136,7 +136,7 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 	m.runCancel = runCancel
 	m.agentCh = make(chan agentMsg, 64)
 	m.steeringNotify = make(chan struct{}, 1)
-	m.messageQueue.Clear()
+	m.messageQueue.ClearSteering()
 	go m.runAgentLoop(runCtx, promptText)
 
 	return m, tea.Batch(waitForAgent(m.agentCh), spinnerTick())
@@ -165,6 +165,19 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 	currentPrompt := prompt
 
 	for {
+		// Create a child context so steering can interrupt the current stream
+		// without canceling the entire agent loop.
+		streamCtx, streamCancel := context.WithCancel(runCtx)
+
+		notify := m.steeringNotify
+		go func() {
+			select {
+			case <-notify:
+				streamCancel()
+			case <-streamCtx.Done():
+			}
+		}()
+
 		// Trace: mark that we're dispatching to the LLM provider.
 		m.agentCh <- agentTraceMsg{entry: traceEntry{
 			time: time.Now(), kind: "request_sent",
@@ -172,12 +185,16 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 			detail:  fmt.Sprintf("session=%s prompt_len=%d", m.cfg.SessionID, len(currentPrompt)),
 		}}
 
-		sawToolResult := false
-		for ev, err := range m.cfg.Agent.RunStreaming(runCtx, m.cfg.SessionID, currentPrompt) {
+		for ev, err := range m.cfg.Agent.RunStreaming(streamCtx, m.cfg.SessionID, currentPrompt) {
 			if err != nil {
+				// Stream canceled by steering — break out and re-dispatch.
+				if streamCtx.Err() != nil && runCtx.Err() == nil {
+					break
+				}
 				if log != nil {
 					log.Error(err.Error())
 				}
+				streamCancel()
 				m.agentCh <- agentDoneMsg{err: err}
 				return
 			}
@@ -189,6 +206,7 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 				if log != nil {
 					log.Error(errMsg.Error())
 				}
+				streamCancel()
 				m.agentCh <- agentDoneMsg{err: errMsg}
 				return
 			}
@@ -224,14 +242,15 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 						name:    part.FunctionResponse.Name,
 						content: string(respJSON),
 					}
-					sawToolResult = true
 				}
 			}
 		}
+		streamCancel()
 
-		// After the run finishes, check for pending steering messages.
-		// If there are any, send them as new user messages in the same session.
-		if sawToolResult && m.messageQueue.HasSteering() {
+		// Check for pending steering messages. If there are any, inject them
+		// as a new user prompt — whether the stream finished naturally or was
+		// interrupted by the steering signal.
+		if m.messageQueue.HasSteering() {
 			steeringMsgs := m.messageQueue.DrainSteering()
 			var combined strings.Builder
 			for i, sm := range steeringMsgs {
@@ -247,7 +266,7 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 				summary: fmt.Sprintf("Steering injected (%d messages)", len(steeringMsgs)),
 				detail:  currentPrompt,
 			}}
-			continue // Loop back to dispatch the steering as a new prompt.
+			continue
 		}
 
 		// No steering — done.
@@ -492,6 +511,22 @@ func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	m.steeringNotify = nil
 	m.agentGroupStack = m.agentGroupStack[:0]
 	m.refreshDiffStats()
+
+	// Check for orphaned steering messages that the agent loop didn't consume
+	// (e.g., the LLM responded with text only, no tool calls).
+	if m.messageQueue.HasSteering() {
+		steeringMsgs := m.messageQueue.DrainSteering()
+		var combined strings.Builder
+		var allMentions []string
+		for i, sm := range steeringMsgs {
+			if i > 0 {
+				combined.WriteString("\n\n")
+			}
+			combined.WriteString(sm.Text)
+			allMentions = append(allMentions, sm.Mentions...)
+		}
+		return m.submitPrompt(combined.String(), allMentions)
+	}
 
 	// Check for queued follow-up messages. Drain one and auto-submit it.
 	if followUp, ok := m.messageQueue.DrainOneFollowUp(); ok {

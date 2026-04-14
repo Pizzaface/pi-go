@@ -259,3 +259,77 @@ func TestIsTransientTimeoutInterfaceFalse(t *testing.T) {
 		t.Errorf("isTransient(non-matching error) = true, want false")
 	}
 }
+
+// rateLimitedError is a test error carrying a RetryAfter hint.
+type rateLimitedError struct {
+	msg   string
+	delay time.Duration
+}
+
+func (e *rateLimitedError) Error() string             { return e.msg }
+func (e *rateLimitedError) RetryAfter() time.Duration { return e.delay }
+
+func TestRetryAfterFrom(t *testing.T) {
+	t.Run("returns hint when present", func(t *testing.T) {
+		d, ok := retryAfterFrom(&rateLimitedError{msg: "429", delay: 42 * time.Millisecond})
+		if !ok || d != 42*time.Millisecond {
+			t.Errorf("retryAfterFrom = (%v, %v), want (42ms, true)", d, ok)
+		}
+	})
+	t.Run("returns false when no hint", func(t *testing.T) {
+		if _, ok := retryAfterFrom(errors.New("plain")); ok {
+			t.Error("expected false for plain error")
+		}
+	})
+	t.Run("returns false when hint is zero", func(t *testing.T) {
+		if _, ok := retryAfterFrom(&rateLimitedError{msg: "429", delay: 0}); ok {
+			t.Error("expected false for zero delay")
+		}
+	})
+	t.Run("detects hint through error wrapping", func(t *testing.T) {
+		wrapped := fmt.Errorf("context: %w", &rateLimitedError{msg: "429", delay: 5 * time.Millisecond})
+		d, ok := retryAfterFrom(wrapped)
+		if !ok || d != 5*time.Millisecond {
+			t.Errorf("retryAfterFrom(wrapped) = (%v, %v), want (5ms, true)", d, ok)
+		}
+	})
+}
+
+// TestWithRetryHonorsRetryAfter verifies that when a transient error carries a
+// RetryAfter hint, the retry loop sleeps for that duration instead of the
+// exponential backoff value.
+func TestWithRetryHonorsRetryAfter(t *testing.T) {
+	// InitialDelay is set high so the test fails if the hint is ignored.
+	cfg := RetryConfig{MaxRetries: 2, InitialDelay: 1 * time.Second, MaxDelay: 5 * time.Second}
+	calls := 0
+	runFn := func() iter.Seq2[*session.Event, error] {
+		return func(yield func(*session.Event, error) bool) {
+			calls++
+			if calls == 1 {
+				yield(nil, &rateLimitedError{msg: "429 rate limit", delay: 10 * time.Millisecond})
+				return
+			}
+			yield(newTestEvent("hi"), nil)
+		}
+	}
+
+	start := time.Now()
+	var events []*session.Event
+	for ev, err := range WithRetry(cfg, runFn) {
+		if err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+		events = append(events, ev)
+	}
+	elapsed := time.Since(start)
+
+	if calls != 2 {
+		t.Errorf("expected 2 calls, got %d", calls)
+	}
+	if len(events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(events))
+	}
+	if elapsed >= 500*time.Millisecond {
+		t.Errorf("took %v, expected ~10ms (retry-after honored, not 1s InitialDelay)", elapsed)
+	}
+}

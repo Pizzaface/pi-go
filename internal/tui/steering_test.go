@@ -256,3 +256,88 @@ func TestCancelAgent_ClearsQueue(t *testing.T) {
 		t.Error("expected steeringNotify cleared after cancel")
 	}
 }
+
+func TestClearSteering_PreservesFollowUps(t *testing.T) {
+	var q MessageQueue
+	q.QueueSteering("s1", nil)
+	q.QueueFollowUp("f1", nil)
+	q.QueueFollowUp("f2", nil)
+
+	q.ClearSteering()
+
+	if q.HasSteering() {
+		t.Error("expected steering cleared")
+	}
+	if q.FollowUpCount() != 2 {
+		t.Errorf("expected 2 follow-ups preserved, got %d", q.FollowUpCount())
+	}
+}
+
+func TestFollowUps_SurviveSubmitPrompt(t *testing.T) {
+	m := newTestModel(t)
+	m.messageQueue.QueueFollowUp("first", nil)
+	m.messageQueue.QueueFollowUp("second", nil)
+	m.messageQueue.QueueFollowUp("third", nil)
+
+	// Drain one follow-up (simulating handleAgentDone).
+	fu, ok := m.messageQueue.DrainOneFollowUp()
+	if !ok || fu.Text != "first" {
+		t.Fatalf("expected first follow-up, got %+v", fu)
+	}
+
+	// ClearSteering (called inside submitPrompt) should preserve the rest.
+	m.messageQueue.ClearSteering()
+
+	if m.messageQueue.FollowUpCount() != 2 {
+		t.Errorf("expected 2 follow-ups after ClearSteering, got %d", m.messageQueue.FollowUpCount())
+	}
+	fu2, ok := m.messageQueue.DrainOneFollowUp()
+	if !ok || fu2.Text != "second" {
+		t.Errorf("expected second follow-up, got %+v", fu2)
+	}
+}
+
+func TestHandleAgentDone_SubmitsOrphanedSteering(t *testing.T) {
+	m := newTestModel(t)
+	m.running = true
+	m.agentCh = make(chan agentMsg, 64)
+	m.steeringNotify = make(chan struct{}, 1)
+
+	// Queue steering that the agent loop never consumed.
+	m.messageQueue.QueueSteering("orphaned steer", []string{"file.go"})
+
+	// Simulate agent done (no tool results, so steering was never drained).
+	m.handleAgentDone(agentDoneMsg{})
+
+	// The orphaned steering should have been submitted as a prompt.
+	found := false
+	for _, cm := range m.chatModel.Messages {
+		if cm.role == "user" && cm.content == "orphaned steer" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected orphaned steering to be submitted as a user message")
+	}
+	if !m.running {
+		t.Error("expected model to be running after orphaned steering auto-submit")
+	}
+}
+
+func TestHandleAgentDone_SteeringBeforeFollowUp(t *testing.T) {
+	m := newTestModel(t)
+	m.running = true
+	m.agentCh = make(chan agentMsg, 64)
+	m.steeringNotify = make(chan struct{}, 1)
+
+	m.messageQueue.QueueSteering("steer msg", nil)
+	m.messageQueue.QueueFollowUp("follow msg", nil)
+
+	m.handleAgentDone(agentDoneMsg{})
+
+	// Steering should be submitted first; follow-up should remain queued.
+	if !m.messageQueue.HasFollowUp() {
+		t.Error("expected follow-up to remain queued while steering is submitted first")
+	}
+}

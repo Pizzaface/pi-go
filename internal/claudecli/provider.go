@@ -47,6 +47,11 @@ type Config struct {
 	// 0 means use the CLI's default. Maps to WithMaxThinkingTokens in the SDK.
 	MaxThinkingTokens int
 
+	// PermissionMode sets the CLI permission mode. Valid values:
+	// "default", "acceptEdits", "bypassPermissions", "plan".
+	// Empty string uses the CLI's default.
+	PermissionMode string
+
 	// ApprovalRules are evaluated in order when the CLI requests tool
 	// permission. If no rule matches, the tool is auto-approved.
 	ApprovalRules []ApprovalRule
@@ -277,6 +282,9 @@ func (p *Provider) buildOptions() []claude.Option {
 	}
 	if p.config.MaxThinkingTokens > 0 {
 		opts = append(opts, claude.WithMaxThinkingTokens(p.config.MaxThinkingTokens))
+	}
+	if p.config.PermissionMode != "" {
+		opts = append(opts, claude.WithPermissionMode(p.config.PermissionMode))
 	}
 
 	// Claude CLI requires --verbose when using --print --output-format=stream-json.

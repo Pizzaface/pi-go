@@ -90,6 +90,23 @@ func retryDelay(cfg RetryConfig, attempt int) time.Duration {
 	return time.Duration(delay)
 }
 
+// retryAfterHint is implemented by errors that carry a server-suggested delay
+// before retry (e.g., the HTTP Retry-After header on a 429 response).
+type retryAfterHint interface {
+	RetryAfter() time.Duration
+}
+
+// retryAfterFrom returns the server-suggested delay from err, if any.
+func retryAfterFrom(err error) (time.Duration, bool) {
+	var hint retryAfterHint
+	if errors.As(err, &hint) {
+		if d := hint.RetryAfter(); d > 0 {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
 // WithRetry wraps an agent run function with retry logic for transient errors.
 // If the iterator yields a transient error, it sleeps and retries the entire run.
 // Non-transient errors are yielded immediately without retry.
@@ -124,6 +141,9 @@ func WithRetry(cfg RetryConfig, runFn func() iter.Seq2[*session.Event, error]) i
 
 			if attempt < cfg.MaxRetries {
 				delay := retryDelay(cfg, attempt)
+				if ra, ok := retryAfterFrom(transientErr); ok {
+					delay = ra
+				}
 				time.Sleep(delay)
 				continue
 			}

@@ -95,6 +95,13 @@ func (q *MessageQueue) Clear() {
 	q.followUps = nil
 }
 
+// ClearSteering removes only pending steering messages, preserving follow-ups.
+func (q *MessageQueue) ClearSteering() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.steering = nil
+}
+
 // HasSteering returns true if there are pending steering messages.
 func (q *MessageQueue) HasSteering() bool {
 	q.mu.Lock()

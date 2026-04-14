@@ -279,6 +279,47 @@ func TestRenderSlashCommandOverlay_IncludesViewportRows(t *testing.T) {
 	}
 }
 
+func TestSlashCommandOverlayApplyFilter_RanksNameMatchesAboveDescription(t *testing.T) {
+	rows := []slashCommandOverlayRow{
+		{Kind: slashCommandOverlayRowHeader, Header: "Built-in Commands"},
+		{Kind: slashCommandOverlayRowCommand, Name: "/new", Description: "Start a fresh session"},
+		{Kind: slashCommandOverlayRowCommand, Name: "/resume", Description: "List or switch saved sessions"},
+	}
+	state := newSlashCommandOverlayState(rows)
+	state.ApplyFilter("res")
+
+	var commands []string
+	for _, row := range state.Rows {
+		if row.Kind == slashCommandOverlayRowCommand {
+			commands = append(commands, row.Name)
+		}
+	}
+	want := []string{"/resume", "/new"}
+	if !reflect.DeepEqual(commands, want) {
+		t.Fatalf("expected filtered order %v, got %v", want, commands)
+	}
+
+	selected, ok := state.SelectedRow()
+	if !ok || selected.Name != "/resume" {
+		t.Fatalf("expected /resume selected first, got %+v ok=%v", selected, ok)
+	}
+}
+
+func TestSlashCommandOverlayApplyFilter_PrefixBeatsContains(t *testing.T) {
+	rows := []slashCommandOverlayRow{
+		{Kind: slashCommandOverlayRowHeader, Header: "Built-in Commands"},
+		{Kind: slashCommandOverlayRowCommand, Name: "/skill-list"},
+		{Kind: slashCommandOverlayRowCommand, Name: "/list"},
+	}
+	state := newSlashCommandOverlayState(rows)
+	state.ApplyFilter("list")
+
+	selected, ok := state.SelectedRow()
+	if !ok || selected.Name != "/list" {
+		t.Fatalf("expected /list (prefix match) selected first, got %+v ok=%v", selected, ok)
+	}
+}
+
 func TestRenderSlashCommandOverlay_HidesDescriptionsInNarrowWidths(t *testing.T) {
 	state := newSlashCommandOverlayState([]slashCommandOverlayRow{
 		{Kind: slashCommandOverlayRowHeader, Header: "Built-in Commands"},

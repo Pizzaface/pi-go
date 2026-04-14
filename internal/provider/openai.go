@@ -3,15 +3,18 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"maps"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -268,6 +271,63 @@ func oaiStatusToFinishReason(resp *responses.Response) genai.FinishReason {
 	}
 }
 
+// parseToolIntent attempts to extract a tool invocation from free-form text
+// that a model emitted instead of using the native tool_calls channel.
+// Recognizes common shapes produced by LiteLLM / gpt-oss / qwen / etc:
+//
+//	{"function": "name", "arguments": {...}}
+//	{"name":     "name", "arguments": {...}}
+//	{"tool":     "name", "parameters": {...}}
+//	{"function": {"name": "name", "arguments": {...}}}
+//
+// Arguments values may be a nested object or a stringified JSON object.
+func parseToolIntent(text string) (name string, args map[string]any, ok bool) {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
+		return "", nil, false
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
+		return "", nil, false
+	}
+	if nested, ok := raw["function"].(map[string]any); ok {
+		if n, a, found := extractToolFields(nested); found {
+			return n, a, true
+		}
+	}
+	return extractToolFields(raw)
+}
+
+// extractToolFields looks for a tool name and arguments among common field
+// name variations a model might emit.
+func extractToolFields(m map[string]any) (name string, args map[string]any, ok bool) {
+	for _, k := range []string{"function", "name", "tool"} {
+		if v, found := m[k].(string); found && v != "" {
+			name = v
+			break
+		}
+	}
+	if name == "" {
+		return "", nil, false
+	}
+	for _, k := range []string{"arguments", "parameters", "args", "input"} {
+		v, found := m[k]
+		if !found {
+			continue
+		}
+		switch t := v.(type) {
+		case map[string]any:
+			args = t
+		case string:
+			_ = json.Unmarshal([]byte(t), &args)
+		}
+		if args != nil {
+			break
+		}
+	}
+	return name, args, true
+}
+
 // oaiResponseToLLMResponse converts a Responses API Response to model.LLMResponse.
 func oaiResponseToLLMResponse(resp *responses.Response) *model.LLMResponse {
 	var parts []*genai.Part
@@ -277,9 +337,16 @@ func oaiResponseToLLMResponse(resp *responses.Response) *model.LLMResponse {
 		case "message":
 			msg := item.AsMessage()
 			for _, c := range msg.Content {
-				if c.Type == "output_text" && c.Text != "" {
-					parts = append(parts, &genai.Part{Text: c.Text})
+				if c.Type != "output_text" || c.Text == "" {
+					continue
 				}
+				if name, args, ok := parseToolIntent(c.Text); ok {
+					p := genai.NewPartFromFunctionCall(name, args)
+					p.FunctionCall.ID = "fc_synth_" + uuid.NewString()
+					parts = append(parts, p)
+					continue
+				}
+				parts = append(parts, &genai.Part{Text: c.Text})
 			}
 		case "function_call":
 			fc := item.AsFunctionCall()
@@ -310,6 +377,12 @@ func oaiResponseToLLMResponse(resp *responses.Response) *model.LLMResponse {
 	}
 }
 
+type oaiFunctionCallAcc struct {
+	id   string
+	name string
+	args string
+}
+
 func oaiRunResponsesStreaming(ctx context.Context, client *openai.Client, params responses.ResponseNewParams, yield func(*model.LLMResponse, error) bool) {
 	stream := client.Responses.NewStreaming(ctx, params)
 	defer func() {
@@ -317,12 +390,15 @@ func oaiRunResponsesStreaming(ctx context.Context, client *openai.Client, params
 	}()
 
 	var finalResp *responses.Response
+	var accumulatedText string
+	var functionCalls []oaiFunctionCallAcc
 
 	for stream.Next() {
 		event := stream.Current()
 		switch event.Type {
 		case "response.output_text.delta":
 			if event.Delta != "" {
+				accumulatedText += event.Delta
 				if !yield(&model.LLMResponse{
 					Partial:      true,
 					TurnComplete: false,
@@ -331,6 +407,22 @@ func oaiRunResponsesStreaming(ctx context.Context, client *openai.Client, params
 					return
 				}
 			}
+		case "response.reasoning_text.delta":
+			if event.Delta != "" {
+				if !yield(&model.LLMResponse{
+					Partial:      true,
+					TurnComplete: false,
+					Content:      &genai.Content{Role: "thinking", Parts: []*genai.Part{{Text: event.Delta}}},
+				}, nil) {
+					return
+				}
+			}
+		case "response.function_call_arguments.done":
+			functionCalls = append(functionCalls, oaiFunctionCallAcc{
+				id:   event.ItemID,
+				name: event.Name,
+				args: event.Arguments,
+			})
 		case "response.completed":
 			finalResp = &event.Response
 		}
@@ -338,6 +430,10 @@ func oaiRunResponsesStreaming(ctx context.Context, client *openai.Client, params
 
 	if err := stream.Err(); err != nil {
 		if ctx.Err() == context.Canceled {
+			return
+		}
+		if rl, ok := asRateLimitError(err); ok {
+			yield(nil, rl)
 			return
 		}
 		_ = yield(&model.LLMResponse{
@@ -352,12 +448,51 @@ func oaiRunResponsesStreaming(ctx context.Context, client *openai.Client, params
 
 	if finalResp != nil {
 		_ = yield(oaiResponseToLLMResponse(finalResp), nil)
+		return
+	}
+
+	// Fallback for OpenAI-compatible providers that don't send response.completed.
+	_ = yield(oaiBuildFallbackResponse(accumulatedText, functionCalls), nil)
+}
+
+// oaiBuildFallbackResponse constructs a final LLMResponse from state accumulated
+// during streaming. Used when an OpenAI-compatible provider omits the
+// response.completed event.
+func oaiBuildFallbackResponse(text string, fcs []oaiFunctionCallAcc) *model.LLMResponse {
+	parts := make([]*genai.Part, 0, 1+len(fcs))
+	if text != "" {
+		if name, args, ok := parseToolIntent(text); ok {
+			p := genai.NewPartFromFunctionCall(name, args)
+			p.FunctionCall.ID = "fc_synth_" + uuid.NewString()
+			parts = append(parts, p)
+		} else {
+			parts = append(parts, &genai.Part{Text: text})
+		}
+	}
+	for _, fc := range fcs {
+		var args map[string]any
+		if fc.args != "" {
+			_ = json.Unmarshal([]byte(fc.args), &args)
+		}
+		p := genai.NewPartFromFunctionCall(fc.name, args)
+		p.FunctionCall.ID = fc.id
+		parts = append(parts, p)
+	}
+	return &model.LLMResponse{
+		Partial:      false,
+		TurnComplete: true,
+		FinishReason: genai.FinishReasonStop,
+		Content:      &genai.Content{Role: string(genai.RoleModel), Parts: parts},
 	}
 }
 
 func oaiRunResponsesNonStreaming(ctx context.Context, client *openai.Client, params responses.ResponseNewParams, yield func(*model.LLMResponse, error) bool) {
 	resp, err := client.Responses.New(ctx, params)
 	if err != nil {
+		if rl, ok := asRateLimitError(err); ok {
+			yield(nil, rl)
+			return
+		}
 		yield(nil, fmt.Errorf("OpenAI response failed: %w", err))
 		return
 	}
@@ -418,4 +553,76 @@ func listOpenAIModels(ctx context.Context, apiKey, baseURL string, llmOpts *LLMO
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
 	return entries, nil
+}
+
+// rateLimitError wraps a 429 Too Many Requests response and exposes the
+// server-suggested delay from the Retry-After / Retry-After-Ms headers.
+// It satisfies the retryAfterHint interface consumed by agent.WithRetry.
+type rateLimitError struct {
+	err        error
+	status     int
+	retryAfter time.Duration
+	message    string
+}
+
+func (e *rateLimitError) Error() string {
+	if e.retryAfter > 0 {
+		return fmt.Sprintf("rate limited by OpenAI (HTTP %d): retry after %s: %s",
+			e.status, e.retryAfter.Round(time.Millisecond), e.message)
+	}
+	return fmt.Sprintf("rate limited by OpenAI (HTTP %d): %s", e.status, e.message)
+}
+
+func (e *rateLimitError) Unwrap() error { return e.err }
+
+// RetryAfter returns the server-suggested delay before retrying. Zero when the
+// server did not send a Retry-After / Retry-After-Ms header.
+func (e *rateLimitError) RetryAfter() time.Duration { return e.retryAfter }
+
+// asRateLimitError inspects err for a 429 Too Many Requests response from the
+// OpenAI SDK and, if found, returns a wrapped error that exposes Retry-After
+// via RetryAfter().
+func asRateLimitError(err error) (*rateLimitError, bool) {
+	if err == nil {
+		return nil, false
+	}
+	var oaiErr *openai.Error
+	if !errors.As(err, &oaiErr) || oaiErr == nil || oaiErr.StatusCode != http.StatusTooManyRequests {
+		return nil, false
+	}
+	message := strings.TrimSpace(oaiErr.Message)
+	if message == "" {
+		message = http.StatusText(oaiErr.StatusCode)
+	}
+	return &rateLimitError{
+		err:        err,
+		status:     oaiErr.StatusCode,
+		retryAfter: parseOpenAIRetryAfter(oaiErr.Response),
+		message:    message,
+	}, true
+}
+
+// parseOpenAIRetryAfter extracts the server-suggested retry delay from the
+// Retry-After-Ms (preferred) or Retry-After headers. Supports numeric seconds,
+// numeric milliseconds, and HTTP-date values per RFC 7231.
+func parseOpenAIRetryAfter(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	if v := strings.TrimSpace(resp.Header.Get("Retry-After-Ms")); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 {
+			return time.Duration(n * float64(time.Millisecond))
+		}
+	}
+	if v := strings.TrimSpace(resp.Header.Get("Retry-After")); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 {
+			return time.Duration(n * float64(time.Second))
+		}
+		if t, err := http.ParseTime(v); err == nil {
+			if d := time.Until(t); d > 0 {
+				return d
+			}
+		}
+	}
+	return 0
 }

@@ -106,6 +106,40 @@ func (m *model) handleLoginPickerKey(key tea.Key) (bool, tea.Model, tea.Cmd) {
 	}
 }
 
+func (m *model) handleSessionPickerKey(msg tea.KeyPressMsg, key tea.Key) (bool, tea.Model, tea.Cmd) {
+	if m.sessionPicker == nil {
+		return false, nil, nil
+	}
+	switch {
+	case key.Code == tea.KeyEsc:
+		m.sessionPicker = nil
+		return true, m, nil
+	case key.Code == tea.KeyEnter:
+		nextM, cmd := m.handleSessionPickerSelect()
+		return true, nextM, cmd
+	case key.Code == tea.KeyUp:
+		m.sessionPicker.moveUp()
+		return true, m, nil
+	case key.Code == tea.KeyDown:
+		m.sessionPicker.moveDown()
+		return true, m, nil
+	case key.Code == tea.KeyBackspace:
+		if len(m.sessionPicker.filter) > 0 {
+			m.sessionPicker.filter = m.sessionPicker.filter[:len(m.sessionPicker.filter)-1]
+			m.sessionPicker.applyFilter()
+		}
+		return true, m, nil
+	default:
+		if key.Text != "" && key.Mod == 0 {
+			m.sessionPicker.filter += key.Text
+			m.sessionPicker.applyFilter()
+			return true, m, nil
+		}
+		m.sessionPicker = nil
+		return true, m, nil
+	}
+}
+
 func (m *model) handleSlashOverlayKey(msg tea.KeyPressMsg, key tea.Key) (bool, tea.Model, tea.Cmd) {
 	if m.slashOverlay == nil {
 		return false, nil, nil
@@ -131,6 +165,12 @@ func (m *model) handleSlashOverlayKey(msg tea.KeyPressMsg, key tea.Key) (bool, t
 	case key.Code == tea.KeyTab && key.Mod == tea.ModShift:
 		return true, m, nil
 	case key.Code == tea.KeyTab:
+		if row, ok := m.slashOverlay.SelectedRow(); ok {
+			m.inputModel.Text = row.Name
+			m.inputModel.CursorPos = len(m.inputModel.Text)
+			m.inputModel.CyclingIdx = -1
+			m.slashOverlay = nil
+		}
 		return true, m, nil
 	default:
 		cmd := m.inputModel.HandleKey(msg, m.running)

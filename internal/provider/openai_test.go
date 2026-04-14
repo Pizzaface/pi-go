@@ -3,11 +3,16 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 	"google.golang.org/adk/model"
 
@@ -322,18 +327,18 @@ func TestOpenAINonStreamingTextResponse(t *testing.T) {
 		},
 	}
 
-	var responses []*model.LLMResponse
+	var llmResponses []*model.LLMResponse
 	for resp, err := range llm.GenerateContent(ctx, req, false) {
 		if err != nil {
 			t.Fatalf("GenerateContent() error: %v", err)
 		}
-		responses = append(responses, resp)
+		llmResponses = append(llmResponses, resp)
 	}
 
-	if len(responses) == 0 {
+	if len(llmResponses) == 0 {
 		t.Fatal("expected at least one response")
 	}
-	final := responses[len(responses)-1]
+	final := llmResponses[len(llmResponses)-1]
 	if final.Content == nil {
 		t.Fatal("expected non-nil Content")
 	}
@@ -420,18 +425,18 @@ func TestOpenAINonStreamingToolCallResponse(t *testing.T) {
 		},
 	}
 
-	var responses []*model.LLMResponse
+	var llmResponses []*model.LLMResponse
 	for resp, err := range llm.GenerateContent(ctx, req, false) {
 		if err != nil {
 			t.Fatalf("GenerateContent() error: %v", err)
 		}
-		responses = append(responses, resp)
+		llmResponses = append(llmResponses, resp)
 	}
 
-	if len(responses) == 0 {
+	if len(llmResponses) == 0 {
 		t.Fatal("expected at least one response")
 	}
-	final := responses[len(responses)-1]
+	final := llmResponses[len(llmResponses)-1]
 	if final.Content == nil {
 		t.Fatal("expected non-nil Content")
 	}
@@ -660,7 +665,7 @@ func TestOaiStatusToFinishReason(t *testing.T) {
 		{"incomplete content filter", responses.ResponseStatusIncomplete, "content_filter", genai.FinishReasonSafety},
 		{"incomplete other", responses.ResponseStatusIncomplete, "", genai.FinishReasonOther},
 		{"failed", responses.ResponseStatusFailed, "", genai.FinishReasonOther},
-		{"cancelled", responses.ResponseStatusCancelled, "", genai.FinishReasonOther},
+		{"canceled", responses.ResponseStatusCancelled, "", genai.FinishReasonOther},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -845,6 +850,147 @@ func TestOaiGenaiToolsToResponses(t *testing.T) {
 
 // --- Test helpers for Responses API output items ---
 
+func TestParseToolIntent(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		wantName string
+		wantArgs map[string]any
+		wantOK   bool
+	}{
+		{
+			name:     "litellm function+arguments",
+			text:     `{"function":"grep","arguments":{"pattern":"foo"}}`,
+			wantName: "grep",
+			wantArgs: map[string]any{"pattern": "foo"},
+			wantOK:   true,
+		},
+		{
+			name:     "openai-style name+arguments",
+			text:     `{"name":"grep","arguments":{"pattern":"foo","path":"."}}`,
+			wantName: "grep",
+			wantArgs: map[string]any{"pattern": "foo", "path": "."},
+			wantOK:   true,
+		},
+		{
+			name:     "tool+parameters variant",
+			text:     `{"tool":"read","parameters":{"file_path":"x.go"}}`,
+			wantName: "read",
+			wantArgs: map[string]any{"file_path": "x.go"},
+			wantOK:   true,
+		},
+		{
+			name:     "nested function object",
+			text:     `{"function":{"name":"grep","arguments":{"pattern":"foo"}}}`,
+			wantName: "grep",
+			wantArgs: map[string]any{"pattern": "foo"},
+			wantOK:   true,
+		},
+		{
+			name:     "stringified arguments",
+			text:     `{"name":"grep","arguments":"{\"pattern\":\"foo\"}"}`,
+			wantName: "grep",
+			wantArgs: map[string]any{"pattern": "foo"},
+			wantOK:   true,
+		},
+		{
+			name:     "whitespace wrapped",
+			text:     "  \n{\"function\":\"tree\",\"arguments\":{}}  \n",
+			wantName: "tree",
+			wantArgs: nil,
+			wantOK:   true,
+		},
+		{
+			name:   "plain prose",
+			text:   "I'll search for that pattern now.",
+			wantOK: false,
+		},
+		{
+			name:   "json but no name field",
+			text:   `{"arguments":{"pattern":"foo"}}`,
+			wantOK: false,
+		},
+		{
+			name:   "json but not a tool shape",
+			text:   `{"result":42}`,
+			wantOK: false,
+		},
+		{
+			name:   "truncated json",
+			text:   `{"function":"grep","arguments":{"pattern":`,
+			wantOK: false,
+		},
+		{
+			name:   "empty string",
+			text:   "",
+			wantOK: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, args, ok := parseToolIntent(tt.text)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if name != tt.wantName {
+				t.Errorf("name = %q, want %q", name, tt.wantName)
+			}
+			if fmt.Sprintf("%v", args) != fmt.Sprintf("%v", tt.wantArgs) {
+				t.Errorf("args = %v, want %v", args, tt.wantArgs)
+			}
+		})
+	}
+}
+
+func TestOaiResponseToLLMResponse_SynthesizedToolIntent(t *testing.T) {
+	resp := &responses.Response{
+		Status: responses.ResponseStatusCompleted,
+		Output: []responses.ResponseOutputItemUnion{
+			fakeOutputMessage(`{"function":"grep","arguments":{"pattern":"TODO"}}`),
+		},
+		Usage: responses.ResponseUsage{InputTokens: 10, OutputTokens: 5},
+	}
+	result := oaiResponseToLLMResponse(resp)
+	if len(result.Content.Parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(result.Content.Parts))
+	}
+	fc := result.Content.Parts[0].FunctionCall
+	if fc == nil {
+		t.Fatalf("expected FunctionCall part, got text %q", result.Content.Parts[0].Text)
+	}
+	if fc.Name != "grep" {
+		t.Errorf("name = %q, want grep", fc.Name)
+	}
+	if fc.Args["pattern"] != "TODO" {
+		t.Errorf("args = %v, want pattern=TODO", fc.Args)
+	}
+	if fc.ID == "" {
+		t.Error("expected synthetic ID to be set")
+	}
+}
+
+func TestOaiResponseToLLMResponse_PlainTextUnchanged(t *testing.T) {
+	resp := &responses.Response{
+		Status: responses.ResponseStatusCompleted,
+		Output: []responses.ResponseOutputItemUnion{
+			fakeOutputMessage("I'll look into that."),
+		},
+	}
+	result := oaiResponseToLLMResponse(resp)
+	if len(result.Content.Parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(result.Content.Parts))
+	}
+	if result.Content.Parts[0].Text != "I'll look into that." {
+		t.Errorf("text = %q", result.Content.Parts[0].Text)
+	}
+	if result.Content.Parts[0].FunctionCall != nil {
+		t.Error("expected no FunctionCall for plain text")
+	}
+}
+
 func fakeOutputMessage(text string) responses.ResponseOutputItemUnion {
 	raw := fmt.Sprintf(`{"type":"message","id":"msg_test","role":"assistant","status":"completed","content":[{"type":"output_text","text":%s}]}`, mustJSON(text))
 	var item responses.ResponseOutputItemUnion
@@ -863,4 +1009,160 @@ func fakeOutputFunctionCall(callID, name, arguments string) responses.ResponseOu
 func mustJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+func TestAsRateLimitError(t *testing.T) {
+	t.Run("nil error", func(t *testing.T) {
+		if _, ok := asRateLimitError(nil); ok {
+			t.Error("expected false for nil")
+		}
+	})
+
+	t.Run("non-openai error", func(t *testing.T) {
+		if _, ok := asRateLimitError(errors.New("boom")); ok {
+			t.Error("expected false for plain error")
+		}
+	})
+
+	t.Run("non-429 openai error", func(t *testing.T) {
+		err := &openai.Error{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "internal",
+			Response:   &http.Response{Header: make(http.Header)},
+		}
+		if _, ok := asRateLimitError(err); ok {
+			t.Error("expected false for 500")
+		}
+	})
+
+	t.Run("429 with Retry-After seconds", func(t *testing.T) {
+		hdr := make(http.Header)
+		hdr.Set("Retry-After", "42")
+		err := &openai.Error{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    "rate limit exceeded",
+			Response:   &http.Response{Header: hdr},
+		}
+		rl, ok := asRateLimitError(err)
+		if !ok {
+			t.Fatal("expected true for 429")
+		}
+		if rl.RetryAfter() != 42*time.Second {
+			t.Errorf("RetryAfter = %v, want 42s", rl.RetryAfter())
+		}
+		if !strings.Contains(rl.Error(), "42s") || !strings.Contains(rl.Error(), "rate limit exceeded") {
+			t.Errorf("Error() = %q, want 42s and underlying message", rl.Error())
+		}
+	})
+
+	t.Run("429 with Retry-After-Ms takes precedence", func(t *testing.T) {
+		hdr := make(http.Header)
+		hdr.Set("Retry-After", "60")
+		hdr.Set("Retry-After-Ms", "250")
+		err := &openai.Error{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    "slow down",
+			Response:   &http.Response{Header: hdr},
+		}
+		rl, ok := asRateLimitError(err)
+		if !ok {
+			t.Fatal("expected true")
+		}
+		if rl.RetryAfter() != 250*time.Millisecond {
+			t.Errorf("RetryAfter = %v, want 250ms", rl.RetryAfter())
+		}
+	})
+
+	t.Run("429 with HTTP-date Retry-After", func(t *testing.T) {
+		hdr := make(http.Header)
+		hdr.Set("Retry-After", time.Now().Add(3*time.Second).UTC().Format(http.TimeFormat))
+		err := &openai.Error{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    "slow down",
+			Response:   &http.Response{Header: hdr},
+		}
+		rl, ok := asRateLimitError(err)
+		if !ok {
+			t.Fatal("expected true")
+		}
+		if d := rl.RetryAfter(); d <= 0 || d > 5*time.Second {
+			t.Errorf("RetryAfter = %v, want ~3s", d)
+		}
+	})
+
+	t.Run("429 without Retry-After", func(t *testing.T) {
+		err := &openai.Error{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    "rate limit",
+			Response:   &http.Response{Header: make(http.Header)},
+		}
+		rl, ok := asRateLimitError(err)
+		if !ok {
+			t.Fatal("expected true")
+		}
+		if rl.RetryAfter() != 0 {
+			t.Errorf("RetryAfter = %v, want 0", rl.RetryAfter())
+		}
+		if !strings.Contains(rl.Error(), "rate limit") {
+			t.Errorf("Error() = %q, want mention rate limit", rl.Error())
+		}
+	})
+
+	t.Run("wrapped 429 is detected via errors.As", func(t *testing.T) {
+		hdr := make(http.Header)
+		hdr.Set("Retry-After", "1")
+		err := fmt.Errorf("wrapped: %w", &openai.Error{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    "rate limit",
+			Response:   &http.Response{Header: hdr},
+		})
+		if _, ok := asRateLimitError(err); !ok {
+			t.Error("expected true for wrapped 429")
+		}
+	})
+}
+
+func TestOpenAINonStreamingRateLimit(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Retry-After-Ms", "1")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"rate limit exceeded","type":"rate_limit_error"}}`))
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	llm, err := NewOpenAI(ctx, "gpt-4o", "sk-test", srv.URL, EffortMedium, nil)
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	req := &model.LLMRequest{
+		Contents: []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: "hi"}}}},
+	}
+
+	var finalErr error
+	for _, e := range llm.GenerateContent(ctx, req, false) {
+		if e != nil {
+			finalErr = e
+			break
+		}
+	}
+	if finalErr == nil {
+		t.Fatal("expected error on 429")
+	}
+	var rl interface{ RetryAfter() time.Duration }
+	if !errors.As(finalErr, &rl) {
+		t.Fatalf("error does not carry RetryAfter hint: %T: %v", finalErr, finalErr)
+	}
+	if got := rl.RetryAfter(); got != time.Millisecond {
+		t.Errorf("RetryAfter = %v, want 1ms", got)
+	}
+	if !strings.Contains(strings.ToLower(finalErr.Error()), "rate limit") {
+		t.Errorf("error message %q should mention rate limit", finalErr.Error())
+	}
+	if atomic.LoadInt32(&calls) < 2 {
+		t.Errorf("expected SDK to retry 429 at least once, got %d calls", calls)
+	}
 }

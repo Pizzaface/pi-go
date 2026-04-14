@@ -940,7 +940,7 @@ func TestHandleKey_EnterOnSlashOverlayInsertsCommand(t *testing.T) {
 	}
 }
 
-func TestHandleKey_TabWhileSlashOverlayOpenDoesNotInsert(t *testing.T) {
+func TestHandleKey_TabWhileSlashOverlayOpenInsertsSelection(t *testing.T) {
 	m := newTestModel(t)
 	m.inputModel.Text = "/"
 	m.inputModel.CursorPos = 1
@@ -950,8 +950,11 @@ func TestHandleKey_TabWhileSlashOverlayOpenDoesNotInsert(t *testing.T) {
 	}
 
 	m.handleKey(makeKey(tea.KeyTab))
-	if m.inputModel.Text != "/" {
-		t.Fatalf("expected tab not to insert while overlay open, got %q", m.inputModel.Text)
+	if m.slashOverlay != nil {
+		t.Fatal("expected slash overlay to close after tab")
+	}
+	if m.inputModel.Text != "/help" {
+		t.Fatalf("expected selected command to be inserted, got %q", m.inputModel.Text)
 	}
 }
 
@@ -1013,6 +1016,31 @@ func TestHandleKey_EscapeClosesSlashOverlay(t *testing.T) {
 	}
 	if m.inputModel.Text != "/" {
 		t.Fatalf("expected input to remain '/', got %q", m.inputModel.Text)
+	}
+}
+
+func TestHandleKey_Esc_OverlayBeforeCancel(t *testing.T) {
+	m := newTestModel(t)
+	m.running = true
+	m.agentCh = make(chan agentMsg, 1)
+	m.inputModel.Text = "/"
+	m.inputModel.CursorPos = 1
+	m.handleKey(makeKey(tea.KeyTab))
+	if m.slashOverlay == nil {
+		t.Fatal("expected slash overlay to open")
+	}
+
+	m.handleKey(makeKey(tea.KeyEsc))
+	if m.slashOverlay != nil {
+		t.Fatal("expected slash overlay to close on first Esc")
+	}
+	if !m.running {
+		t.Fatal("expected generation to still be running after first Esc")
+	}
+
+	m.handleKey(makeKey(tea.KeyEsc))
+	if m.running {
+		t.Fatal("expected generation to be canceled on second Esc")
 	}
 }
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -49,30 +50,63 @@ func newSlashCommandOverlayState(rows []slashCommandOverlayRow) slashCommandOver
 
 // ApplyFilter filters the displayed rows to commands matching filter text.
 // filter is the text after "/" (e.g., if input is "/he", filter is "he").
+// Within each section, matches are ranked: name-prefix > name-contains >
+// description-only. Stable within tiers so original section order is kept.
 func (s *slashCommandOverlayState) ApplyFilter(filter string) {
 	s.Filter = filter
 	if filter == "" {
 		s.Rows = s.AllRows
 	} else {
 		lower := strings.ToLower(filter)
+		type rankedRow struct {
+			row   slashCommandOverlayRow
+			rank  int
+			order int
+		}
 		var filtered []slashCommandOverlayRow
 		var pendingHeader *slashCommandOverlayRow
+		var section []rankedRow
+		order := 0
+		flush := func() {
+			if len(section) == 0 {
+				return
+			}
+			sort.SliceStable(section, func(i, j int) bool {
+				return section[i].rank < section[j].rank
+			})
+			if pendingHeader != nil {
+				filtered = append(filtered, *pendingHeader)
+				pendingHeader = nil
+			}
+			for _, m := range section {
+				filtered = append(filtered, m.row)
+			}
+			section = nil
+		}
 		for _, row := range s.AllRows {
 			if row.Kind == slashCommandOverlayRowHeader {
+				flush()
 				h := row
 				pendingHeader = &h
 				continue
 			}
 			name := strings.ToLower(strings.TrimPrefix(row.Name, "/"))
 			desc := strings.ToLower(row.Description)
-			if strings.Contains(name, lower) || strings.Contains(desc, lower) {
-				if pendingHeader != nil {
-					filtered = append(filtered, *pendingHeader)
-					pendingHeader = nil
-				}
-				filtered = append(filtered, row)
+			rank := -1
+			switch {
+			case strings.HasPrefix(name, lower):
+				rank = 0
+			case strings.Contains(name, lower):
+				rank = 1
+			case strings.Contains(desc, lower):
+				rank = 2
+			}
+			if rank >= 0 {
+				section = append(section, rankedRow{row: row, rank: rank, order: order})
+				order++
 			}
 		}
+		flush()
 		s.Rows = filtered
 	}
 	s.SelectedIndex = -1
@@ -294,7 +328,7 @@ func (s *slashCommandOverlayState) render(width int) string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render(truncateOverlayText(fmt.Sprintf("Slash Commands  %d/%d", s.selectedOrdinal(), s.selectableCount()), innerWidth)))
 	body.WriteByte('\n')
-	body.WriteString(helpStyle.Render(truncateOverlayText("↑↓ move  •  Enter insert  •  Esc close", innerWidth)))
+	body.WriteString(helpStyle.Render(truncateOverlayText("↑↓ move  •  Enter/Tab insert  •  Esc close", innerWidth)))
 	body.WriteByte('\n')
 	for i, row := range visible {
 		absoluteIndex := s.ScrollOffset + i

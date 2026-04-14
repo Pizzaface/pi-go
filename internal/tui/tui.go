@@ -92,6 +92,9 @@ type model struct {
 	// Login picker popup state (shown by /login with no args).
 	loginPicker *loginPickerState
 
+	// Session picker popup state (shown by /resume with no args).
+	sessionPicker *sessionPickerState
+
 	// Slash command overlay state (shown for exact `/` + Tab).
 	slashOverlay *slashCommandOverlayState
 
@@ -145,6 +148,9 @@ func Run(ctx context.Context, cfg Config) error {
 		glamour.WithWordWrap(100),
 		glamour.WithEmoji(),
 	)
+	if renderer != nil {
+		defer func() { _ = renderer.Close() }()
+	}
 
 	history := loadHistory()
 	if history == nil {

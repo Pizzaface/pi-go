@@ -418,8 +418,8 @@ func TestMaxScrollEmpty(t *testing.T) {
 		chatModel: ChatModel{Messages: make([]message, 0)},
 		height:    24,
 	}
-	if max := m.chatModel.MaxScroll(m.height); max != 0 {
-		t.Errorf("expected 0, got %d", max)
+	if maxScroll := m.chatModel.MaxScroll(m.height); maxScroll != 0 {
+		t.Errorf("expected 0, got %d", maxScroll)
 	}
 }
 
@@ -581,8 +581,39 @@ func TestHandleSlashCommandResumeListsSessions(t *testing.T) {
 
 	newM, _ := m.handleSlashCommand("/resume")
 	mm := newM.(*model)
-	if !strings.Contains(mm.chatModel.Messages[0].content, "Recent sessions") {
-		t.Fatalf("expected recent sessions output, got %q", mm.chatModel.Messages[0].content)
+	if mm.sessionPicker == nil {
+		t.Fatal("expected session picker to be opened")
+	}
+	if len(mm.sessionPicker.entries) == 0 {
+		t.Fatal("expected session picker to have entries")
+	}
+	if mm.sessionPicker.current != sessionID {
+		t.Fatalf("expected current session %q, got %q", sessionID, mm.sessionPicker.current)
+	}
+}
+
+func TestSessionPickerRenderShowsEntries(t *testing.T) {
+	svc, sessionID := setupTestSessionWithID(t)
+	m := &model{
+		width:      80,
+		inputModel: InputModel{Text: "/resume"},
+		chatModel:  ChatModel{Messages: make([]message, 0)},
+		cfg:        Config{SessionService: svc, SessionID: sessionID},
+	}
+
+	m.handleSlashCommand("/resume")
+	if m.sessionPicker == nil {
+		t.Fatal("expected session picker to be opened")
+	}
+	if len(m.sessionPicker.entries) == 0 {
+		t.Fatal("expected session picker entries, got 0")
+	}
+	rendered := m.renderSessionPicker()
+	if rendered == "" {
+		t.Fatal("renderSessionPicker returned empty string")
+	}
+	if !strings.Contains(rendered, sessionID[:8]) {
+		t.Fatalf("rendered picker missing session ID prefix %q, got:\n%s", sessionID[:8], rendered)
 	}
 }
 

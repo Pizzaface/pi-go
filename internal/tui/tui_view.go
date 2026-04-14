@@ -12,7 +12,7 @@ import (
 )
 
 func (m *model) hasBlockingPopup() bool {
-	return m.modelPicker != nil || m.loginPicker != nil
+	return m.modelPicker != nil || m.loginPicker != nil || m.sessionPicker != nil
 }
 
 func (m *model) reservedOverlayLines() int {
@@ -25,6 +25,9 @@ func (m *model) reservedOverlayLines() int {
 	}
 	if m.loginPicker != nil {
 		reserved += m.loginPicker.height + 6
+	}
+	if m.sessionPicker != nil {
+		reserved += m.sessionPicker.height + 6
 	}
 	return reserved
 }
@@ -128,6 +131,10 @@ func (m *model) View() tea.View {
 	}
 	if m.loginPicker != nil {
 		b.WriteString(m.renderLoginPicker())
+		b.WriteString("\n")
+	}
+	if m.sessionPicker != nil {
+		b.WriteString(m.renderSessionPicker())
 		b.WriteString("\n")
 	}
 	if m.chatModel.Scroll > 0 {

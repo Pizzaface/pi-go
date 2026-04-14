@@ -381,7 +381,7 @@ func (m *model) handleResumeCommand(args []string) {
 		m.appendAssistant("Resume is not available (no session service configured).")
 		return
 	}
-	metas, err := m.cfg.SessionService.ListMeta(agent.AppName, agent.DefaultUserID, 12)
+	metas, err := m.cfg.SessionService.ListMeta(agent.AppName, agent.DefaultUserID, 20)
 	if err != nil {
 		m.appendAssistant(fmt.Sprintf("Error listing sessions: %v", err))
 		return
@@ -391,17 +391,17 @@ func (m *model) handleResumeCommand(args []string) {
 			m.appendAssistant("No saved sessions found. Use `/new` to start one.")
 			return
 		}
-		var b strings.Builder
-		b.WriteString("**Recent sessions:**\n")
-		for _, meta := range metas {
-			marker := " "
-			if meta.ID == m.cfg.SessionID {
-				marker = "*"
-			}
-			fmt.Fprintf(&b, "- %s %s — updated %s\n", marker, formatSessionLabel(meta), meta.UpdatedAt.Format(time.RFC3339))
+		m.modelPicker = nil
+		m.loginPicker = nil
+		m.branchPopup = nil
+		m.slashOverlay = nil
+		m.sessionPicker = &sessionPickerState{
+			entries: metas,
+			all:     metas,
+			current: m.cfg.SessionID,
+			height:  12,
 		}
-		b.WriteString("\nUse `/resume <session-id>` to switch.")
-		m.appendAssistant(b.String())
+		m.sessionPicker.ensureSelectionVisible()
 		return
 	}
 	query := strings.TrimSpace(args[0])
@@ -427,6 +427,25 @@ func (m *model) handleResumeCommand(args []string) {
 		return
 	}
 	m.appendAssistant(fmt.Sprintf("Resumed %s.", formatSessionLabel(matches[0])))
+}
+
+func (m *model) handleSessionPickerSelect() (tea.Model, tea.Cmd) {
+	if m.sessionPicker == nil {
+		return m, nil
+	}
+	selected := m.sessionPicker.selectedMeta()
+	if selected == nil {
+		m.sessionPicker = nil
+		return m, nil
+	}
+	sessionID := selected.ID
+	m.sessionPicker = nil
+	if err := m.loadSessionMessages(sessionID); err != nil {
+		m.appendAssistant(fmt.Sprintf("Error loading session `%s`: %v", sessionID, err))
+		return m, nil
+	}
+	m.appendAssistant(fmt.Sprintf("Resumed %s.", formatSessionLabel(*selected)))
+	return m, nil
 }
 
 func (m *model) handleForkCommand(args []string) {

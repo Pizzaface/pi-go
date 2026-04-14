@@ -64,6 +64,9 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if handled, nextM, cmd := m.handleLoginPickerKey(key); handled {
 		return nextM, cmd
 	}
+	if handled, nextM, cmd := m.handleSessionPickerKey(msg, key); handled {
+		return nextM, cmd
+	}
 	if handled, nextM, cmd := m.handleSlashOverlayKey(msg, key); handled {
 		return nextM, cmd
 	}
