@@ -104,3 +104,7 @@ require (
 	rsc.io/omap v1.2.0 // indirect
 	rsc.io/ordered v1.1.1 // indirect
 )
+
+require github.com/dimetron/pi-go/pkg/piapi v0.0.0
+
+replace github.com/dimetron/pi-go/pkg/piapi => ./pkg/piapi
