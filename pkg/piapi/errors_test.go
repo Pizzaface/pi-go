@@ -21,3 +21,15 @@ func TestErrCapabilityDenied_Is(t *testing.T) {
 		t.Fatal("errors.Is should match sentinel")
 	}
 }
+
+func TestErrCapabilityDenied_Error(t *testing.T) {
+	withReason := ErrCapabilityDenied{Capability: "tools.register", Reason: "not approved"}
+	if got := withReason.Error(); got != "piapi: capability denied: tools.register (not approved)" {
+		t.Fatalf("Error() = %q", got)
+	}
+
+	noReason := ErrCapabilityDenied{Capability: "events.subscribe"}
+	if got := noReason.Error(); got != "piapi: capability denied: events.subscribe" {
+		t.Fatalf("Error() = %q", got)
+	}
+}

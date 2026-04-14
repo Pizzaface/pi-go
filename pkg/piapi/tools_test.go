@@ -31,4 +31,10 @@ func TestToolDescriptor_Validate(t *testing.T) {
 	if err := noExec.Validate(); err == nil {
 		t.Fatal("missing Execute should fail validation")
 	}
+
+	noDesc := valid
+	noDesc.Description = ""
+	if err := noDesc.Validate(); err == nil {
+		t.Fatal("missing Description should fail validation")
+	}
 }
