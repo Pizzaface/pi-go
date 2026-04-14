@@ -111,6 +111,9 @@ Review the current branch. Extra context: {{args}}
 	if len(rt.Skills) != 1 || rt.Skills[0].Name != "demo-skill" {
 		t.Fatalf("expected demo skill to load, got %+v", rt.Skills)
 	}
+	if rt.Skills[0].Location == "" {
+		t.Fatal("expected loaded skill location to be set")
+	}
 	if len(rt.PromptTemplates) != 1 || rt.PromptTemplates[0].Name != "review" {
 		t.Fatalf("expected review prompt template, got %+v", rt.PromptTemplates)
 	}

@@ -171,10 +171,15 @@ func handleStrip(result *audit.ScanResult, dryRun, force, verbose bool) error {
 func defaultSkillDirs() []string {
 	dirs := []string{}
 	if homeDir, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(homeDir, ".pi-go", "skills"))
+		dirs = append(dirs,
+			filepath.Join(homeDir, ".pi-go", "skills"),
+			filepath.Join(homeDir, ".agents", "skills"),
+			filepath.Join(homeDir, ".claude", "skills"),
+		)
 	}
 	dirs = append(dirs,
 		filepath.Join(".pi-go", "skills"),
+		filepath.Join(".agents", "skills"),
 		filepath.Join(".claude", "skills"),
 		filepath.Join(".cursor", "skills"),
 	)

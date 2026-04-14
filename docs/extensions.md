@@ -28,6 +28,9 @@ Resource types:
 
 Project compatibility skills are also loaded from:
 
+- `~/.agents/skills/`
+- `.agents/skills/`
+- `~/.claude/skills/`
 - `.claude/skills/`
 - `.cursor/skills/`
 

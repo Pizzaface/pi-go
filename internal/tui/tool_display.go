@@ -610,8 +610,26 @@ func highlightReadOutput(lines []string, filename string) []string {
 	return result
 }
 
+// highlightKey is the cache key for highlightCode output.
+type highlightKey struct {
+	filename string
+	code     string
+}
+
+// highlightCache memoizes chroma output. Bubble Tea drives View from a single
+// goroutine so this package-level cache needs no mutex. Bounded by
+// highlightCacheCap to prevent unbounded growth.
+var highlightCache = map[highlightKey]string{}
+
+const highlightCacheCap = 256
+
 // highlightCode applies chroma syntax highlighting based on filename extension.
 func highlightCode(code, filename string) string {
+	key := highlightKey{filename: filename, code: code}
+	if cached, ok := highlightCache[key]; ok {
+		return cached
+	}
+
 	lexer := lexers.Match(filename)
 	if lexer == nil {
 		lexer = lexers.Analyse(code) //nolint:misspell // chroma API uses British spelling
@@ -639,7 +657,12 @@ func highlightCode(code, filename string) string {
 	if err := formatter.Format(&buf, style, iterator); err != nil {
 		return code
 	}
-	return strings.TrimRight(buf.String(), "\n")
+	result := strings.TrimRight(buf.String(), "\n")
+	if len(highlightCache) >= highlightCacheCap {
+		highlightCache = make(map[highlightKey]string, highlightCacheCap)
+	}
+	highlightCache[key] = result
+	return result
 }
 
 // highlightGrepOutput styles grep result lines of the form "file:line: content".

@@ -141,8 +141,13 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	}
 	if len(skills) > 0 {
 		instruction += "\n\n# Available Skills\n\n"
+		instruction += "The following skills provide specialized instructions for specific tasks.\n"
+		instruction += "When a task matches a skill's description, use your file-read tool to load\n"
+		instruction += "the SKILL.md at the listed location before proceeding.\n"
+		instruction += "When a skill references relative paths, resolve them against the skill's\n"
+		instruction += "directory (the parent of SKILL.md) and use absolute paths in tool calls.\n\n"
 		for _, s := range skills {
-			instruction += fmt.Sprintf("- /%s: %s\n", s.Name, s.Description)
+			instruction += fmt.Sprintf("- /%s: %s\n  location: %s\n", s.Name, s.Description, s.Location)
 		}
 	}
 

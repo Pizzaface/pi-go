@@ -29,6 +29,7 @@ You are a code reviewer. Analyze the code for:
 	if err != nil {
 		t.Fatal(err)
 	}
+	skill.Location = path
 
 	if skill.Name != "code-review" {
 		t.Errorf("name = %q, want %q", skill.Name, "code-review")
@@ -127,6 +128,9 @@ Deploy steps.
 	}
 	if lint.Description != "Project linter" {
 		t.Errorf("lint description = %q, want project override", lint.Description)
+	}
+	if lint.Location != filepath.Join(projectDir, "lint", "SKILL.md") {
+		t.Errorf("lint location = %q", lint.Location)
 	}
 
 	_, ok = FindSkill(skills, "deploy")

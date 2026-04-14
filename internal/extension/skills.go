@@ -18,6 +18,8 @@ type Skill struct {
 	Description string
 	// Instruction is the markdown body (the system prompt to inject).
 	Instruction string
+	// Location is the absolute path to the SKILL.md file when available.
+	Location string
 	// Tools lists tool names this skill is allowed to use (from frontmatter).
 	Tools []string
 }
@@ -90,6 +92,7 @@ func LoadSkillsWithOptions(opts LoadOptions, dirs ...string) ([]Skill, error) {
 			if err != nil {
 				return nil, fmt.Errorf("parsing %s: %w", skillFile, err)
 			}
+			skill.Location = skillFile
 			// Default name from directory if not set in frontmatter
 			if skill.Name == "" {
 				skill.Name = entry.Name()

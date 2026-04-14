@@ -29,6 +29,8 @@ func TestDiscoverResourceDirs_IncludesPackagesAndProjectOverrides(t *testing.T) 
 
 	assertContainsPath(t, dirs.ExtensionDirs, filepath.Join(home, ".pi-go", "packages", "alpha", "extensions"))
 	assertContainsPath(t, dirs.ExtensionDirs, filepath.Join(project, ".pi-go", "packages", "beta", "extensions"))
+	assertContainsPath(t, dirs.SkillDirs, filepath.Join(home, ".agents", "skills"))
+	assertContainsPath(t, dirs.SkillDirs, filepath.Join(project, ".agents", "skills"))
 	assertContainsPath(t, dirs.SkillDirs, filepath.Join(project, ".claude", "skills"))
 	assertContainsPath(t, dirs.PromptDirs, filepath.Join(project, ".pi-go", "prompts"))
 	assertContainsPath(t, dirs.ThemeDirs, filepath.Join(home, ".pi-go", "themes"))

@@ -1,11 +1,36 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
 
 // --- highlightCode ---
+
+func TestHighlightCode_CachesOutput(t *testing.T) {
+	highlightCache = map[highlightKey]string{}
+
+	code := "package main\n\nfunc main() {}\n"
+	first := highlightCode(code, "main.go")
+	if _, ok := highlightCache[highlightKey{filename: "main.go", code: code}]; !ok {
+		t.Fatalf("expected highlightCache to contain entry for repeated calls")
+	}
+	second := highlightCode(code, "main.go")
+	if first != second {
+		t.Fatalf("cached output differs from first call")
+	}
+}
+
+func TestHighlightCode_CacheBounded(t *testing.T) {
+	highlightCache = map[highlightKey]string{}
+	for i := 0; i < 400; i++ {
+		highlightCode(fmt.Sprintf("code_%d := 1\n", i), "x.go")
+	}
+	if got := len(highlightCache); got > highlightCacheCap {
+		t.Fatalf("highlightCache exceeded cap: %d entries (cap=%d)", got, highlightCacheCap)
+	}
+}
 
 func TestHighlightCode_GoFile(t *testing.T) {
 	code := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}"

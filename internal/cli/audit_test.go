@@ -110,8 +110,12 @@ func TestRunAuditStripForce(t *testing.T) {
 
 func TestDefaultSkillDirs(t *testing.T) {
 	dirs := defaultSkillDirs()
-	if len(dirs) < 3 {
-		t.Errorf("expected at least 3 dirs, got %d", len(dirs))
+	if len(dirs) < 5 {
+		t.Errorf("expected at least 5 dirs, got %d", len(dirs))
+	}
+	joined := strings.Join(dirs, "\n")
+	if !strings.Contains(joined, filepath.Join(".agents", "skills")) {
+		t.Fatalf("expected .agents skill dir in %v", dirs)
 	}
 }
 
@@ -258,14 +262,6 @@ func TestRunAuditVerboseFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error with verbose=true: %v", err)
 	}
-}
-
-// min returns the smaller of a and b (for Go < 1.21 compatibility helper).
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // -----------------------------------------------------------------------

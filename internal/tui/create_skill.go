@@ -220,7 +220,7 @@ func (m *model) handleSkillListCommand() (tea.Model, tea.Cmd) {
 	if len(m.cfg.Skills) == 0 {
 		m.chatModel.Messages = append(m.chatModel.Messages, message{
 			role:    "assistant",
-			content: "No skills loaded. Place `*.SKILL.md` files in `~/.pi-go/skills/` or `.pi-go/skills/`.",
+			content: "No skills loaded. Place `SKILL.md` skill folders in `~/.pi-go/skills/`, `~/.agents/skills/`, `.pi-go/skills/`, or `.agents/skills/`.",
 		})
 		return m, nil
 	}
@@ -257,7 +257,7 @@ func (m *model) handleSkillLoadCommand() (tea.Model, tea.Cmd) {
 	if len(m.cfg.Skills) == 0 {
 		m.chatModel.Messages = append(m.chatModel.Messages, message{
 			role:    "assistant",
-			content: "Reloaded: no skills found. Place `*.SKILL.md` files in `~/.pi-go/skills/` or `.pi-go/skills/`.",
+			content: "Reloaded: no skills found. Place `SKILL.md` skill folders in `~/.pi-go/skills/`, `~/.agents/skills/`, `.pi-go/skills/`, or `.agents/skills/`.",
 		})
 		return m, nil
 	}

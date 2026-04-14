@@ -100,7 +100,8 @@ go-pi keeps configuration discoverable and file-based.
 - project config: `.pi-go/config.json`
 - API keys: `~/.pi-go/.env`
 - shareable packages: `~/.pi-go/packages/` or `.pi-go/packages/`
-- loose resources: `extensions/`, `skills/`, `prompts/`, `themes/`, `models/`
+- loose resources: `extensions/`, `skills/`, `prompts/`, `themes/`, `models/` (skills also interoperate with
+  `.agents/skills/`)
 
 Guides:
 

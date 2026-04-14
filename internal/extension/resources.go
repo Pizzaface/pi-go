@@ -59,7 +59,11 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 		out.SkillDirs = append(out.SkillDirs,
 			packageResourceDirs(globalRoot, "skills")...,
 		)
-		out.SkillDirs = append(out.SkillDirs, filepath.Join(globalRoot, "skills"))
+		out.SkillDirs = append(out.SkillDirs,
+			filepath.Join(globalRoot, "skills"),
+			filepath.Join(home, ".agents", "skills"),
+			filepath.Join(home, ".claude", "skills"),
+		)
 
 		out.PromptDirs = append(out.PromptDirs,
 			packageResourceDirs(globalRoot, "prompts")...,
@@ -86,6 +90,7 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 		out.SkillDirs = append(out.SkillDirs, packageResourceDirs(projectRoot, "skills")...)
 		out.SkillDirs = append(out.SkillDirs,
 			filepath.Join(projectRoot, "skills"),
+			filepath.Join(resourceRoot, ".agents", "skills"),
 			filepath.Join(resourceRoot, ".claude", "skills"),
 			filepath.Join(resourceRoot, ".cursor", "skills"),
 		)
@@ -234,16 +239,12 @@ func parsePromptTemplateFile(path string) (PromptTemplate, error) {
 			case "description":
 				tpl.Description = value
 			}
-			continue
+		} else {
+			body.WriteString(line)
+			body.WriteString("\n")
 		}
-
-		body.WriteString(line)
-		body.WriteString("\n")
-	}
-	if err := scanner.Err(); err != nil {
-		return PromptTemplate{}, err
 	}
 
 	tpl.Prompt = strings.TrimSpace(body.String())
-	return tpl, nil
+	return tpl, scanner.Err()
 }

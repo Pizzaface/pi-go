@@ -84,7 +84,24 @@ type ChatModel struct {
 	// AgentLineRanges tracks rendered line ranges for Agent tool accordions.
 	// Populated by RenderMessages(), consumed by mouse click handler.
 	AgentLineRanges []agentLineRange
+	// mdCache memoizes glamour output by source text. Cleared on width change
+	// (output depends on wrap width) and on Clear(). Kept under mdCacheCap to
+	// bound memory during long streaming sessions.
+	mdCache map[string]string
+	// agentRespCache memoizes the post-markdown ANSI-patched Agent response
+	// body (indent + bg shading + padding). Same invalidation rules as mdCache.
+	agentRespCache map[agentRespKey]string
 }
+
+type agentRespKey struct {
+	content    string
+	panelWidth int
+}
+
+const (
+	mdCacheCap        = 512
+	agentRespCacheCap = 256
+)
 
 // NewChatModel creates a ChatModel with the given markdown renderer.
 func NewChatModel(renderer *glamour.TermRenderer) ChatModel {
@@ -99,6 +116,8 @@ func NewChatModel(renderer *glamour.TermRenderer) ChatModel {
 func (c *ChatModel) Clear() {
 	c.Messages = c.Messages[:0]
 	c.Scroll = 0
+	c.mdCache = nil
+	c.agentRespCache = nil
 }
 
 // AppendWarning adds a warning message styled with yellow text.
@@ -174,6 +193,8 @@ func (c *ChatModel) UpdateRenderer(width int) {
 		glamour.WithWordWrap(contentWidth),
 		glamour.WithEmoji(),
 	)
+	c.mdCache = nil
+	c.agentRespCache = nil
 	c.ToolDisplay.Width = width
 }
 
@@ -181,6 +202,9 @@ func (c *ChatModel) UpdateRenderer(width int) {
 func (c *ChatModel) RenderMarkdown(text string) string {
 	if text == "" {
 		return ""
+	}
+	if cached, ok := c.mdCache[text]; ok {
+		return cached
 	}
 	if c.Renderer == nil {
 		return text
@@ -190,7 +214,12 @@ func (c *ChatModel) RenderMarkdown(text string) string {
 		return text
 	}
 	rendered = strings.Trim(rendered, "\n")
-	return trimRenderedMarkdownIndent(rendered)
+	rendered = trimRenderedMarkdownIndent(rendered)
+	if c.mdCache == nil || len(c.mdCache) >= mdCacheCap {
+		c.mdCache = make(map[string]string, mdCacheCap)
+	}
+	c.mdCache[text] = rendered
+	return rendered
 }
 
 func trimRenderedMarkdownIndent(rendered string) string {
@@ -287,17 +316,24 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		if content == "" {
 			return
 		}
-		// Extract text from content-part wrappers (JSON or Go %v format).
-		if extracted := extractContentPartsText(content); extracted != "" {
-			content = extracted
-		}
-		rendered := c.RenderMarkdown(content)
-		if rendered == "" {
-			rendered = content
-		}
 		panelWidth := c.ToolDisplay.Width
 		if panelWidth < 24 {
 			panelWidth = 24
+		}
+		key := agentRespKey{content: content, panelWidth: panelWidth}
+		if cached, ok := c.agentRespCache[key]; ok {
+			write(cached)
+			write("\n")
+			return
+		}
+		// Extract text from content-part wrappers (JSON or Go %v format).
+		raw := content
+		if extracted := extractContentPartsText(raw); extracted != "" {
+			raw = extracted
+		}
+		rendered := c.RenderMarkdown(raw)
+		if rendered == "" {
+			rendered = raw
 		}
 		// Apply bg per-line, re-applying after ANSI resets from markdown
 		// rendering so the background stretches to the full panel width.
@@ -313,7 +349,12 @@ func (c *ChatModel) RenderMessages(running bool) string {
 			}
 			lines[i] = bgOn + patched + reset
 		}
-		write(strings.Join(lines, "\n"))
+		out := strings.Join(lines, "\n")
+		if c.agentRespCache == nil || len(c.agentRespCache) >= agentRespCacheCap {
+			c.agentRespCache = make(map[agentRespKey]string, agentRespCacheCap)
+		}
+		c.agentRespCache[key] = out
+		write(out)
 		write("\n")
 	}
 
