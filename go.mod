@@ -108,3 +108,7 @@ require (
 require github.com/dimetron/pi-go/pkg/piapi v0.0.0
 
 replace github.com/dimetron/pi-go/pkg/piapi => ./pkg/piapi
+
+require github.com/dimetron/pi-go/pkg/piext v0.0.0
+
+replace github.com/dimetron/pi-go/pkg/piext => ./pkg/piext
