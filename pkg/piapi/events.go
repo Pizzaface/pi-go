@@ -56,12 +56,12 @@ func (SessionStartEvent) EventName() string { return EventSessionStart }
 // Spec #1 only emits session_start which ignores all control fields;
 // the struct is defined now so the wire format is locked.
 type EventControl struct {
-	Cancel bool   `json:"cancel,omitempty"`
-	Block  bool   `json:"block,omitempty"`
-	Reason string `json:"reason,omitempty"`
-	// TODO(task-5): add Transform *ToolResult when ToolResult is defined
-	Action string         `json:"action,omitempty"`
-	Extras map[string]any `json:"-"`
+	Cancel    bool        `json:"cancel,omitempty"`
+	Block     bool        `json:"block,omitempty"`
+	Reason    string      `json:"reason,omitempty"`
+	Transform *ToolResult `json:"transform,omitempty"`
+	Action    string      `json:"action,omitempty"`
+	Extras    map[string]any `json:"-"`
 }
 
 // EventResult is the return value of an event handler. Nil Control means
@@ -71,5 +71,4 @@ type EventResult struct {
 }
 
 // EventHandler is the signature every event subscriber implements.
-// TODO(task-6): replace any with Context when Context is defined
-type EventHandler func(evt Event, ctx any) (EventResult, error)
+type EventHandler func(evt Event, ctx Context) (EventResult, error)
