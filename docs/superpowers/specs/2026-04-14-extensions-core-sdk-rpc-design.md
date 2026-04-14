@@ -3,7 +3,7 @@ name: extensions-core-sdk-rpc
 description: Core SDK + RPC schema that brings pi-mono's ExtensionAPI shape to pi-go
 status: draft
 created: 2026-04-14T18:40:03Z
-updated: 2026-04-14T18:40:03Z
+updated: 2026-04-14T18:59:22Z
 ---
 
 # Extensions: Core SDK + RPC Schema (Spec #1)
@@ -13,11 +13,11 @@ Foundation spec for reshaping pi-go's extension system around the pi-mono `Exten
 ## Sub-project Roadmap
 
 1. **Core SDK + RPC schema** — this spec.
-2. `registerCommand` + command events + argument completions.
+2. `registerCommand` + command events + argument completions + `pi -e <path>` ad-hoc CLI flag for quick-testing a single extension file.
 3. Agent-loop & lifecycle events (~15 semantic events with cancel/transform/block return values).
-4. Interactive UI surface (`ctx.ui.confirm/select/input/editor/notify/setStatus/setWidget/setTitle`).
-5. State, messaging, session navigation (`sendMessage`, `appendEntry`, fork/navigateTree/switchSession).
-6. Extended registrations (`registerShortcut/Flag/Provider/MessageRenderer`, custom editor components, `unregisterProvider`).
+4. Interactive UI surface: `ctx.ui.confirm`, `select`, `input`, `editor`, `notify`, `setStatus`, `setWorkingMessage`, `setWidget`, `setTitle`, `setEditorText`, `pasteToEditor`, `setEditorComponent`, `setFooter`, `getAllThemes`/`getTheme`/`setTheme`, and `ctx.ui.custom<T>()` overlay components.
+5. State, messaging, session navigation (`sendMessage`, `appendEntry`, `setLabel`, `waitForIdle`, `newSession`, `fork`, `navigateTree`, `switchSession`, user-facing `/reload`).
+6. Extended registrations (`registerShortcut`/`Flag`/`MessageRenderer`, custom editor components, `registerProvider` including OAuth login flows and `streamSimple` custom streaming, `unregisterProvider`).
 
 ## 1. Scope & Non-Goals
 
@@ -354,6 +354,8 @@ type Metadata struct {
 }
 ```
 
+**System prompt injection timing.** `Metadata.Prompt` is appended to the system prompt under a `# Extension: <name>` heading, matching the current pi-go runtime behavior. Injection is **per-active-extension, per-turn**: the `context` event (spec #3) assembles the system prompt at the start of every LLM turn, re-reading each registered extension's current `Metadata.Prompt`. Extensions can mutate their prompt at runtime by returning a modified `Metadata` from a future `updateMetadata` RPC (not in spec #1); spec #1 treats `Prompt` as static after `Register()` returns.
+
 ### Discovery → registration flow
 
 1. `loader.Discover(cwd)` walks the four paths + `settings.json` packages and returns a slice of `loader.Candidate{Mode, Dir, Metadata}`.
@@ -537,6 +539,10 @@ Compiled-in names are reserved — a disk candidate with the same name is reject
 ```
 
 Spec #1 implements `file:` packages and absolute `extensions` paths. `npm:` / `git:` schemes are declared and return `ErrNotImplemented` at install time.
+
+### Ad-hoc CLI flag
+
+Spec #2 adds `pi-go -e <path>` (or `--extension`) to register a single extension file for the duration of one invocation — equivalent to adding it to `settings.json.extensions` for that process only. Useful for quick-testing an in-development extension without copying files into discovery roots. Not implemented in spec #1; called out here so the loader interface accommodates it without refactor.
 
 ### Node host & TS loading
 
