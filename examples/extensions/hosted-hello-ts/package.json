@@ -1,0 +1,25 @@
+{
+  "name": "hosted-hello-ts",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Canonical hosted-ts extension fixture; registers greet tool.",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@pi-go/extension-sdk": "file:../../../packages/extension-sdk"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "pi": {
+    "entry": "src/index.ts",
+    "description": "Canonical hosted-ts extension fixture; registers greet tool.",
+    "requested_capabilities": [
+      "tools.register",
+      "events.session_start",
+      "events.tool_execute"
+    ]
+  }
+}
