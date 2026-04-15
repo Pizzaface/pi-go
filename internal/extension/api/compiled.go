@@ -34,6 +34,16 @@ func NewCompiled(reg *host.Registration, manager *host.Manager) piapi.API {
 	}
 }
 
+// CompiledTools reads the registered tools from a compiled-in extension's
+// API returned by NewCompiled. Returns nil if the supplied api did not
+// originate from NewCompiled.
+func CompiledTools(api piapi.API) map[string]piapi.ToolDescriptor {
+	if c, ok := api.(*compiledAPI); ok {
+		return c.Tools()
+	}
+	return nil
+}
+
 // Tools returns the map of tool descriptors registered on this API. The
 // runtime assembler reads this after Register returns.
 func (c *compiledAPI) Tools() map[string]piapi.ToolDescriptor {

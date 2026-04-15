@@ -2,50 +2,67 @@ package extension
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"time"
 
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 
 	"github.com/dimetron/pi-go/internal/config"
+	extapi "github.com/dimetron/pi-go/internal/extension/api"
+	"github.com/dimetron/pi-go/internal/extension/compiled"
+	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/dimetron/pi-go/internal/extension/loader"
 	"github.com/dimetron/pi-go/internal/provider"
 	"github.com/dimetron/pi-go/internal/tools"
+	"github.com/dimetron/pi-go/pkg/piapi"
 )
 
 // RuntimeConfig controls extension runtime bootstrap.
 type RuntimeConfig struct {
-	Config           config.Config
-	WorkDir          string
-	Sandbox          *tools.Sandbox
-	BaseInstruction  string
-	CompiledRegistry *Registry
-	ScreenProvider   tools.ScreenProvider
-	RestartFunc      tools.RestartFunc
+	Config          config.Config
+	WorkDir         string
+	Sandbox         *tools.Sandbox
+	BaseInstruction string
+	ScreenProvider  tools.ScreenProvider
+	RestartFunc     tools.RestartFunc
 }
 
 // Runtime is the assembled extension runtime output consumed by CLI/TUI startup.
 type Runtime struct {
-	Extensions          []Manifest
-	Tools               []tool.Tool
-	Toolsets            []tool.Toolset
-	Skills              []Skill
-	SkillDirs           []string
-	PromptTemplates     []PromptTemplate
-	ThemeDirs           []string
-	ProviderRegistry    *provider.Registry
-	Manager             *Manager
-	SlashCommands       []SlashCommand
+	Extensions       []*host.Registration
+	Tools            []tool.Tool
+	Toolsets         []tool.Toolset
+	Skills           []Skill
+	SkillDirs        []string
+	PromptTemplates  []loader.PromptTemplate
+	ThemeDirs        []string
+	ProviderRegistry *provider.Registry
+	Manager          *host.Manager
+	SlashCommands    []loader.SlashCommand
+	// Legacy caller-facing fields kept as empty slices so existing callers
+	// continue to compile. Behavior lands in spec #2/#3/#5.
 	BeforeToolCallbacks []llmagent.BeforeToolCallback
 	AfterToolCallbacks  []llmagent.AfterToolCallback
 	LifecycleHooks      []HookConfig
 	Instruction         string
 }
+
+// HookConfig is a spec #5 stub retained to keep CLI callers compiling.
+type HookConfig struct {
+	Event   string
+	Command string
+	Tools   []string
+	Timeout int
+}
+
+// Lifecycle event name stubs — spec #5 will wire these. Retained so CLI
+// code continues to compile without conditional import.
+const (
+	LifecycleEventStartup      = "startup"
+	LifecycleEventSessionStart = "session_start"
+)
 
 // BuildRuntime assembles core tools and extension contributions behind one startup boundary.
 func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
@@ -53,7 +70,6 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating core tools: %w", err)
 	}
-
 	if cfg.ScreenProvider != nil {
 		screenTool, err := tools.NewScreenTool(cfg.ScreenProvider)
 		if err != nil {
@@ -69,12 +85,8 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		coreTools = append(coreTools, restartTool)
 	}
 
-	resources := DiscoverResourceDirs(cfg.WorkDir)
-	manifests, err := LoadManifests(resources.ExtensionDirs...)
-	if err != nil {
-		return nil, fmt.Errorf("loading extension manifests: %w", err)
-	}
-	promptTemplates, err := LoadPromptTemplates(resources.PromptDirs...)
+	resources := loader.DiscoverResourceDirs(cfg.WorkDir)
+	promptTemplates, err := loader.LoadPromptTemplates(resources.PromptDirs...)
 	if err != nil {
 		return nil, fmt.Errorf("loading prompt templates: %w", err)
 	}
@@ -82,59 +94,69 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building provider registry: %w", err)
 	}
+
 	approvalsPath := DefaultApprovalsPath()
-	permissions, err := LoadPermissions(approvalsPath)
+	gate, err := host.NewGate(approvalsPath)
 	if err != nil {
-		return nil, fmt.Errorf("loading extension approvals: %w", err)
+		return nil, fmt.Errorf("loading approvals: %w", err)
 	}
-	manager := NewManager(ManagerOptions{
-		Permissions:   permissions,
-		Registry:      cfg.CompiledRegistry,
-		ApprovalsPath: approvalsPath,
-	})
-	if err := manager.RegisterManifests(manifests); err != nil {
-		return nil, fmt.Errorf("registering extension manifests: %w", err)
-	}
-	if err := manager.RegisterCompiledExtensions(); err != nil {
-		return nil, fmt.Errorf("registering compiled extensions: %w", err)
-	}
-	if err := manager.StartHostedExtensions(ctx, "startup"); err != nil {
-		return nil, fmt.Errorf("starting hosted extensions: %w", err)
-	}
+	manager := host.NewManager(gate)
 
-	before := BuildBeforeToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
-	after := BuildAfterToolCallbacks(convertConfigHooks(cfg.Config.Hooks))
-	skillDirs := append([]string{}, resources.SkillDirs...)
 	instruction := strings.TrimSpace(cfg.BaseInstruction)
+	var registrations []*host.Registration
 
-	var lifecycle []HookConfig
-	var toolsets []tool.Toolset
-
-	for _, manifest := range manifests {
-		prompt, err := manifest.resolvePrompt()
-		if err != nil {
-			return nil, err
+	// Compiled-in extensions.
+	for _, entry := range compiled.Compiled() {
+		reg := &host.Registration{
+			ID:       entry.Name,
+			Mode:     "compiled-in",
+			Trust:    host.TrustCompiledIn,
+			Metadata: entry.Metadata,
 		}
-		if prompt != "" {
-			instruction += "\n\n# Extension: " + manifest.Name + "\n\n" + prompt
+		if err := manager.Register(reg); err != nil {
+			return nil, fmt.Errorf("register compiled-in %q: %w", entry.Name, err)
 		}
-		if dir := manifest.resolveSkillsDir(); dir != "" {
-			skillDirs = append(skillDirs, dir)
+		api := extapi.NewCompiled(reg, manager)
+		reg.API = api
+		if err := entry.Register(api); err != nil {
+			return nil, fmt.Errorf("compiled-in %q Register: %w", entry.Name, err)
 		}
-		before = append(before, BuildBeforeToolCallbacks(manifest.Hooks)...)
-		after = append(after, BuildAfterToolCallbacks(manifest.Hooks)...)
-		lifecycle = append(lifecycle, manifest.Lifecycle...)
-
-		if len(manifest.MCPServers) > 0 {
-			ts, err := BuildMCPToolsets(manifest.MCPServers)
+		// Pull registered tools + prompt into runtime.
+		for _, t := range extapi.CompiledTools(api) {
+			adapter, err := extapi.NewPiapiToolAdapter(t)
 			if err != nil {
-				return nil, fmt.Errorf("building MCP toolsets for extension %q: %w", manifest.Name, err)
+				return nil, fmt.Errorf("compiled-in %q tool %q: %w", entry.Name, t.Name, err)
 			}
-			toolsets = append(toolsets, ts...)
+			coreTools = append(coreTools, adapter)
 		}
+		if entry.Metadata.Prompt != "" {
+			instruction += "\n\n# Extension: " + entry.Name + "\n\n" + entry.Metadata.Prompt
+		}
+		registrations = append(registrations, reg)
 	}
 
-	skillDirs = dedupeStrings(skillDirs)
+	// Hosted candidates. Discovery records them; launching is the caller's
+	// responsibility via host.LaunchHosted (Task 39).
+	candidates, err := loader.Discover(cfg.WorkDir)
+	if err != nil {
+		return nil, fmt.Errorf("discover hosted candidates: %w", err)
+	}
+	for _, c := range candidates {
+		trust := host.TrustThirdParty
+		reg := &host.Registration{
+			ID:       c.Metadata.Name,
+			Mode:     c.Mode.String(),
+			Trust:    trust,
+			Metadata: c.Metadata,
+		}
+		if err := manager.Register(reg); err != nil {
+			// Duplicate with a compiled-in? Skip.
+			continue
+		}
+		registrations = append(registrations, reg)
+	}
+
+	skillDirs := append([]string{}, resources.SkillDirs...)
 	skills, err := LoadSkills(skillDirs...)
 	if err != nil {
 		return nil, fmt.Errorf("loading skills: %w", err)
@@ -151,125 +173,44 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		}
 	}
 
+	var slashCommands []loader.SlashCommand
 	for _, tpl := range promptTemplates {
-		if err := manager.RegisterBootstrapCommand("prompt_template:"+tpl.Name, tpl.SlashCommand()); err != nil {
-			return nil, fmt.Errorf("registering prompt template slash command %q: %w", tpl.Name, err)
-		}
+		slashCommands = append(slashCommands, tpl.SlashCommand())
 	}
-	coreTools = append(coreTools, manager.RuntimeTools()...)
 
 	rt := &Runtime{
-		Extensions:          manifests,
-		Tools:               coreTools,
-		Toolsets:            toolsets,
-		Skills:              skills,
-		SkillDirs:           skillDirs,
-		PromptTemplates:     promptTemplates,
-		ThemeDirs:           resources.ThemeDirs,
-		ProviderRegistry:    providerRegistry,
-		Manager:             manager,
-		SlashCommands:       manager.SlashCommands(),
-		BeforeToolCallbacks: before,
-		AfterToolCallbacks:  after,
-		LifecycleHooks:      lifecycle,
-		Instruction:         instruction,
+		Extensions:       registrations,
+		Tools:            coreTools,
+		Skills:           skills,
+		SkillDirs:        skillDirs,
+		PromptTemplates:  promptTemplates,
+		ThemeDirs:        resources.ThemeDirs,
+		ProviderRegistry: providerRegistry,
+		Manager:          manager,
+		SlashCommands:    slashCommands,
+		Instruction:      instruction,
 	}
-	manager.EmitEvent(Event{
-		Type:      EventStartup,
-		Timestamp: time.Now(),
-		Data:      map[string]any{"workdir": cfg.WorkDir},
-	})
-
-	if err := rt.RunLifecycleHooks(ctx, LifecycleEventStartup, map[string]any{"workdir": cfg.WorkDir}); err != nil {
-		return nil, err
-	}
+	_ = ctx
 	return rt, nil
 }
 
-// RunLifecycleHooks executes lifecycle hook commands for the given event.
+// RunLifecycleHooks is a spec #5 stub — no hooks are defined in spec #1.
 func (r *Runtime) RunLifecycleHooks(ctx context.Context, event string, data map[string]any) error {
-	for _, hook := range r.LifecycleHooks {
-		if hook.Event != event {
-			continue
-		}
-		if err := runHookCommand(ctx, hook, event, data); err != nil {
-			return fmt.Errorf("lifecycle hook %q: %w", hook.Command, err)
-		}
-	}
+	_ = ctx
+	_ = event
+	_ = data
 	return nil
 }
 
-// LoadManifests discovers extension manifests from extension root directories.
-// Later directories override earlier ones by extension name.
-func LoadManifests(dirs ...string) ([]Manifest, error) {
-	seen := map[string]int{}
-	var manifests []Manifest
-	for _, root := range dirs {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("reading extension dir %s: %w", root, err)
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			manifestPath := filepath.Join(root, entry.Name(), "extension.json")
-			data, err := os.ReadFile(manifestPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return nil, fmt.Errorf("reading manifest %s: %w", manifestPath, err)
-			}
-			var manifest Manifest
-			if err := json.Unmarshal(data, &manifest); err != nil {
-				return nil, fmt.Errorf("parsing manifest %s: %w", manifestPath, err)
-			}
-			if manifest.Name == "" {
-				manifest.Name = entry.Name()
-			}
-			manifest.Dir = filepath.Join(root, entry.Name())
-			if !manifest.enabled() {
-				continue
-			}
-			if idx, ok := seen[manifest.Name]; ok {
-				manifests[idx] = manifest
-			} else {
-				seen[manifest.Name] = len(manifests)
-				manifests = append(manifests, manifest)
-			}
-		}
+// DefaultApprovalsPath returns the path to the approvals.json file that
+// gates hosted extensions. Defaults to <userHome>/.pi-go/extensions/approvals.json.
+func DefaultApprovalsPath() string {
+	home, err := loader.UserHome()
+	if err != nil {
+		return ""
 	}
-	sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
-	return manifests, nil
+	return filepath.Join(home, ".pi-go", "extensions", "approvals.json")
 }
 
-func convertConfigHooks(cfgHooks []config.HookConfig) []HookConfig {
-	hooks := make([]HookConfig, len(cfgHooks))
-	for i, h := range cfgHooks {
-		hooks[i] = HookConfig{
-			Event:   h.Event,
-			Command: h.Command,
-			Tools:   h.Tools,
-			Timeout: h.Timeout,
-		}
-	}
-	return hooks
-}
-
-func dedupeStrings(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
-}
+// ensure the piapi import stays live even when no local code path references it.
+var _ = piapi.EventSessionStart
