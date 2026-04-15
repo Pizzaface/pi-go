@@ -1,243 +1,248 @@
 # Extensions
 
-Extensions are the runtime customization surface for go-pi.
+Extensions customize pi-go at runtime. An extension is a Go package (or
+TypeScript module, or a separately-compiled Go binary) that registers
+tools, subscribes to lifecycle events, and interacts with the running
+session through a stable API.
 
-The runtime keeps `internal/extension.BuildRuntime()` as the assembly boundary and supports three extension runtime
-classes:
+pi-go supports three execution modes, each with a different trust tier.
 
-- Declarative manifests (default)
-- Compiled-in extensions (`runtime.type = "compiled_in"`)
-- Hosted extensions over stdio JSON-RPC (`runtime.type = "hosted_stdio_jsonrpc"`)
+| Mode | Tier | How it runs | How it's trusted |
+| --- | --- | --- | --- |
+| **Compiled-in** | `compiled-in` | Linked into the `pi` binary at build time | Implicit — never prompts |
+| **Hosted Go** | `third-party` (default) | Launched as a subprocess; speaks JSON-RPC 2.0 over stdio | Requires entry in `approvals.json` |
+| **Hosted TS** | `third-party` (default) | Launched as `node <embedded-host> --entry <file>`; same wire protocol | Requires entry in `approvals.json` |
 
-## Resource discovery
+First-party packages (those signed by the pi-go project and shipped
+alongside the binary) may be tagged with `trust_class: "first-party"`
+in `approvals.json` to skip per-capability prompts — they still require
+an approvals entry. The full reference lives in
+[the design spec](superpowers/specs/2026-04-14-extensions-core-sdk-rpc-design.md).
 
-Resource loading is layered and last-write-wins by name:
+## Quick Start — Hosted TypeScript
 
-1. `~/.pi-go/packages/*/<resource>/`
-2. `~/.pi-go/<resource>/`
-3. `.pi-go/packages/*/<resource>/`
-4. `.pi-go/<resource>/`
+1. Scaffold your extension directory:
 
-Resource types:
+   ```
+   my-ext/
+     package.json
+     tsconfig.json
+     src/index.ts
+   ```
 
-- `extensions/`
-- `skills/`
-- `prompts/`
-- `themes/`
-- `models/`
+2. Install the SDK:
 
-Project compatibility skills are also loaded from:
+   ```bash
+   npm install @pi-go/extension-sdk
+   ```
 
-- `~/.agents/skills/`
-- `.agents/skills/`
-- `~/.claude/skills/`
-- `.claude/skills/`
-- `.cursor/skills/`
+3. `package.json` declares the extension metadata in a top-level `pi` block:
 
-## Manifest basics
+   ```json
+   {
+     "name": "my-ext",
+     "version": "0.1.0",
+     "type": "module",
+     "dependencies": { "@pi-go/extension-sdk": "^0.1.0" },
+     "pi": {
+       "entry": "src/index.ts",
+       "description": "A friendly extension.",
+       "requested_capabilities": [
+         "tools.register",
+         "events.session_start"
+       ]
+     }
+   }
+   ```
 
-Minimal declarative extension:
+4. `src/index.ts` exports a default `register(pi)` function:
+
+   ```ts
+   import type { ExtensionAPI } from "@pi-go/extension-sdk";
+   import { EventNames, Type } from "@pi-go/extension-sdk";
+
+   export default async function register(pi: ExtensionAPI): Promise<void> {
+     pi.on(EventNames.SessionStart, () => ({ control: null }));
+     pi.registerTool({
+       name: "greet",
+       label: "Greet",
+       description: "Returns a friendly greeting.",
+       parameters: Type.Object({
+         name: Type.String({ description: "Name to greet" }),
+       }),
+       execute: async (_id, { name }) => ({
+         content: [{ type: "text", text: `Hello, ${name ?? "world"}!` }],
+       }),
+     });
+   }
+   ```
+
+5. Symlink (or copy) the directory into a discovery path and approve it
+   (see **Discovery paths** and **Trust & Approvals** below). pi-go
+   launches the extension via an embedded `pi-go-extension-host` bundle
+   running on Node.
+
+The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
+
+## Quick Start — Hosted Go
+
+1. Scaffold the extension module:
+
+   ```
+   my-ext/
+     go.mod
+     main.go
+     pi.toml
+   ```
+
+2. `go.mod` (adjust module path and replace directives to point at your
+   local `pi-go` checkout, or rely on published `pkg/piapi` + `pkg/piext`
+   once released):
+
+   ```
+   module example.com/my-ext
+
+   go 1.22
+
+   require (
+       github.com/dimetron/pi-go/pkg/piapi v0.0.0
+       github.com/dimetron/pi-go/pkg/piext v0.0.0
+   )
+   ```
+
+3. `pi.toml` declares metadata and the launch command:
+
+   ```toml
+   name = "my-ext"
+   version = "0.1.0"
+   runtime = "hosted"
+   command = ["go", "run", "."]
+   requested_capabilities = [
+       "tools.register",
+       "events.session_start",
+   ]
+   ```
+
+4. `main.go` calls `piext.Run`:
+
+   ```go
+   package main
+
+   import (
+       "context"
+
+       "github.com/dimetron/pi-go/pkg/piapi"
+       "github.com/dimetron/pi-go/pkg/piext"
+   )
+
+   var Metadata = piapi.Metadata{
+       Name:                  "my-ext",
+       Version:               "0.1.0",
+       RequestedCapabilities: []string{"tools.register", "events.session_start"},
+   }
+
+   func register(pi piapi.API) error {
+       return pi.RegisterTool(piapi.ToolDescriptor{
+           Name:        "greet",
+           Description: "Returns a friendly greeting.",
+           Execute: func(context.Context, piapi.ToolCall, piapi.UpdateFunc) (piapi.ToolResult, error) {
+               return piapi.ToolResult{
+                   Content: []piapi.ContentPart{{Type: "text", Text: "hi"}},
+               }, nil
+           },
+       })
+   }
+
+   func main() { _ = piext.Run(Metadata, register) }
+   ```
+
+5. Symlink (or copy) the directory into a discovery path and approve it.
+   pi-go invokes your `command` from `pi.toml` as the subprocess.
+
+The canonical fixture lives at `examples/extensions/hosted-hello-go/`.
+
+## Discovery paths
+
+Four directories are walked in order; later layers win on name collision:
+
+1. `~/.pi-go/packages/<name>/`
+2. `~/.pi-go/extensions/<name>/`
+3. `<cwd>/.pi-go/packages/<name>/`
+4. `<cwd>/.pi-go/extensions/<name>/`
+
+Each layer may contain:
+
+- A directory with `package.json` (TypeScript, `pi.entry` required) — mode `hosted-ts`.
+- A directory with `pi.toml` (or `pi.json`) — mode `hosted-go`.
+- A single `*.ts` file — mode `hosted-ts` with a derived metadata name.
+
+Compiled-in extensions are not discovered at runtime; they register
+themselves from `init()` at program startup by calling
+`compiled.Append`.
+
+## settings.json additions
+
+pi-go reads `~/.pi-go/settings.json` (optional) to tune extension behavior:
 
 ```json
 {
-  "name": "demo",
-  "description": "Demo extension",
-  "prompt": "Use this extension when requested.",
-  "skills_dir": "skills",
-  "tui": {
-    "commands": [
-      {
-        "name": "demo",
-        "description": "Run demo flow",
-        "prompt": "demo {{args}}"
-      }
-    ]
+  "extensions": {
+    "disabled": ["some-ext"],
+    "node_path": "/usr/local/bin/node",
+    "host_timeout_ms": 5000
   }
 }
 ```
 
-Backward compatibility: if `runtime` is omitted, the extension remains declarative and all existing fields (`prompt`,
-`hooks`, `lifecycle`, `mcp_servers`, `skills_dir`, `tui.commands`) keep working.
+All fields are optional. Unknown fields are preserved across writes for
+forward compatibility.
 
-## Runtime block
+## Trust & Approvals
 
-`runtime` is optional:
+Non-compiled-in extensions require an entry in
+`~/.pi-go/extensions/approvals.json` (or the project-local equivalent at
+`<cwd>/.pi-go/extensions/approvals.json`). Format:
 
 ```json
 {
-  "runtime": {
-    "type": "hosted_stdio_jsonrpc",
-    "command": "go",
-    "args": ["run", "."],
-    "env": {
-      "LOG_LEVEL": "debug"
+  "version": 2,
+  "extensions": {
+    "my-ext": {
+      "trust_class": "third-party",
+      "first_party": false,
+      "approved": true,
+      "approved_at": "2026-04-15T12:00:00Z",
+      "granted_capabilities": [
+        "tools.register",
+        "events.session_start"
+      ],
+      "denied_capabilities": []
     }
   }
 }
 ```
 
-Runtime rules:
+Semantics:
 
-- Omitted `runtime` means declarative extension.
-- `compiled_in` is resolved from the compiled registry (not executable paths).
-- `hosted_stdio_jsonrpc` requires `runtime.command`.
+- `approved: false` or a missing entry → the extension lands in
+  `StatePending` and cannot start.
+- `granted_capabilities` lists the `service.method` pairs the extension
+  may call. During the handshake, the host returns these (and only these)
+  as `granted_services`.
+- `denied_capabilities` takes precedence over `granted_capabilities`.
+- `trust_class: "compiled-in"` is never written here — compiled-in
+  extensions bypass the gate entirely.
+- `trust_class: "first-party"` exists as a tier distinction for future
+  UX (batch approval, reduced prompting); spec #1 treats it identically
+  to `third-party`.
 
-## Trust and approvals
+Changes to `approvals.json` are picked up on the next pi-go start or on
+an explicit extension-reload.
 
-Approvals are app-owned and loaded from:
+## Related
 
-- `~/.pi-go/extensions/approvals.json`
-
-Trust classes:
-
-- `declarative`
-- `compiled_in`
-- `hosted_first_party`
-- `hosted_third_party`
-
-Hosted extensions require explicit approval (`hosted_required: true`) and explicit capability grants. An unapproved
-hosted
-extension enters `pending_approval` state at startup and never blocks the TUI. The user approves, denies, or manages
-extensions interactively via `/extensions`.
-
-Example approval entry:
-
-```json
-{
-  "extension_id": "hosted-hello",
-  "trust_class": "hosted_third_party",
-  "hosted_required": true,
-  "granted_capabilities": [
-    "commands.register",
-    "ui.status",
-    "render.text"
-  ]
-}
-```
-
-### Extension states
-
-| State              | Meaning                                         |
-|--------------------|-------------------------------------------------|
-| `pending_approval` | Manifest known, no approval in `approvals.json` |
-| `ready`            | Approved, not yet launched                      |
-| `running`          | Hosted process alive + handshake OK             |
-| `stopped`          | Stopped by user                                 |
-| `errored`          | Launch, handshake, or runtime failure           |
-| `denied`           | User explicitly denied this session (in-memory) |
-
-Declarative and compiled-in extensions go straight to `ready`. Hosted extensions start at `pending_approval` or `ready`
-depending on whether an approval record exists.
-
-### In-TUI lifecycle management
-
-`/extensions` opens a panel showing all extensions grouped by state. From the panel:
-
-| Key | Action                                      |
-|-----|---------------------------------------------|
-| `a` | Approve (pending only) — opens confirmation |
-| `d` | Deny (pending only)                         |
-| `r` | Restart (running/stopped/errored)           |
-| `s` | Stop (running)                              |
-| `x` | Revoke approval (running/stopped)           |
-| `R` | Reload manifests from disk                  |
-
-Scriptable forms: `/extensions approve <id>`, `/extensions deny <id>`, `/extensions stop <id>`,
-`/extensions restart <id>`, `/extensions revoke <id>`, `/extensions reload`.
-
-The status bar shows a compact extension summary (`ext: 1! 2✓ 1✗`) when any pending, running, or errored extensions
-exist.
-
-## Capabilities
-
-Current capability keys:
-
-- `commands.register`
-- `tools.register`
-- `tools.intercept`
-- `ui.status`
-- `ui.widget`
-- `ui.dialog`
-- `render.text`
-- `render.markdown`
-
-Policy notes:
-
-- `tools.intercept` is denied for hosted third-party by default unless explicitly approved.
-- Hosted capabilities are checked during registration/assembly, not deferred to TUI time.
-
-## Hosted protocol (stdio JSON-RPC v2)
-
-Protocol package: `internal/extension/hostproto`.
-
-The v2 protocol replaces the v1 per-capability method set with two generic RPC envelopes:
-
-- `pi.extension/handshake` — capability negotiation
-- `pi.extension/host_call` — extension → host service calls
-- `pi.extension/shutdown` — graceful teardown
-
-All other operations (command registration, UI updates, tool registration, etc.) are dispatched through `host_call` to
-a namespaced service registry. See the v2 design spec for the full service catalog.
-
-### Handshake flow
-
-The v2 handshake is **extension-initiated**: the extension sends a `HandshakeRequest` with its `requested_services`,
-and the host responds with a `HandshakeResponse` containing grants and host service availability. The host also sends
-its own handshake request first (which well-behaved SDKs ignore), allowing future host-initiated patterns.
-
-The host detects which flow is in use by probing the first message from the extension: if it contains a `method` field,
-it is an extension-initiated request and the host responds; if it contains a `result` field, it is a response to the
-host's own request (legacy/in-process fakes).
-
-```
-1. Host sends HandshakeRequest (extension ignores or responds)
-2. Extension sends HandshakeRequest with requested_services
-3. Host validates protocol version, grants services, sends HandshakeResponse
-4. Extension begins sending host_call requests
-5. Host runs ServeInbound loop dispatching to the service registry
-```
-
-### Shutdown
-
-`Process.Shutdown` closes stdin first (cross-platform EOF signal), sends `os.Interrupt` on Unix (skipped on Windows),
-then waits with a bounded context. If the process does not exit within the timeout, it is killed via
-`cmd.Process.Kill()`. All call sites use `HostedShutdownTimeout` (3s).
-
-## Async TUI intents
-
-Extensions can emit UI intents through the manager; TUI consumes them asynchronously via Bubble Tea messages.
-
-Supported UI intents:
-
-- Status line update
-- Widget above editor
-- Widget below editor
-- Non-blocking notification
-- Dialog modal
-
-TUI applies these through app-owned rendering and ignores them when extension UI is disabled.
-
-## Renderer constraints
-
-Custom renderers are constrained:
-
-- Payload kinds: `text`, `markdown` only
-- Ownership: one extension per surface (conflicts are rejected)
-- Timeout/error behavior: fallback to built-in rendering
-- Cleanup: renderer ownership is removed on extension unload
-
-Built-in layout ownership stays in the app; extensions provide content only.
-
-## Example
-
-Hosted example extension:
-
-- `examples/extensions/hosted-hello/`
-
-See its `README.md` for setup.
-
-## Related docs
-
-- [customization](customization.md)
-- [packages](packages.md)
-- [providers](providers.md)
+- [Full design reference](superpowers/specs/2026-04-14-extensions-core-sdk-rpc-design.md)
+- [`pkg/piapi`](../pkg/piapi) — Go-language API surface shared by compiled-in and hosted-go extensions.
+- [`pkg/piext`](../pkg/piext) — Go-language RPC runtime used by hosted-go extensions.
+- [`packages/extension-sdk`](../packages/extension-sdk) — TypeScript API surface.
+- [`packages/extension-host`](../packages/extension-host) — Node host for TypeScript extensions (embedded into `pi`).
