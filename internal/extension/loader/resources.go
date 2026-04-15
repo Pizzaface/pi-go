@@ -1,4 +1,4 @@
-package extension
+package loader
 
 import (
 	"bufio"

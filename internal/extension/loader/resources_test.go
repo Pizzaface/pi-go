@@ -1,9 +1,8 @@
-package extension
+package loader
 
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -119,97 +118,13 @@ func TestLoadPromptTemplates_AllowsHorizontalRuleWithoutFrontmatter(t *testing.T
 	}
 }
 
-func TestPackageLifecycle_LocalInstallUpdateListRemove(t *testing.T) {
-	home := t.TempDir()
-	project := t.TempDir()
-	setTestHome(t, home)
-
-	source := t.TempDir()
-	mustWriteFile(t, filepath.Join(source, "prompts", "triage.md"), "First version")
-	mustWriteFile(t, filepath.Join(source, "themes", "custom.json"), `{"name":"custom","displayName":"Custom","themeType":"dark","colors":{"text":"#fff","base":"#000","primary":"#111","tool":"#222","success":"#333","error":"#444","secondary":"#555","info":"#666","warning":"#777","diffAdded":"#888","diffRemoved":"#999","diffAddedText":"#aaa","diffRemovedText":"#bbb"}}`)
-
-	installed, err := InstallPackage(project, PackageScopeProject, source, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if installed.Name == "" || installed.Scope != PackageScopeProject {
-		t.Fatalf("unexpected install record %+v", installed)
-	}
-	if _, err := os.Stat(filepath.Join(installed.Dir, "prompts", "triage.md")); err != nil {
-		t.Fatalf("expected prompt copied into package: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(installed.Dir, packageMetaFile)); err != nil {
-		t.Fatalf("expected package metadata: %v", err)
-	}
-
-	pkgs, err := ListInstalledPackages(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pkgs) != 1 || pkgs[0].Name != installed.Name {
-		t.Fatalf("unexpected package listing %+v", pkgs)
-	}
-
-	mustWriteFile(t, filepath.Join(source, "prompts", "triage.md"), "Second version")
-	updated, err := UpdatePackage(project, PackageScopeProject, installed.Name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(updated.Dir, "prompts", "triage.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(data)) != "Second version" {
-		t.Fatalf("expected updated package contents, got %q", string(data))
-	}
-
-	if err := RemovePackage(project, PackageScopeProject, installed.Name); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(updated.Dir); !os.IsNotExist(err) {
-		t.Fatalf("expected package dir removed, got err=%v", err)
-	}
-}
-
-func TestPackageLifecycle_InvalidNamesRejected(t *testing.T) {
-	home := t.TempDir()
-	project := t.TempDir()
-	setTestHome(t, home)
-	source := t.TempDir()
-
-	if _, err := InstallPackage(project, PackageScopeProject, source, "../../escape"); err == nil {
-		t.Fatal("expected invalid install name to fail")
-	}
-	if err := RemovePackage(project, PackageScopeProject, "../../escape"); err == nil {
-		t.Fatal("expected invalid remove name to fail")
-	}
-}
-
-func TestPackageUpdateFailurePreservesExistingInstall(t *testing.T) {
-	home := t.TempDir()
-	project := t.TempDir()
-	setTestHome(t, home)
-
-	source := t.TempDir()
-	mustWriteFile(t, filepath.Join(source, "prompts", "triage.md"), "stable")
-	installed, err := InstallPackage(project, PackageScopeProject, source, "stable-pack")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.RemoveAll(source); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := UpdatePackage(project, PackageScopeProject, installed.Name); err == nil {
-		t.Fatal("expected update from missing source to fail")
-	}
-	data, err := os.ReadFile(filepath.Join(installed.Dir, "prompts", "triage.md"))
-	if err != nil {
-		t.Fatalf("expected existing package to remain after failed update: %v", err)
-	}
-	if strings.TrimSpace(string(data)) != "stable" {
-		t.Fatalf("expected existing contents to remain, got %q", string(data))
-	}
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	t.Setenv("PI_GO_HOME", "")
 }
 
 func mustMkdirAll(t *testing.T, path string) {
