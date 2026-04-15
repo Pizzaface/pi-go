@@ -1,0 +1,27 @@
+{
+  "name": "@pi-go/extension-host",
+  "version": "0.1.0",
+  "description": "Node runtime for pi-go hosted TypeScript extensions",
+  "type": "module",
+  "bin": {
+    "pi-go-extension-host": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "node build.mjs",
+    "test": "node --test dist/test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@pi-go/extension-sdk": "file:../extension-sdk",
+    "@sinclair/typebox": "^0.34.0",
+    "jiti": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.4.0"
+  }
+}
