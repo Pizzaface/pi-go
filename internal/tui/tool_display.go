@@ -2,7 +2,6 @@ package tui
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -12,8 +11,6 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-
-	"github.com/dimetron/pi-go/internal/extension"
 
 	"charm.land/lipgloss/v2"
 )
@@ -31,8 +28,6 @@ type ToolDisplayModel struct {
 	CompactTools bool
 	// CollapsedTools when true keeps tool headers visible but hides result bodies.
 	CollapsedTools bool
-	// ExtensionManager provides optional extension-owned renderers.
-	ExtensionManager *extension.Manager
 	// RenderTimeout bounds extension renderer calls.
 	RenderTimeout time.Duration
 	// RenderMarkdown renders markdown payloads when extensions return markdown.
@@ -68,7 +63,7 @@ func (t *ToolDisplayModel) RenderToolMessage(msg message) string {
 
 // renderCompactTool renders a one-line tally for a tool message.
 func (t *ToolDisplayModel) renderCompactTool(msg message, dim lipgloss.Style) string {
-	if rendered, ok := t.renderWithExtension(msg, extension.RenderSurfaceToolCallRow, map[string]any{
+	if rendered, ok := t.renderWithExtension(msg, "tool_call_row", map[string]any{
 		"compact": true,
 		"tool":    msg.tool,
 		"tool_in": msg.toolIn,
@@ -175,12 +170,12 @@ func (t *ToolDisplayModel) renderRegularTool(msg message, dim lipgloss.Style) st
 }
 
 func (t *ToolDisplayModel) renderTool(msg message, dim lipgloss.Style, collapsed bool) string {
-	customHeader, customHeaderOK := t.renderWithExtension(msg, extension.RenderSurfaceToolCallRow, map[string]any{
+	customHeader, customHeaderOK := t.renderWithExtension(msg, "tool_call_row", map[string]any{
 		"compact": false,
 		"tool":    msg.tool,
 		"tool_in": msg.toolIn,
 	})
-	customResult, customResultOK := t.renderWithExtension(msg, extension.RenderSurfaceToolResult, map[string]any{
+	customResult, customResultOK := t.renderWithExtension(msg, "tool_result", map[string]any{
 		"tool":    msg.tool,
 		"tool_in": msg.toolIn,
 		"content": msg.content,
@@ -265,42 +260,18 @@ func (t *ToolDisplayModel) renderToolBody(msg message, dim lipgloss.Style, custo
 	return strings.Join(bodyLines, "\n")
 }
 
+// renderWithExtension is a spec #5 stub — no extension renderers exist in
+// spec #1. Returns ("", false) so callers fall back to the default TUI
+// rendering path.
 func (t *ToolDisplayModel) renderWithExtension(
 	msg message,
-	surface extension.RenderSurface,
+	surface string,
 	payload map[string]any,
 ) (string, bool) {
-	if t.ExtensionManager == nil {
-		return "", false
-	}
-	owner := strings.TrimSpace(msg.extensionOwner)
-	if owner == "" && msg.tool != "" {
-		if toolOwner, ok := t.ExtensionManager.ToolOwner(msg.tool); ok {
-			owner = strings.TrimSpace(toolOwner)
-		}
-	}
-	if owner == "" {
-		return "", false
-	}
-
-	timeout := t.RenderTimeout
-	if timeout <= 0 {
-		timeout = 250 * time.Millisecond
-	}
-	result, rendered, err := t.ExtensionManager.Render(
-		context.Background(),
-		owner,
-		surface,
-		payload,
-		timeout,
-	)
-	if !rendered || err != nil {
-		return "", false
-	}
-	if result.Kind == extension.RenderKindMarkdown && t.RenderMarkdown != nil {
-		return t.RenderMarkdown(result.Content), true
-	}
-	return result.Content, true
+	_ = msg
+	_ = surface
+	_ = payload
+	return "", false
 }
 
 func ensureTrailingNewline(content string) string {

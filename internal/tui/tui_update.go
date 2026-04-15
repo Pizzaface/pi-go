@@ -50,8 +50,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFollowUpSubmit(msg)
 	case initEventMsg:
 		return m.handleInitEvent(msg)
-	case extensionIntentMsg:
-		return m.handleExtensionIntent(msg)
 	case providerDebugMsg:
 		return m.handleProviderDebug(msg)
 	case restartMsg:
@@ -106,18 +104,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chatModel.Messages = append(m.chatModel.Messages, message{role: "assistant", content: content})
 		}
 		return m, nil
-	case extensionLifecycleResultMsg:
-		if m.extensionsPanel != nil && m.cfg.ExtensionManager != nil {
-			m.extensionsPanel.rows = buildExtensionPanelRows(m.cfg.ExtensionManager.Extensions())
-			// Re-clamp cursor.
-			if m.extensionsPanel.cursor >= len(m.extensionsPanel.rows) {
-				m.extensionsPanel.cursor = len(m.extensionsPanel.rows) - 1
-			}
-			if m.extensionsPanel.cursor < 0 {
-				m.extensionsPanel.cursor = 0
-			}
-		}
-		return m, nil
 	}
 
 	if m.running {
@@ -169,7 +155,6 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.TokenTracker = r.TokenTracker
 		m.cfg.WrapLLM = r.WrapLLM
 		m.cfg.CompactMetrics = r.CompactMetrics
-		m.cfg.ExtensionManager = r.ExtensionManager
 		m.cfg.ExtensionCommands = r.ExtensionCommands
 		m.cfg.RestartCh = r.RestartCh
 		m.cfg.Screen = r.Screen
@@ -182,20 +167,13 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 
 		m.inputModel.Skills = r.Skills
 		m.inputModel.SkillDirs = r.SkillDirs
-		m.inputModel.ExtensionManager = r.ExtensionManager
 		m.inputModel.ExtensionCommands = r.ExtensionCommands
-		m.chatModel.ExtensionManager = r.ExtensionManager
-		m.chatModel.ToolDisplay.ExtensionManager = r.ExtensionManager
 		m.chatModel.ToolDisplay.RenderMarkdown = m.chatModel.RenderMarkdown
 		m.chatModel.ToolDisplay.RenderTimeout = m.chatModel.RenderTimeout
-		m.resetExtensionBridge(r.ExtensionManager)
 
 		var cmds []tea.Cmd
 		if r.RestartCh != nil {
 			cmds = append(cmds, waitForRestart(r.RestartCh))
-		}
-		if m.extensionIntentCh != nil {
-			cmds = append(cmds, waitForExtensionIntent(m.extensionIntentCh))
 		}
 		return m, tea.Batch(cmds...)
 	}

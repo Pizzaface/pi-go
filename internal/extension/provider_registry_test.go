@@ -1,12 +1,32 @@
 package extension
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/provider"
 )
+
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	t.Setenv("PI_GO_HOME", "")
+}
+
+func mustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestBuildProviderRegistry_LoadOrderAndConfigOverride(t *testing.T) {
 	home := t.TempDir()

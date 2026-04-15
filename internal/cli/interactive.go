@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	adkmodel "google.golang.org/adk/model"
 
@@ -239,17 +238,8 @@ func deferredInit(
 			return
 		}
 	}
-	if runtime.Manager != nil {
-		runtime.Manager.BindSession(sessionID, sessionsDir)
-		runtime.Manager.EmitEvent(extension.Event{
-			Type:      extension.EventSessionStart,
-			Timestamp: time.Now(),
-			Data: map[string]any{
-				"session_id": sessionID,
-				"mode":       "interactive",
-			},
-		})
-	}
+	// BindSession / EmitEvent / lifecycle hooks land in spec #5.
+	_ = sessionsDir
 
 	if err := runtime.RunLifecycleHooks(ctx, extension.LifecycleEventSessionStart, map[string]any{"session_id": sessionID, "mode": "interactive"}); err != nil {
 		fail(fmt.Errorf("running extension session_start hooks: %w", err))
@@ -273,7 +263,6 @@ func deferredInit(
 			SessionID:         sessionID,
 			SessionService:    sessionSvc,
 			Logger:            sessionLog,
-			ExtensionManager:  runtime.Manager,
 			Skills:            runtime.Skills,
 			SkillDirs:         runtime.SkillDirs,
 			ExtensionCommands: runtime.SlashCommands,

@@ -59,14 +59,6 @@ type model struct {
 	loadingItems map[string]bool // item name -> done?
 	initCh       <-chan InitEvent
 
-	// Extension bridge state.
-	extensionBridge      *extensionBridge
-	extensionIntentCh    <-chan extension.UIIntentEnvelope
-	extensionWidgetAbove *extensionWidgetState
-	extensionWidgetBelow *extensionWidgetState
-	extensionDialog      *extensionDialogState
-	extensionsPanel      *extensionsPanelState
-
 	// Effort level for provider reasoning/thinking control.
 	effortLevel provider.EffortLevel
 
@@ -167,11 +159,8 @@ func Run(ctx context.Context, cfg Config) error {
 
 	im := NewInputModel(history, cfg.Skills, cfg.SkillDirs, cfg.WorkDir)
 	im.ExtensionCommands = cfg.ExtensionCommands
-	im.ExtensionManager = cfg.ExtensionManager
 
 	chat := NewChatModel(renderer)
-	chat.ExtensionManager = cfg.ExtensionManager
-	chat.ToolDisplay.ExtensionManager = cfg.ExtensionManager
 	chat.ToolDisplay.RenderMarkdown = chat.RenderMarkdown
 	chat.ToolDisplay.RenderTimeout = chat.RenderTimeout
 	chat.ToolDisplay.CollapsedTools = loadCollapsedTools()
@@ -188,7 +177,6 @@ func Run(ctx context.Context, cfg Config) error {
 		effortLevel:  cfg.EffortLevel,
 		setupAlert:   cfg.NoModelConfigured,
 	}
-	m.resetExtensionBridge(cfg.ExtensionManager)
 	if cfg.DeferredInit != nil {
 		m.loading = true
 		m.loadingItems = map[string]bool{}
@@ -199,7 +187,6 @@ func Run(ctx context.Context, cfg Config) error {
 
 	p := tea.NewProgram(&m, tea.WithContext(ctx))
 	_, err := p.Run()
-	m.closeExtensionBridge()
 	if m.initErr != nil {
 		return m.initErr
 	}
@@ -215,9 +202,6 @@ func (m *model) Init() tea.Cmd {
 	}
 	if m.cfg.DebugTracer != nil {
 		cmds = append(cmds, waitForProviderDebug(m.cfg.DebugTracer.Channel()))
-	}
-	if m.extensionIntentCh != nil {
-		cmds = append(cmds, waitForExtensionIntent(m.extensionIntentCh))
 	}
 	if m.initCh != nil {
 		cmds = append(cmds, waitForInitEvent(m.initCh))

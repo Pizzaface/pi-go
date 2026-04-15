@@ -56,7 +56,6 @@ type InputModel struct {
 	Skills            []extension.Skill
 	SkillDirs         []string
 	ExtensionCommands []extension.SlashCommand
-	ExtensionManager  *extension.Manager
 	WorkDir           string
 }
 
@@ -534,9 +533,6 @@ func (im *InputModel) ReloadSkills() {
 }
 
 func (im *InputModel) currentExtensionCommands() []extension.SlashCommand {
-	if im.ExtensionManager != nil {
-		return im.ExtensionManager.SlashCommands()
-	}
 	return im.ExtensionCommands
 }
 

@@ -1,15 +1,12 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/glamour"
 	glamourstyles "github.com/charmbracelet/glamour/styles"
-
-	"github.com/dimetron/pi-go/internal/extension"
 
 	"charm.land/lipgloss/v2"
 )
@@ -79,7 +76,6 @@ type ChatModel struct {
 	TraceLog         []traceEntry
 	Width            int
 	ToolDisplay      ToolDisplayModel
-	ExtensionManager *extension.Manager
 	RenderTimeout    time.Duration
 	// AgentLineRanges tracks rendered line ranges for Agent tool accordions.
 	// Populated by RenderMessages(), consumed by mouse click handler.
@@ -265,7 +261,6 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	if len(c.Messages) == 0 {
 		return renderWelcome()
 	}
-	c.ToolDisplay.ExtensionManager = c.ExtensionManager
 	c.ToolDisplay.RenderMarkdown = c.RenderMarkdown
 	if c.ToolDisplay.RenderTimeout <= 0 {
 		c.ToolDisplay.RenderTimeout = c.RenderTimeout
@@ -487,35 +482,13 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	return b.String()
 }
 
+// renderCustomAssistantMessage is a spec #5 stub — extension-driven
+// message rendering lands later. Always returns ("", false) so the
+// default rendering path runs.
 func (c *ChatModel) renderCustomAssistantMessage(msg message, content string) (string, bool) {
-	if c.ExtensionManager == nil {
-		return "", false
-	}
-	owner := strings.TrimSpace(msg.extensionOwner)
-	if owner == "" {
-		return "", false
-	}
-	timeout := c.RenderTimeout
-	if timeout <= 0 {
-		timeout = 250 * time.Millisecond
-	}
-	result, rendered, err := c.ExtensionManager.Render(
-		context.Background(),
-		owner,
-		extension.RenderSurfaceChatMessage,
-		map[string]any{
-			"role":    msg.role,
-			"content": content,
-		},
-		timeout,
-	)
-	if !rendered || err != nil {
-		return "", false
-	}
-	if result.Kind == extension.RenderKindMarkdown {
-		return c.RenderMarkdown(result.Content), true
-	}
-	return result.Content, true
+	_ = msg
+	_ = content
+	return "", false
 }
 
 // RenderTracePanel renders the debug trace log as a color-coded panel.

@@ -10,6 +10,14 @@ type SlashCommand struct {
 	Prompt      string
 }
 
+// Render expands the minimal {{args}} placeholder used by slash commands.
+func (c SlashCommand) Render(args []string) string {
+	prompt := c.Prompt
+	joined := strings.TrimSpace(strings.Join(args, " "))
+	prompt = strings.ReplaceAll(prompt, "{{args}}", joined)
+	return strings.TrimSpace(prompt)
+}
+
 // Skill is a discovered skill resource. Kept minimal for spec #1.
 type Skill struct {
 	Name        string

@@ -7,8 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-
-	"github.com/dimetron/pi-go/internal/extension"
 )
 
 func (m *model) hasBlockingPopup() bool {
@@ -47,18 +45,12 @@ func (m *model) View() tea.View {
 	renderedMessages := lipgloss.NewStyle().Width(mainWidth).Render(m.chatModel.RenderMessages(m.running))
 	statusBar := padBlockWidth(m.statusModel.Render(m.statusRenderInput()), mainWidth)
 	inputArea := padBlockWidth(m.inputModel.View(m.running || m.loading), mainWidth)
-	widgetAbove := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetAbove), mainWidth)
-	widgetBelow := padBlockWidth(m.renderExtensionWidget(m.extensionWidgetBelow), mainWidth)
 
 	inputLines := lipgloss.Height(inputArea)
 	widgetAboveLines := 0
-	if widgetAbove != "" {
-		widgetAboveLines = lipgloss.Height(widgetAbove)
-	}
 	widgetBelowLines := 0
-	if widgetBelow != "" {
-		widgetBelowLines = lipgloss.Height(widgetBelow)
-	}
+	widgetAbove := ""
+	widgetBelow := ""
 
 	queueIndicatorLines := 0
 	if m.running && m.renderQueueIndicator() != "" {
@@ -109,13 +101,6 @@ func (m *model) View() tea.View {
 	for visibleLineCount < availableHeight {
 		visibleMessages += "\n"
 		visibleLineCount++
-	}
-
-	if m.extensionsPanel != nil {
-		visibleMessages = overlaySlashCommandBlock(visibleMessages, renderExtensionsPanel(m.extensionsPanel, mainWidth))
-	}
-	if m.extensionDialog != nil {
-		visibleMessages = overlaySlashCommandBlock(visibleMessages, m.renderExtensionDialog(mainWidth))
 	}
 
 	var b strings.Builder
@@ -281,20 +266,9 @@ func (m *model) statusRenderInput() StatusRenderInput {
 	}
 }
 
+// extensionsSummary is a spec #5 stub — the live-extension panel is not
+// wired in spec #1. Returns the zero value so status-bar rendering sees
+// no pending/running/errored extensions.
 func (m *model) extensionsSummary() ExtensionsSummary {
-	if m.cfg.ExtensionManager == nil {
-		return ExtensionsSummary{}
-	}
-	var sum ExtensionsSummary
-	for _, info := range m.cfg.ExtensionManager.Extensions() {
-		switch info.State {
-		case extension.StatePending:
-			sum.Pending++
-		case extension.StateRunning:
-			sum.Running++
-		case extension.StateErrored:
-			sum.Errored++
-		}
-	}
-	return sum
+	return ExtensionsSummary{}
 }

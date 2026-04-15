@@ -99,15 +99,9 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	default:
 		name := strings.TrimPrefix(cmd, "/")
-		if m.cfg.ExtensionManager != nil {
-			if extCmd, ok := m.cfg.ExtensionManager.FindCommand(name); ok {
+		for _, extCmd := range m.cfg.ExtensionCommands {
+			if strings.EqualFold(extCmd.Name, name) {
 				return m.submitPrompt(extCmd.Render(parts[1:]), nil)
-			}
-		} else {
-			for _, extCmd := range m.cfg.ExtensionCommands {
-				if strings.EqualFold(extCmd.Name, name) {
-					return m.submitPrompt(extCmd.Render(parts[1:]), nil)
-				}
 			}
 		}
 		// Check if it's a dynamic skill command.
@@ -124,72 +118,18 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) extensionCommands() []extension.SlashCommand {
-	if m.cfg.ExtensionManager != nil {
-		return m.cfg.ExtensionManager.SlashCommands()
-	}
 	return m.cfg.ExtensionCommands
 }
 
+// handleExtensionsCommand is a spec #5 stub — the interactive panel lands
+// with the runtime manager integration in a later spec.
 func (m *model) handleExtensionsCommand(args []string) (tea.Model, tea.Cmd) {
-	if m.cfg.ExtensionManager == nil {
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: "Extensions manager not available.",
-		})
-		return m, nil
-	}
-
-	if len(args) == 0 {
-		rows := buildExtensionPanelRows(m.cfg.ExtensionManager.Extensions())
-		cursor := 0
-		for cursor < len(rows) && rows[cursor].isGroup {
-			cursor++
-		}
-		m.extensionsPanel = &extensionsPanelState{rows: rows, cursor: cursor}
-		return m, nil
-	}
-
-	sub := strings.ToLower(args[0])
-	rest := args[1:]
-
-	switch sub {
-	case "reload":
-		return m, extensionReloadCmd(m.cfg.ExtensionManager, m.cfg.WorkDir)
-	case "approve":
-		if len(rest) == 0 {
-			m.chatModel.Messages = append(m.chatModel.Messages, message{
-				role: "assistant", content: "Usage: `/extensions approve <id>`",
-			})
-			return m, nil
-		}
-		return m, extensionGrantAndStartCmd(m.cfg.ExtensionManager, m.cfg.WorkDir, rest[0], "", nil)
-	case "deny":
-		if len(rest) == 0 {
-			return m, nil
-		}
-		return m, extensionDenyCmd(m.cfg.ExtensionManager, rest[0])
-	case "stop":
-		if len(rest) == 0 {
-			return m, nil
-		}
-		return m, extensionStopCmd(m.cfg.ExtensionManager, rest[0])
-	case "restart":
-		if len(rest) == 0 {
-			return m, nil
-		}
-		return m, extensionRestartCmd(m.cfg.ExtensionManager, rest[0])
-	case "revoke":
-		if len(rest) == 0 {
-			return m, nil
-		}
-		return m, extensionRevokeCmd(m.cfg.ExtensionManager, rest[0])
-	default:
-		m.chatModel.Messages = append(m.chatModel.Messages, message{
-			role:    "assistant",
-			content: fmt.Sprintf("Unknown extensions subcommand: `%s`. Valid: reload, approve, deny, stop, restart, revoke.", sub),
-		})
-		return m, nil
-	}
+	_ = args
+	m.chatModel.Messages = append(m.chatModel.Messages, message{
+		role:    "assistant",
+		content: "Extensions manager UI is not available in this build.",
+	})
+	return m, nil
 }
 
 // handleBranchCommand handles /branch subcommands: create, switch, list.

@@ -41,10 +41,6 @@ type Config struct {
 	SkillDirs []string
 	// ExtensionCommands are narrow slash-command contributions from extensions.
 	ExtensionCommands []extension.SlashCommand
-	// ExtensionManager provides runtime extension command/event/state surfaces.
-	ExtensionManager *extension.Manager
-	// DisableExtensionUI ignores extension-driven UI intents in this TUI instance.
-	DisableExtensionUI bool
 	// RestartCh receives a signal when the agent calls the restart tool.
 	RestartCh chan struct{}
 	// TokenTracker tracks daily token usage and enforces limits. May be nil.
@@ -85,7 +81,6 @@ type InitResult struct {
 	SessionID         string
 	SessionService    *pisession.FileService
 	Logger            *logger.Logger
-	ExtensionManager  *extension.Manager
 	Skills            []extension.Skill
 	SkillDirs         []string
 	ExtensionCommands []extension.SlashCommand
