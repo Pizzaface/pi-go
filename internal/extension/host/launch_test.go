@@ -33,7 +33,7 @@ func TestBuildHandshakeResponse_GrantsRequestedMethodsForCompiledIn(t *testing.T
 		},
 	}
 	params, _ := json.Marshal(req)
-	out, err := buildHandshakeResponse(reg, manager, params)
+	out, err := BuildHandshakeResponse(reg, manager, params)
 	if err != nil {
 		t.Fatalf("expected success; got %v", err)
 	}
@@ -74,7 +74,7 @@ func TestBuildHandshakeResponse_RejectsProtocolDowngrade(t *testing.T) {
 		ExtensionID:     "any",
 	}
 	params, _ := json.Marshal(req)
-	_, err = buildHandshakeResponse(reg, manager, params)
+	_, err = BuildHandshakeResponse(reg, manager, params)
 	if err == nil {
 		t.Fatal("expected protocol mismatch error")
 	}
@@ -113,7 +113,7 @@ func TestBuildHandshakeResponse_DeniesUngrantedMethodsForHosted(t *testing.T) {
 		},
 	}
 	params, _ := json.Marshal(req)
-	out, err := buildHandshakeResponse(reg, manager, params)
+	out, err := BuildHandshakeResponse(reg, manager, params)
 	if err != nil {
 		t.Fatalf("expected success; got %v", err)
 	}

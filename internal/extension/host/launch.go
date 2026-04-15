@@ -55,7 +55,7 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 
 	handler := func(method string, params json.RawMessage) (any, error) {
 		if method == hostproto.MethodHandshake {
-			return buildHandshakeResponse(reg, manager, params)
+			return BuildHandshakeResponse(reg, manager, params)
 		}
 		if router == nil {
 			return nil, fmt.Errorf("launch: no router for method %q", method)
@@ -69,11 +69,12 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 	return nil
 }
 
-// buildHandshakeResponse constructs the host's reply to an inbound handshake
+// BuildHandshakeResponse constructs the host's reply to an inbound handshake
 // request. It rejects extensions whose protocol_version differs from
 // hostproto.ProtocolVersion and reports the granted services derived from
-// the capability gate.
-func buildHandshakeResponse(reg *Registration, manager *Manager, params json.RawMessage) (any, error) {
+// the capability gate. Exported so tests (and future callers that wire the
+// handshake through a custom RPC path) can drive the builder directly.
+func BuildHandshakeResponse(reg *Registration, manager *Manager, params json.RawMessage) (any, error) {
 	var req hostproto.HandshakeRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, &hostprotoError{
@@ -149,3 +150,16 @@ type hostprotoError struct {
 }
 
 func (e *hostprotoError) Error() string { return e.Message }
+
+// HandshakeErrorCode extracts the JSON-RPC error code from an error
+// returned by BuildHandshakeResponse. Returns (0, "") for non-handshake
+// errors.
+func HandshakeErrorCode(err error) (int, string) {
+	if err == nil {
+		return 0, ""
+	}
+	if e, ok := err.(*hostprotoError); ok {
+		return e.Code, e.Message
+	}
+	return 0, err.Error()
+}
