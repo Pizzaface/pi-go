@@ -48,6 +48,7 @@ type Registration struct {
 	Mode     string // "compiled-in" | "hosted-go" | "hosted-ts"
 	Trust    TrustClass
 	Metadata piapi.Metadata
+	WorkDir  string // filesystem dir the hosted subprocess launches in
 	State    State
 	Err      error
 	API      piapi.API

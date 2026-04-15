@@ -32,6 +32,9 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 	}
 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	if reg.WorkDir != "" {
+		cmd.Dir = reg.WorkDir
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		manager.SetState(reg.ID, StateErrored, err)

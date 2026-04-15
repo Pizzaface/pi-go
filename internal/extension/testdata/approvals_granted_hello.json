@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "extensions": {
+    "hosted-hello-go": {
+      "trust_class": "third-party",
+      "first_party": false,
+      "approved": true,
+      "approved_at": "2026-04-15T00:00:00Z",
+      "granted_capabilities": [
+        "tools.register",
+        "events.session_start",
+        "events.tool_execute"
+      ]
+    },
+    "hosted-hello-ts": {
+      "trust_class": "third-party",
+      "first_party": false,
+      "approved": true,
+      "approved_at": "2026-04-15T00:00:00Z",
+      "granted_capabilities": [
+        "tools.register",
+        "events.session_start",
+        "events.tool_execute"
+      ]
+    }
+  }
+}

@@ -148,6 +148,7 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 			Mode:     c.Mode.String(),
 			Trust:    trust,
 			Metadata: c.Metadata,
+			WorkDir:  c.Dir,
 		}
 		if err := manager.Register(reg); err != nil {
 			// Duplicate with a compiled-in? Skip.
