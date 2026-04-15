@@ -1,0 +1,10 @@
+name = "hosted-hello-go"
+version = "0.1.0"
+description = "Canonical hosted-go extension fixture; registers greet tool."
+runtime = "hosted"
+command = ["go", "run", "."]
+requested_capabilities = [
+    "tools.register",
+    "events.session_start",
+    "events.tool_execute",
+]
