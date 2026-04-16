@@ -394,9 +394,31 @@ func (s *service) buildCommand(reg *host.Registration) ([]string, error) {
 	return nil, fmt.Errorf("buildCommand: no command for %s mode=%s", reg.ID, reg.Mode)
 }
 
-// --- Stop (stub) -------------------------------------------------------
+// --- Stop -------------------------------------------------------------
 
-func (s *service) Stop(context.Context, string) error    { return nil }
+// Stop sends shutdown, closes the RPC conn, and transitions to
+// StateStopped. Idempotent on already-stopped/pending/ready.
+func (s *service) Stop(ctx context.Context, id string) error {
+	reg := s.mgr.Get(id)
+	if reg == nil {
+		return &Error{Op: "stop", ID: id, Err: ErrUnknownExtension}
+	}
+	if reg.Trust == host.TrustCompiledIn {
+		return &Error{Op: "stop", ID: id, Err: ErrCompiledIn}
+	}
+	switch reg.State {
+	case host.StateStopped, host.StatePending, host.StateReady, host.StateDenied:
+		return nil
+	}
+	if err := s.stopFunc(ctx, reg); err != nil {
+		s.mgr.SetState(id, host.StateErrored, err)
+		s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+		return &Error{Op: "stop", ID: id, Err: err}
+	}
+	s.mgr.SetState(id, host.StateStopped, nil)
+	s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+	return nil
+}
 
 // --- Restart (stub) ----------------------------------------------------
 

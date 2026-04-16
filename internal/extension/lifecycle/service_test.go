@@ -254,3 +254,40 @@ func TestService_StartCompiledInReturnsErrCompiledIn(t *testing.T) {
 		t.Fatalf("expected ErrCompiledIn; got %v", err)
 	}
 }
+
+func TestService_StopCallsStopFunc(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	impl := svc.(*service)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1"}}
+	_ = mgr.Register(reg)
+	mgr.SetState("h", host.StateRunning, nil)
+	called := false
+	impl.stopFunc = func(context.Context, *host.Registration) error {
+		called = true
+		return nil
+	}
+	if err := svc.Stop(context.Background(), "h"); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("stopFunc was not invoked")
+	}
+	if mgr.Get("h").State != host.StateStopped {
+		t.Fatalf("expected StateStopped; got %s", mgr.Get("h").State)
+	}
+}
+
+func TestService_StopIdempotentOnAlreadyStopped(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	impl := svc.(*service)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1"}}
+	_ = mgr.Register(reg)
+	mgr.SetState("h", host.StateStopped, nil)
+	impl.stopFunc = func(context.Context, *host.Registration) error {
+		t.Fatal("stopFunc should not be called on already-stopped")
+		return nil
+	}
+	if err := svc.Stop(context.Background(), "h"); err != nil {
+		t.Fatal(err)
+	}
+}
