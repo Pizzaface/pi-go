@@ -158,6 +158,7 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.ExtensionCommands = r.ExtensionCommands
 		m.cfg.RestartCh = r.RestartCh
 		m.cfg.Screen = r.Screen
+		m.lifecycle = r.Lifecycle
 		m.statusModel.GitBranch = r.GitBranch
 		m.diffAdded = r.DiffAdded
 		m.diffRemoved = r.DiffRemoved

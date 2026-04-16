@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/glamour"
 
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/extension/lifecycle"
 	"github.com/dimetron/pi-go/internal/provider"
 
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,9 @@ type model struct {
 
 	// Theme manager.
 	themeManager *ThemeManager
+
+	// Lifecycle service for starting/stopping approved extensions.
+	lifecycle lifecycle.Service
 
 	// Agent state.
 	running bool

@@ -9,6 +9,7 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/dimetron/pi-go/internal/extension/lifecycle"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
@@ -90,6 +91,7 @@ type InitResult struct {
 	CompactMetrics    CompactStatsProvider
 	RestartCh         chan struct{}
 	Screen            *Screen
+	Lifecycle         lifecycle.Service
 	GitBranch         string
 	DiffAdded         int
 	DiffRemoved       int

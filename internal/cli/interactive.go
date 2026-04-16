@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	adkmodel "google.golang.org/adk/model"
 
@@ -24,8 +25,9 @@ import (
 
 // initResources tracks resources created during deferred init for cleanup.
 type initResources struct {
-	sandbox    *tools.Sandbox
-	sessionLog *logger.Logger
+	sandbox           *tools.Sandbox
+	sessionLog        *logger.Logger
+	runtimeForCleanup *extension.Runtime
 }
 
 func (r *initResources) cleanup() {
@@ -89,6 +91,13 @@ func runInteractive(
 
 	initCancel() // signal deferred init to stop
 	<-initDone
+
+	if res.runtimeForCleanup != nil && res.runtimeForCleanup.Lifecycle != nil {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		res.runtimeForCleanup.Lifecycle.StopAll(stopCtx)
+		stopCancel()
+	}
+
 	res.cleanup()
 	return tuiErr
 }
@@ -138,6 +147,10 @@ func deferredInit(
 	if err != nil {
 		fail(fmt.Errorf("building extension runtime: %w", err))
 		return
+	}
+	res.runtimeForCleanup = runtime
+	if runtime.Lifecycle != nil {
+		go runtime.Lifecycle.StartApproved(ctx)
 	}
 	send("tools", true)
 
@@ -273,6 +286,7 @@ func deferredInit(
 			CompactMetrics: compactorMetrics,
 			RestartCh:      restartCh,
 			Screen:         screen,
+			Lifecycle:      runtime.Lifecycle,
 			GitBranch:      ps.gitBranch,
 			DiffAdded:      ps.diffAdded,
 			DiffRemoved:    ps.diffRemoved,
