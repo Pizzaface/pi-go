@@ -13,6 +13,7 @@ import (
 	extapi "github.com/dimetron/pi-go/internal/extension/api"
 	"github.com/dimetron/pi-go/internal/extension/compiled"
 	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/dimetron/pi-go/internal/extension/lifecycle"
 	"github.com/dimetron/pi-go/internal/extension/loader"
 	"github.com/dimetron/pi-go/internal/provider"
 	"github.com/dimetron/pi-go/internal/tools"
@@ -47,6 +48,7 @@ type Runtime struct {
 	AfterToolCallbacks  []llmagent.AfterToolCallback
 	LifecycleHooks      []HookConfig
 	Instruction         string
+	Lifecycle           lifecycle.Service
 }
 
 // HookConfig is a spec #5 stub retained to keep CLI callers compiling.
@@ -191,6 +193,7 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		SlashCommands:    slashCommands,
 		Instruction:      instruction,
 	}
+	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir)
 	_ = ctx
 	return rt, nil
 }
