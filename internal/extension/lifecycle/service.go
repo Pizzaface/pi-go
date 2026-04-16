@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dimetron/pi-go/internal/extension/api"
 	"github.com/dimetron/pi-go/internal/extension/host"
 )
 
@@ -37,13 +38,16 @@ type Service interface {
 // exist yet). workDir is the project CWD used by Reload to re-walk
 // discovery roots.
 func New(mgr *host.Manager, gate *host.Gate, approvalsPath, workDir string) Service {
-	return &service{
+	s := &service{
 		mgr:           mgr,
 		gate:          gate,
 		approvalsPath: approvalsPath,
 		workDir:       workDir,
 		subs:          map[int]chan Event{},
 	}
+	s.launchFunc = s.defaultLaunch
+	s.stopFunc = s.defaultStop
+	return s
 }
 
 type service struct {
@@ -57,6 +61,40 @@ type service struct {
 	subMu  sync.Mutex
 	nextID int
 	subs   map[int]chan Event
+
+	// launchFunc is overridable for tests. In production it wraps
+	// host.LaunchHosted with an api.HostedAPIHandler router.
+	launchFunc func(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error
+	// stopFunc is called by Stop on a running reg; overridable for tests.
+	stopFunc func(ctx context.Context, reg *host.Registration) error
+}
+
+// defaultLaunch wraps host.LaunchHosted with a router backed by
+// api.NewHostedHandler. Split out for test injection.
+func (s *service) defaultLaunch(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error {
+	handler := api.NewHostedHandler(mgr, reg)
+	return host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle)
+}
+
+// defaultStop sends shutdown notification, gives 3s to react, then closes the conn.
+func (s *service) defaultStop(ctx context.Context, reg *host.Registration) error {
+	if reg.Conn == nil {
+		return nil
+	}
+	_ = reg.Conn.Notify("pi.extension/shutdown", map[string]any{})
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTimer(3 * time.Second)
+		defer t.Stop()
+		<-t.C
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+	case <-done:
+	}
+	reg.Conn.Close()
+	return nil
 }
 
 func (s *service) List() []View {
