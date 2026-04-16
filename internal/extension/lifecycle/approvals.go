@@ -72,6 +72,10 @@ func atomicWrite(path string, file approvalsFile) error {
 	return nil
 }
 
+// mutateApprovals reads the approvals file, applies op to the named extension
+// entry, then atomically writes the result. op receives nil when the entry does
+// not yet exist. Returning nil from op deletes the entry; returning a non-nil
+// map upserts it. The file is never written if readApprovals returns an error.
 func mutateApprovals(path, id string, op func(entry map[string]any) map[string]any) error {
 	file, err := readApprovals(path)
 	if err != nil {
