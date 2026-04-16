@@ -10,6 +10,7 @@ import (
 
 	"github.com/dimetron/pi-go/internal/extension/api"
 	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/dimetron/pi-go/internal/extension/loader"
 )
 
 // Service is the programmatic surface for extension management. See
@@ -433,6 +434,32 @@ func (s *service) Restart(ctx context.Context, id string) error {
 	return nil
 }
 
-// --- Reload stub filled in by Task 15 -----------------------------------
+// --- Reload ------------------------------------------------------------
 
-func (s *service) Reload(context.Context) error { return nil }
+// Reload rediscovers extensions from the configured workDir and adds
+// newly-found ones to the Manager. V1 is additive only: removals and
+// metadata refreshes require a process restart.
+func (s *service) Reload(ctx context.Context) error {
+	_ = ctx
+	candidates, err := loader.Discover(s.workDir)
+	if err != nil {
+		return &Error{Op: "reload", Err: err}
+	}
+	for _, c := range candidates {
+		if s.mgr.Get(c.Metadata.Name) != nil {
+			continue
+		}
+		reg := &host.Registration{
+			ID:       c.Metadata.Name,
+			Mode:     c.Mode.String(),
+			Trust:    host.TrustThirdParty,
+			Metadata: c.Metadata,
+			WorkDir:  c.Dir,
+		}
+		if err := s.mgr.Register(reg); err != nil {
+			continue
+		}
+		s.publish(Event{Kind: EventRegistrationAdded, View: s.viewFromRegistration(reg)})
+	}
+	return nil
+}

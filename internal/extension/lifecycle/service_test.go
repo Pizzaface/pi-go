@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 func newTestService(t *testing.T) (Service, *host.Manager, string) {
 	t.Helper()
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	approvalsPath := filepath.Join(tmp, "approvals.json")
 	gate, err := host.NewGate(approvalsPath)
 	if err != nil {
@@ -314,5 +317,34 @@ func TestService_RestartStopsThenStarts(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != "stop" || order[1] != "start" {
 		t.Fatalf("expected [stop,start]; got %v", order)
+	}
+}
+
+func TestService_ReloadAddsNewDiscoveries(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	impl := svc.(*service)
+	dir := filepath.Join(impl.workDir, ".pi-go", "extensions", "new-ext")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	piToml := `name = "new-ext"
+version = "0.1"
+runtime = "hosted"
+command = ["echo"]
+`
+	if err := os.WriteFile(filepath.Join(dir, "pi.toml"), []byte(piToml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ch, cancel := svc.Subscribe()
+	defer cancel()
+	if err := svc.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	events := drainEvents(t, ch, 1, 500*time.Millisecond)
+	if events[0].Kind != EventRegistrationAdded {
+		t.Fatalf("expected EventRegistrationAdded; got %s", events[0].Kind)
+	}
+	if mgr.Get("new-ext") == nil {
+		t.Fatal("expected new-ext registered after Reload")
 	}
 }
