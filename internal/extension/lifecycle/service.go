@@ -248,9 +248,39 @@ func (s *service) Deny(ctx context.Context, id string, reason string) error {
 	return nil
 }
 
+// --- Revoke -----------------------------------------------------------
+
+// Revoke removes the approvals.json entry entirely and returns the
+// registration to StatePending. If running, Stop is called first.
+func (s *service) Revoke(ctx context.Context, id string) error {
+	reg := s.mgr.Get(id)
+	if reg == nil {
+		return &Error{Op: "revoke", ID: id, Err: ErrUnknownExtension}
+	}
+	if reg.Trust == host.TrustCompiledIn {
+		return &Error{Op: "revoke", ID: id, Err: ErrCompiledIn}
+	}
+	if reg.State == host.StateRunning {
+		if err := s.Stop(ctx, id); err != nil {
+			return &Error{Op: "revoke", ID: id, Err: err}
+		}
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := mutateApprovals(s.approvalsPath, id, func(map[string]any) map[string]any { return nil }); err != nil {
+		return &Error{Op: "revoke", ID: id, Err: err}
+	}
+	if err := s.gate.Reload(); err != nil {
+		return &Error{Op: "revoke", ID: id, Err: err}
+	}
+	s.publish(Event{Kind: EventApprovalChanged, View: s.viewFromRegistration(reg)})
+	s.mgr.SetState(id, host.StatePending, nil)
+	s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+	return nil
+}
+
 // --- Stubs filled in by later tasks -----------------------------------
 
-func (s *service) Revoke(context.Context, string) error  { return nil }
 func (s *service) Start(context.Context, string) error   { return nil }
 func (s *service) Stop(context.Context, string) error    { return nil }
 func (s *service) Restart(context.Context, string) error { return nil }

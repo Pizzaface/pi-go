@@ -183,3 +183,22 @@ func TestService_DenyTransitionsState(t *testing.T) {
 		t.Fatalf("unexpected deny_reason: %v", entry["deny_reason"])
 	}
 }
+
+func TestService_RevokeDeletesEntryAndGoesPending(t *testing.T) {
+	svc, mgr, path := newTestService(t)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1"}}
+	_ = mgr.Register(reg)
+	if err := svc.Approve(context.Background(), "h", []string{"tools.register"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Revoke(context.Background(), "h"); err != nil {
+		t.Fatal(err)
+	}
+	if mgr.Get("h").State != host.StatePending {
+		t.Fatalf("expected StatePending after revoke; got %s", mgr.Get("h").State)
+	}
+	got, _ := readApprovals(path)
+	if _, ok := got.Extensions["h"]; ok {
+		t.Fatal("expected h deleted from approvals")
+	}
+}
