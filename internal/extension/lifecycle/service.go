@@ -383,17 +383,6 @@ func (s *service) watchHandshakeTimeout(ctx context.Context, id string, timeout 
 	}
 }
 
-// buildCommand is filled in by Task 14; stub here so Start compiles.
-func (s *service) buildCommand(reg *host.Registration) ([]string, error) {
-	if len(reg.Metadata.Command) > 0 {
-		return append([]string(nil), reg.Metadata.Command...), nil
-	}
-	if reg.Mode == "hosted-go" {
-		return []string{"go", "run", "."}, nil
-	}
-	return nil, fmt.Errorf("buildCommand: no command for %s mode=%s", reg.ID, reg.Mode)
-}
-
 // --- Stop -------------------------------------------------------------
 
 // Stop sends shutdown, closes the RPC conn, and transitions to
@@ -444,8 +433,6 @@ func (s *service) Restart(ctx context.Context, id string) error {
 	return nil
 }
 
-// --- Stubs filled in by later tasks -----------------------------------
+// --- Reload stub filled in by Task 15 -----------------------------------
 
-func (s *service) StartApproved(context.Context) []error { return nil }
-func (s *service) StopAll(context.Context) []error       { return nil }
-func (s *service) Reload(context.Context) error          { return nil }
+func (s *service) Reload(context.Context) error { return nil }
