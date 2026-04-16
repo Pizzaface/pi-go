@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -160,4 +161,25 @@ func drainEvents(t *testing.T, ch <-chan Event, n int, total time.Duration) []Ev
 		}
 	}
 	return out
+}
+
+func TestService_DenyTransitionsState(t *testing.T) {
+	svc, mgr, path := newTestService(t)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1"}}
+	_ = mgr.Register(reg)
+	if err := svc.Deny(context.Background(), "h", "security review failed"); err != nil {
+		t.Fatalf("Deny: %v", err)
+	}
+	if mgr.Get("h").State != host.StateDenied {
+		t.Fatalf("expected StateDenied; got %s", mgr.Get("h").State)
+	}
+	got, _ := readApprovals(path)
+	var entry map[string]any
+	_ = json.Unmarshal(got.Extensions["h"], &entry)
+	if entry["approved"] != false {
+		t.Fatalf("expected approved:false; got %v", entry["approved"])
+	}
+	if entry["deny_reason"] != "security review failed" {
+		t.Fatalf("unexpected deny_reason: %v", entry["deny_reason"])
+	}
 }

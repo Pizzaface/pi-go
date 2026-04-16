@@ -205,13 +205,55 @@ func mergeStringSet(existing any, toAdd []string) []any {
 	return typed
 }
 
+// --- Deny -------------------------------------------------------------
+
+// Deny writes approved:false + deny_reason and moves the registration
+// to StateDenied. If running, Stop is called first.
+func (s *service) Deny(ctx context.Context, id string, reason string) error {
+	reg := s.mgr.Get(id)
+	if reg == nil {
+		return &Error{Op: "deny", ID: id, Err: ErrUnknownExtension}
+	}
+	if reg.Trust == host.TrustCompiledIn {
+		return &Error{Op: "deny", ID: id, Err: ErrCompiledIn}
+	}
+	if reg.State == host.StateRunning {
+		if err := s.Stop(ctx, id); err != nil {
+			return &Error{Op: "deny", ID: id, Err: err}
+		}
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	err := mutateApprovals(s.approvalsPath, id, func(entry map[string]any) map[string]any {
+		if entry == nil {
+			entry = map[string]any{}
+		}
+		entry["approved"] = false
+		entry["denied_at"] = time.Now().UTC().Format(time.RFC3339)
+		entry["deny_reason"] = reason
+		if _, ok := entry["trust_class"]; !ok {
+			entry["trust_class"] = "third-party"
+		}
+		return entry
+	})
+	if err != nil {
+		return &Error{Op: "deny", ID: id, Err: err}
+	}
+	if err := s.gate.Reload(); err != nil {
+		return &Error{Op: "deny", ID: id, Err: err}
+	}
+	s.publish(Event{Kind: EventApprovalChanged, View: s.viewFromRegistration(reg)})
+	s.mgr.SetState(id, host.StateDenied, nil)
+	s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+	return nil
+}
+
 // --- Stubs filled in by later tasks -----------------------------------
 
-func (s *service) Deny(context.Context, string, string) error { return nil }
-func (s *service) Revoke(context.Context, string) error       { return nil }
-func (s *service) Start(context.Context, string) error        { return nil }
-func (s *service) Stop(context.Context, string) error         { return nil }
-func (s *service) Restart(context.Context, string) error      { return nil }
-func (s *service) StartApproved(context.Context) []error      { return nil }
-func (s *service) StopAll(context.Context) []error            { return nil }
-func (s *service) Reload(context.Context) error               { return nil }
+func (s *service) Revoke(context.Context, string) error  { return nil }
+func (s *service) Start(context.Context, string) error   { return nil }
+func (s *service) Stop(context.Context, string) error    { return nil }
+func (s *service) Restart(context.Context, string) error { return nil }
+func (s *service) StartApproved(context.Context) []error { return nil }
+func (s *service) StopAll(context.Context) []error       { return nil }
+func (s *service) Reload(context.Context) error          { return nil }
