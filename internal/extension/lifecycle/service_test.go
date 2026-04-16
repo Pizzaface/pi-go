@@ -202,3 +202,55 @@ func TestService_RevokeDeletesEntryAndGoesPending(t *testing.T) {
 		t.Fatal("expected h deleted from approvals")
 	}
 }
+
+func TestService_StartCallsLaunchFunc(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	impl := svc.(*service)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1", Command: []string{"echo"}}}
+	_ = mgr.Register(reg)
+	_ = svc.Approve(context.Background(), "h", []string{"tools.register"})
+	var called [][]string
+	impl.launchFunc = func(_ context.Context, gotReg *host.Registration, _ *host.Manager, cmd []string) error {
+		called = append(called, cmd)
+		mgr.SetState(gotReg.ID, host.StateRunning, nil)
+		return nil
+	}
+	if err := svc.Start(context.Background(), "h"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if len(called) != 1 {
+		t.Fatalf("expected 1 launch; got %d", len(called))
+	}
+	if mgr.Get("h").State != host.StateRunning {
+		t.Fatalf("expected StateRunning; got %s", mgr.Get("h").State)
+	}
+}
+
+func TestService_StartIdempotentOnRunning(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	impl := svc.(*service)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1", Command: []string{"echo"}}}
+	_ = mgr.Register(reg)
+	_ = svc.Approve(context.Background(), "h", []string{"tools.register"})
+	mgr.SetState("h", host.StateRunning, nil)
+	calls := 0
+	impl.launchFunc = func(context.Context, *host.Registration, *host.Manager, []string) error {
+		calls++
+		return nil
+	}
+	if err := svc.Start(context.Background(), "h"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected 0 launches (idempotent); got %d", calls)
+	}
+}
+
+func TestService_StartCompiledInReturnsErrCompiledIn(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	reg := &host.Registration{ID: "c", Mode: "compiled-in", Trust: host.TrustCompiledIn, Metadata: piapi.Metadata{Name: "c", Version: "0.1"}}
+	_ = mgr.Register(reg)
+	if err := svc.Start(context.Background(), "c"); !errors.Is(err, ErrCompiledIn) {
+		t.Fatalf("expected ErrCompiledIn; got %v", err)
+	}
+}

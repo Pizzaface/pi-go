@@ -103,6 +103,7 @@ func candidateFromPath(path string) (Candidate, error) {
 			md = m
 			if len(cmd) > 0 {
 				command = cmd
+				md.Command = cmd
 			}
 		}
 	}

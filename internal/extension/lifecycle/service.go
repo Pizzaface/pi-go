@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"sync"
@@ -317,11 +318,92 @@ func (s *service) Revoke(ctx context.Context, id string) error {
 	return nil
 }
 
+// --- Start ------------------------------------------------------------
+
+// Start launches a hosted extension subprocess (no-op for compiled-in,
+// idempotent on running). Returns ErrUnknownExtension on unknown id.
+func (s *service) Start(ctx context.Context, id string) error {
+	reg := s.mgr.Get(id)
+	if reg == nil {
+		return &Error{Op: "start", ID: id, Err: ErrUnknownExtension}
+	}
+	if reg.Trust == host.TrustCompiledIn {
+		return &Error{Op: "start", ID: id, Err: ErrCompiledIn}
+	}
+	if reg.State == host.StateRunning {
+		return nil
+	}
+	if reg.State != host.StateReady {
+		return &Error{Op: "start", ID: id, Err: fmt.Errorf("cannot start from state %s", reg.State)}
+	}
+	cmd, err := s.buildCommand(reg)
+	if err != nil {
+		s.mgr.SetState(id, host.StateErrored, err)
+		s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+		return &Error{Op: "start", ID: id, Err: err}
+	}
+	ctx2, cancel := context.WithCancel(ctx)
+	go s.watchHandshakeTimeout(ctx2, id, 5*time.Second, cancel)
+	if err := s.launchFunc(ctx2, reg, s.mgr, cmd); err != nil {
+		cancel()
+		s.mgr.SetState(id, host.StateErrored, err)
+		s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+		return &Error{Op: "start", ID: id, Err: err}
+	}
+	s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+	return nil
+}
+
+// watchHandshakeTimeout polls manager state every 100ms. On StateRunning
+// (handshake success) or StateErrored it returns cleanly. On timeout
+// it calls cancel() and transitions to StateErrored.
+func (s *service) watchHandshakeTimeout(ctx context.Context, id string, timeout time.Duration, cancel context.CancelFunc) {
+	deadline := time.Now().Add(timeout)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		reg := s.mgr.Get(id)
+		if reg == nil {
+			return
+		}
+		if reg.State == host.StateRunning || reg.State == host.StateErrored {
+			return
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			s.mgr.SetState(id, host.StateErrored, fmt.Errorf("handshake timeout after %s", timeout))
+			s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(s.mgr.Get(id))})
+			return
+		}
+	}
+}
+
+// buildCommand is filled in by Task 14; stub here so Start compiles.
+func (s *service) buildCommand(reg *host.Registration) ([]string, error) {
+	if len(reg.Metadata.Command) > 0 {
+		return append([]string(nil), reg.Metadata.Command...), nil
+	}
+	if reg.Mode == "hosted-go" {
+		return []string{"go", "run", "."}, nil
+	}
+	return nil, fmt.Errorf("buildCommand: no command for %s mode=%s", reg.ID, reg.Mode)
+}
+
+// --- Stop (stub) -------------------------------------------------------
+
+func (s *service) Stop(context.Context, string) error    { return nil }
+
+// --- Restart (stub) ----------------------------------------------------
+
+func (s *service) Restart(context.Context, string) error { return nil }
+
 // --- Stubs filled in by later tasks -----------------------------------
 
-func (s *service) Start(context.Context, string) error   { return nil }
-func (s *service) Stop(context.Context, string) error    { return nil }
-func (s *service) Restart(context.Context, string) error { return nil }
 func (s *service) StartApproved(context.Context) []error { return nil }
 func (s *service) StopAll(context.Context) []error       { return nil }
 func (s *service) Reload(context.Context) error          { return nil }

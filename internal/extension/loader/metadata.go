@@ -55,6 +55,7 @@ func parsePiToml(path string) (piapi.Metadata, []string, error) {
 		Prompt:                p.Prompt,
 		RequestedCapabilities: p.RequestedCapabilities,
 		Entry:                 p.Entry,
+		Command:               p.Command,
 	}
 	return md, p.Command, nil
 }
