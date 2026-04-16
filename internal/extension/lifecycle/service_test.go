@@ -1,6 +1,8 @@
 package lifecycle
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -86,4 +88,76 @@ func TestService_UnsubscribeStopsDelivery(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		// Acceptable: no delivery.
 	}
+}
+
+func TestService_ApprovePendingHostedGoesReady(t *testing.T) {
+	svc, mgr, path := newTestService(t)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1"}}
+	if err := mgr.Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	if reg.State != host.StatePending {
+		t.Fatalf("expected StatePending; got %s", reg.State)
+	}
+	ch, cancel := svc.Subscribe()
+	defer cancel()
+	if err := svc.Approve(context.Background(), "h", []string{"tools.register", "events.session_start"}); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	events := drainEvents(t, ch, 2, 500*time.Millisecond)
+	if events[0].Kind != EventApprovalChanged {
+		t.Fatalf("first event %s; expected approval_changed", events[0].Kind)
+	}
+	if events[1].Kind != EventStateChanged {
+		t.Fatalf("second event %s; expected state_changed", events[1].Kind)
+	}
+	if r := mgr.Get("h"); r.State != host.StateReady {
+		t.Fatalf("expected StateReady; got %s", r.State)
+	}
+	got, _ := readApprovals(path)
+	if _, ok := got.Extensions["h"]; !ok {
+		t.Fatalf("expected h in approvals file")
+	}
+}
+
+func TestService_ApproveCompiledInReturnsErrCompiledIn(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	reg := &host.Registration{ID: "c", Mode: "compiled-in", Trust: host.TrustCompiledIn, Metadata: piapi.Metadata{Name: "c", Version: "0.1"}}
+	_ = mgr.Register(reg)
+	err := svc.Approve(context.Background(), "c", []string{"tools.register"})
+	var e *Error
+	if !errors.As(err, &e) {
+		t.Fatalf("expected *lifecycle.Error; got %T %v", err, err)
+	}
+	if !errors.Is(err, ErrCompiledIn) {
+		t.Fatalf("expected ErrCompiledIn; got %v", err)
+	}
+}
+
+func TestService_ApproveUnknownReturnsErrUnknown(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	err := svc.Approve(context.Background(), "no-such", nil)
+	if !errors.Is(err, ErrUnknownExtension) {
+		t.Fatalf("expected ErrUnknownExtension; got %v", err)
+	}
+}
+
+// drainEvents reads exactly n events from ch within total time, fatal otherwise.
+func drainEvents(t *testing.T, ch <-chan Event, n int, total time.Duration) []Event {
+	t.Helper()
+	deadline := time.Now().Add(total)
+	out := make([]Event, 0, n)
+	for len(out) < n {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("timed out waiting for %d events; got %d", n, len(out))
+		}
+		select {
+		case ev := <-ch:
+			out = append(out, ev)
+		case <-time.After(remaining):
+			t.Fatalf("timed out waiting for %d events; got %d", n, len(out))
+		}
+	}
+	return out
 }
