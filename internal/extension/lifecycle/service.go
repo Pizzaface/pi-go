@@ -420,9 +420,29 @@ func (s *service) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-// --- Restart (stub) ----------------------------------------------------
+// --- Restart ----------------------------------------------------------
 
-func (s *service) Restart(context.Context, string) error { return nil }
+// Restart = Stop + (ensure StateReady) + Start. Callers see a single
+// operation's error shape: any failure is wrapped with Op="restart".
+func (s *service) Restart(ctx context.Context, id string) error {
+	reg := s.mgr.Get(id)
+	if reg == nil {
+		return &Error{Op: "restart", ID: id, Err: ErrUnknownExtension}
+	}
+	if reg.Trust == host.TrustCompiledIn {
+		return &Error{Op: "restart", ID: id, Err: ErrCompiledIn}
+	}
+	if err := s.Stop(ctx, id); err != nil {
+		return &Error{Op: "restart", ID: id, Err: err}
+	}
+	if s.mgr.Get(id).State == host.StateStopped {
+		s.mgr.SetState(id, host.StateReady, nil)
+	}
+	if err := s.Start(ctx, id); err != nil {
+		return &Error{Op: "restart", ID: id, Err: err}
+	}
+	return nil
+}
 
 // --- Stubs filled in by later tasks -----------------------------------
 

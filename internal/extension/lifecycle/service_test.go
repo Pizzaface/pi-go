@@ -291,3 +291,28 @@ func TestService_StopIdempotentOnAlreadyStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestService_RestartStopsThenStarts(t *testing.T) {
+	svc, mgr, _ := newTestService(t)
+	impl := svc.(*service)
+	reg := &host.Registration{ID: "h", Mode: "hosted-go", Trust: host.TrustThirdParty, Metadata: piapi.Metadata{Name: "h", Version: "0.1", Command: []string{"echo"}}}
+	_ = mgr.Register(reg)
+	_ = svc.Approve(context.Background(), "h", []string{"tools.register"})
+	mgr.SetState("h", host.StateRunning, nil)
+	var order []string
+	impl.stopFunc = func(context.Context, *host.Registration) error {
+		order = append(order, "stop")
+		return nil
+	}
+	impl.launchFunc = func(_ context.Context, gotReg *host.Registration, _ *host.Manager, _ []string) error {
+		order = append(order, "start")
+		mgr.SetState(gotReg.ID, host.StateRunning, nil)
+		return nil
+	}
+	if err := svc.Restart(context.Background(), "h"); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 2 || order[0] != "stop" || order[1] != "start" {
+		t.Fatalf("expected [stop,start]; got %v", order)
+	}
+}
