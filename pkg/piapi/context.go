@@ -44,13 +44,31 @@ type CompactOptions struct {
 }
 
 // NewSessionOptions, ForkResult, NavigateOptions, NavigateResult,
-// SwitchResult — spec #5 types; stubs for spec #1.
+// SwitchResult — spec #5 types.
 type NewSessionOptions struct{}
-type NewSessionResult struct{ Cancelled bool }
-type ForkResult struct{ Cancelled bool }
+
+type NewSessionResult struct {
+	ID        string
+	Cancelled bool
+}
+
+type ForkResult struct {
+	BranchID    string
+	BranchTitle string
+	Cancelled   bool
+}
+
 type NavigateOptions struct{}
-type NavigateResult struct{ Cancelled bool }
-type SwitchResult struct{ Cancelled bool }
+
+type NavigateResult struct {
+	BranchID  string
+	Cancelled bool
+}
+
+type SwitchResult struct {
+	SessionID string
+	Cancelled bool
+}
 
 // Context is the handler-facing side of the extension API. Every event
 // handler and tool Execute call receives one.

@@ -42,3 +42,62 @@ func (e ErrCapabilityDenied) Error() string {
 func (e ErrCapabilityDenied) Is(target error) bool {
 	return target == ErrCapabilityDeniedSentinel
 }
+
+// Spec #5 errors.
+
+var ErrInvalidKindSentinel = errors.New("piapi: invalid kind")
+
+type ErrInvalidKind struct{ Kind string }
+
+func (e ErrInvalidKind) Error() string      { return "piapi: invalid kind: " + e.Kind }
+func (e ErrInvalidKind) Is(t error) bool    { return t == ErrInvalidKindSentinel }
+
+var ErrIncoherentOptionsSentinel = errors.New("piapi: incoherent options")
+
+type ErrIncoherentOptions struct{ Reason string }
+
+func (e ErrIncoherentOptions) Error() string   { return "piapi: incoherent options: " + e.Reason }
+func (e ErrIncoherentOptions) Is(t error) bool { return t == ErrIncoherentOptionsSentinel }
+
+var ErrEntryNotFoundSentinel = errors.New("piapi: entry not found")
+
+type ErrEntryNotFound struct{ ID string }
+
+func (e ErrEntryNotFound) Error() string   { return "piapi: entry not found: " + e.ID }
+func (e ErrEntryNotFound) Is(t error) bool { return t == ErrEntryNotFoundSentinel }
+
+var ErrBranchNotFoundSentinel = errors.New("piapi: branch not found")
+
+type ErrBranchNotFound struct{ ID string }
+
+func (e ErrBranchNotFound) Error() string   { return "piapi: branch not found: " + e.ID }
+func (e ErrBranchNotFound) Is(t error) bool { return t == ErrBranchNotFoundSentinel }
+
+var ErrSessionNotFoundSentinel = errors.New("piapi: session not found")
+
+type ErrSessionNotFound struct{ ID string }
+
+func (e ErrSessionNotFound) Error() string   { return "piapi: session not found: " + e.ID }
+func (e ErrSessionNotFound) Is(t error) bool { return t == ErrSessionNotFoundSentinel }
+
+var ErrSessionControlUnsupportedInCLISentinel = errors.New("piapi: session control unsupported in CLI")
+
+type ErrSessionControlUnsupportedInCLI struct{ Method string }
+
+func (e ErrSessionControlUnsupportedInCLI) Error() string {
+	return "piapi: " + e.Method + " unsupported in CLI (run the TUI to use session control)"
+}
+func (e ErrSessionControlUnsupportedInCLI) Is(t error) bool {
+	return t == ErrSessionControlUnsupportedInCLISentinel
+}
+
+var ErrSessionControlInEventHandlerSentinel = errors.New("piapi: session control called from event handler")
+
+type ErrSessionControlInEventHandler struct{ Method string }
+
+func (e ErrSessionControlInEventHandler) Error() string {
+	return "piapi: " + e.Method + " must not be called from an event handler; use a command handler"
+}
+func (e ErrSessionControlInEventHandler) Is(t error) bool {
+	return t == ErrSessionControlInEventHandlerSentinel
+}
