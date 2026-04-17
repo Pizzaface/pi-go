@@ -74,7 +74,7 @@ type service struct {
 // defaultLaunch wraps host.LaunchHosted with a router backed by
 // api.NewHostedHandler. Split out for test injection.
 func (s *service) defaultLaunch(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error {
-	handler := api.NewHostedHandler(mgr, reg)
+	handler := api.NewHostedHandler(mgr, reg, nil)
 	return host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle)
 }
 

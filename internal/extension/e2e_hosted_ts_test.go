@@ -85,7 +85,7 @@ func TestE2E_HostedTS(t *testing.T) {
 		t.Fatalf("abs entry: %v", err)
 	}
 
-	handler := extapi.NewHostedHandler(rt.Manager, reg)
+	handler := extapi.NewHostedHandler(rt.Manager, reg, nil)
 	cmd := []string{"node", hostPath, "--entry", absEntry, "--name", "hosted-hello-ts"}
 	if err := host.LaunchHosted(ctx, reg, rt.Manager, cmd, handler.Handle); err != nil {
 		t.Fatalf("LaunchHosted: %v", err)

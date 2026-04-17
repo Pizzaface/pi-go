@@ -18,6 +18,7 @@ import (
 type HostedAPIHandler struct {
 	manager *host.Manager
 	reg     *host.Registration
+	bridge  SessionBridge
 
 	mu    sync.Mutex
 	tools map[string]hostedTool
@@ -32,10 +33,14 @@ type hostedTool struct {
 
 // NewHostedHandler constructs a handler for the registration. The caller
 // wires reg.Conn to route inbound requests here via RPCConn.
-func NewHostedHandler(manager *host.Manager, reg *host.Registration) *HostedAPIHandler {
+func NewHostedHandler(manager *host.Manager, reg *host.Registration, bridge SessionBridge) *HostedAPIHandler {
+	if bridge == nil {
+		bridge = NoopBridge{}
+	}
 	return &HostedAPIHandler{
 		manager: manager,
 		reg:     reg,
+		bridge:  bridge,
 		tools:   map[string]hostedTool{},
 	}
 }
@@ -60,11 +65,11 @@ func (h *HostedAPIHandler) Handle(method string, params json.RawMessage) (any, e
 	case hostproto.MethodSubscribeEvent:
 		return h.handleSubscribeEvent(params)
 	case hostproto.MethodToolUpdate:
-		// Spec #1: accept & drop — spec #5 wires this to the UI.
-		return map[string]any{}, nil
+		// Legacy method name — route through tool_stream.update for one release.
+		return h.handleToolStreamUpdate(params)
 	case hostproto.MethodLog:
-		// Spec #1: accept & drop.
-		return map[string]any{}, nil
+		// Legacy method name — route through log.append for one release.
+		return h.handleLogAppend(params)
 	default:
 		return nil, fmt.Errorf("unsupported method %q", method)
 	}
@@ -79,14 +84,29 @@ func (h *HostedAPIHandler) handleHostCall(params json.RawMessage) (any, error) {
 	if ok, reason := h.manager.Gate().Allowed(h.reg.ID, capability, h.reg.Trust); !ok {
 		return nil, fmt.Errorf("capability denied: %s (%s)", capability, reason)
 	}
-	switch {
-	case p.Service == "tools" && p.Method == "register":
-		return h.registerTool(p.Payload)
-	case p.Service == "exec" && p.Method == "shell":
-		return h.execShell(p.Payload)
-	default:
-		return nil, fmt.Errorf("service %s.%s not implemented", p.Service, p.Method)
+	switch p.Service {
+	case hostproto.ServiceTools:
+		if p.Method == "register" {
+			return h.registerTool(p.Payload)
+		}
+	case "exec":
+		if p.Method == "shell" {
+			return h.execShell(p.Payload)
+		}
+	case hostproto.ServiceSession:
+		return h.handleSession(p.Method, p.Payload)
+	case hostproto.ServiceSessionControl:
+		return h.handleSessionControl(p.Method, p.Payload)
+	case hostproto.ServiceToolStream:
+		if p.Method == hostproto.MethodToolStreamUpdate {
+			return h.handleToolStreamUpdate(p.Payload)
+		}
+	case hostproto.ServiceLog:
+		if p.Method == hostproto.MethodLogAppend {
+			return h.handleLogAppend(p.Payload)
+		}
 	}
+	return nil, fmt.Errorf("service %s.%s not implemented", p.Service, p.Method)
 }
 
 func (h *HostedAPIHandler) registerTool(payload json.RawMessage) (any, error) {
@@ -121,6 +141,130 @@ func (h *HostedAPIHandler) execShell(payload json.RawMessage) (any, error) {
 		return nil, err
 	}
 	return res, nil
+}
+
+func (h *HostedAPIHandler) handleSession(method string, payload json.RawMessage) (any, error) {
+	switch method {
+	case hostproto.MethodSessionAppendEntry:
+		var p hostproto.SessionAppendEntryParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		var body any
+		if len(p.Payload) > 0 {
+			_ = json.Unmarshal(p.Payload, &body)
+		}
+		return map[string]any{}, h.bridge.AppendEntry(h.reg.ID, p.Kind, body)
+
+	case hostproto.MethodSessionSendCustomMessage:
+		var p hostproto.SessionSendCustomMessageParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SendCustomMessage(h.reg.ID,
+			piapi.CustomMessage{CustomType: p.CustomType, Content: p.Content, Display: p.Display, Details: p.Details},
+			piapi.SendOptions{DeliverAs: p.DeliverAs, TriggerTurn: p.TriggerTurn})
+
+	case hostproto.MethodSessionSendUserMessage:
+		var p hostproto.SessionSendUserMessageParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		parts := make([]piapi.ContentPart, 0, len(p.Content))
+		for _, c := range p.Content {
+			parts = append(parts, piapi.ContentPart{Type: c.Type, Text: c.Text})
+		}
+		return map[string]any{}, h.bridge.SendUserMessage(h.reg.ID,
+			piapi.UserMessage{Content: parts},
+			piapi.SendOptions{DeliverAs: p.DeliverAs, TriggerTurn: p.TriggerTurn})
+
+	case hostproto.MethodSessionSetTitle:
+		var p hostproto.SessionSetTitleParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SetSessionTitle(p.Title)
+
+	case hostproto.MethodSessionGetTitle:
+		return hostproto.SessionGetTitleResult{Title: h.bridge.GetSessionTitle()}, nil
+
+	case hostproto.MethodSessionSetEntryLabel:
+		var p hostproto.SessionSetEntryLabelParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SetEntryLabel(p.EntryID, p.Label)
+	}
+	return nil, fmt.Errorf("session.%s not implemented", method)
+}
+
+func (h *HostedAPIHandler) handleSessionControl(method string, payload json.RawMessage) (any, error) {
+	switch method {
+	case hostproto.MethodSessionControlWaitIdle:
+		return map[string]any{}, h.bridge.WaitForIdle(context.Background())
+	case hostproto.MethodSessionControlNew:
+		r, err := h.bridge.NewSession(piapi.NewSessionOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return hostproto.SessionControlNewResult{ID: r.ID, Cancelled: r.Cancelled}, nil
+	case hostproto.MethodSessionControlFork:
+		var p hostproto.SessionControlForkParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		r, err := h.bridge.Fork(p.EntryID)
+		if err != nil {
+			return nil, err
+		}
+		return hostproto.SessionControlForkResult{BranchID: r.BranchID, BranchTitle: r.BranchTitle, Cancelled: r.Cancelled}, nil
+	case hostproto.MethodSessionControlNavigate:
+		var p hostproto.SessionControlNavigateParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		r, err := h.bridge.NavigateBranch(p.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		return hostproto.SessionControlNavigateResult{BranchID: r.BranchID, Cancelled: r.Cancelled}, nil
+	case hostproto.MethodSessionControlSwitch:
+		var p hostproto.SessionControlSwitchParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		r, err := h.bridge.SwitchSession(p.SessionPath)
+		if err != nil {
+			return nil, err
+		}
+		return hostproto.SessionControlSwitchResult{SessionID: r.SessionID, Cancelled: r.Cancelled}, nil
+	case hostproto.MethodSessionControlReload:
+		return map[string]any{}, h.bridge.Reload(context.Background())
+	}
+	return nil, fmt.Errorf("session_control.%s not implemented", method)
+}
+
+func (h *HostedAPIHandler) handleToolStreamUpdate(payload json.RawMessage) (any, error) {
+	var p hostproto.ToolStreamUpdateParams
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, err
+	}
+	var partial piapi.ToolResult
+	if len(p.Partial) > 0 {
+		_ = json.Unmarshal(p.Partial, &partial)
+	}
+	return map[string]any{}, h.bridge.EmitToolUpdate(p.ToolCallID, partial)
+}
+
+func (h *HostedAPIHandler) handleLogAppend(payload json.RawMessage) (any, error) {
+	var p hostproto.LogParams
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, err
+	}
+	if p.Level == "" {
+		p.Level = "info"
+	}
+	return map[string]any{}, h.bridge.AppendExtensionLog(h.reg.ID, p.Level, p.Message, p.Fields)
 }
 
 func (h *HostedAPIHandler) handleSubscribeEvent(params json.RawMessage) (any, error) {

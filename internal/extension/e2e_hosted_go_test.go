@@ -68,7 +68,7 @@ func TestE2E_HostedGo(t *testing.T) {
 		t.Fatalf("expected StateReady after approved discovery; got %s", reg.State)
 	}
 
-	handler := extapi.NewHostedHandler(rt.Manager, reg)
+	handler := extapi.NewHostedHandler(rt.Manager, reg, nil)
 	if err := host.LaunchHosted(ctx, reg, rt.Manager, []string{"go", "run", "."}, handler.Handle); err != nil {
 		t.Fatalf("LaunchHosted: %v", err)
 	}
