@@ -199,9 +199,23 @@ forward compatibility.
 
 ## Trust & Approvals
 
-Non-compiled-in extensions require an entry in
-`~/.pi-go/extensions/approvals.json` (or the project-local equivalent at
-`<cwd>/.pi-go/extensions/approvals.json`). Format:
+Hosted extensions sit in `StatePending` until they're approved. The recommended flow is to approve them from inside pi-go:
+
+1. Start pi-go. Discovered but un-approved extensions appear as a status-bar toast:
+
+   ```
+   2 extensions pending approval — press e to review
+   ```
+
+2. Press `e` (or type `/extensions`) to open the management panel.
+
+3. Select a row with the arrow keys. Press `a` on a pending row to open the approval dialog, toggle capabilities with `space`, and press `enter` to approve. pi-go writes to `~/.pi-go/extensions/approvals.json` on your behalf.
+
+4. Approved extensions auto-start on the next pi-go launch. You can also `s` (start), `x` (stop), `r` (restart), or `v` (revoke) from the panel at any time.
+
+### approvals.json schema
+
+If you prefer to edit the file directly (or a dotfile-management flow needs it), the schema is:
 
 ```json
 {
@@ -209,7 +223,6 @@ Non-compiled-in extensions require an entry in
   "extensions": {
     "my-ext": {
       "trust_class": "third-party",
-      "first_party": false,
       "approved": true,
       "approved_at": "2026-04-15T12:00:00Z",
       "granted_capabilities": [
@@ -233,11 +246,13 @@ Semantics:
 - `trust_class: "compiled-in"` is never written here — compiled-in
   extensions bypass the gate entirely.
 - `trust_class: "first-party"` exists as a tier distinction for future
-  UX (batch approval, reduced prompting); spec #1 treats it identically
-  to `third-party`.
+  UX (batch approval, reduced prompting); the current build treats it
+  identically to `third-party`.
+
+Fields the TUI doesn't name are preserved on disk — future pi-go releases may add fields without disturbing your edits.
 
 Changes to `approvals.json` are picked up on the next pi-go start or on
-an explicit extension-reload.
+an explicit extension-reload (`R` in the panel).
 
 ## Related
 
