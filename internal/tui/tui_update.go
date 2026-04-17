@@ -25,6 +25,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		mainWidth := m.layoutMainWidth()
 		m.statusModel.Width = mainWidth
 		m.chatModel.UpdateRenderer(mainWidth)
+		if m.lifecycle != nil {
+			m.extensionPanel.SetViews(m.lifecycle.List())
+			m.refreshExtensionToast()
+		}
 	case tea.PasteMsg:
 		if !m.loading {
 			m.inputModel.InsertText(msg.Content)
@@ -104,6 +108,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chatModel.Messages = append(m.chatModel.Messages, message{role: "assistant", content: content})
 		}
 		return m, nil
+	case extensionEventMsg:
+		if m.lifecycle != nil {
+			m.extensionPanel.SetViews(m.lifecycle.List())
+			m.refreshExtensionToast()
+		}
+		if m.extensionEventCh != nil {
+			return m, waitForExtensionEvent(m.extensionEventCh)
+		}
+		return m, nil
 	}
 
 	if m.running {
@@ -175,6 +188,10 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if r.RestartCh != nil {
 			cmds = append(cmds, waitForRestart(r.RestartCh))
+		}
+		if m.lifecycle != nil {
+			cmds = append(cmds, m.startExtensionEventBridge())
+			m.refreshExtensionToast()
 		}
 		return m, tea.Batch(cmds...)
 	}

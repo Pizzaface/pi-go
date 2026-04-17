@@ -35,6 +35,9 @@ func (m *model) handleGlobalKey(msg tea.KeyPressMsg, key tea.Key) (tea.Model, te
 		m.ctrlCCount++
 		if m.ctrlCCount >= 2 {
 			m.quitting = true
+			if m.extensionEventCancel != nil {
+				m.extensionEventCancel()
+			}
 			return m, tea.Quit
 		}
 		m.chatModel.AppendWarning("\nCtrl+C again to quit (or wait 2s)...")
@@ -45,6 +48,13 @@ func (m *model) handleGlobalKey(msg tea.KeyPressMsg, key tea.Key) (tea.Model, te
 	}
 
 	if m.loading {
+		return m, nil
+	}
+
+	// 'e' opens the extensions panel when idle and lifecycle is available.
+	if key.Text == "e" && key.Mod == 0 && !m.running && m.lifecycle != nil {
+		m.extensionPanel.OpenPanel()
+		m.extensionPanel.SetViews(m.lifecycle.List())
 		return m, nil
 	}
 

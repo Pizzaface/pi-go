@@ -42,6 +42,13 @@ type model struct {
 	// Lifecycle service for starting/stopping approved extensions.
 	lifecycle lifecycle.Service
 
+	// Extension UI state.
+	extensionToast       extensionToastState
+	extensionPanel       extensionPanelState
+	extensionApproval    *approvalDialogState
+	extensionEventCancel func()
+	extensionEventCh     <-chan lifecycle.Event
+
 	// Agent state.
 	running bool
 	agentCh chan agentMsg // channel for receiving agent events

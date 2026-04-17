@@ -7,6 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/dimetron/pi-go/internal/extension/host"
 )
 
 func (m *model) hasBlockingPopup() bool {
@@ -39,11 +41,28 @@ func (m *model) View() tea.View {
 		return tea.NewView("Loading...")
 	}
 
+	// Extension overlays take priority over the normal layout.
+	if m.extensionApproval != nil {
+		v := tea.NewView(m.extensionApproval.View(m.width, m.height))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
+	}
+	if m.extensionPanel.Open() {
+		v := tea.NewView(m.extensionPanel.View(m.width, m.height))
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
+	}
+
 	debugTraceWidth := m.debugTraceWidth()
 	mainWidth := m.layoutMainWidth()
 
 	renderedMessages := lipgloss.NewStyle().Width(mainWidth).Render(m.chatModel.RenderMessages(m.running))
 	statusBar := padBlockWidth(m.statusModel.Render(m.statusRenderInput()), mainWidth)
+	if toast := m.extensionToast.View(); toast != "" {
+		statusBar = statusBar + "  " + toast
+	}
 	inputArea := padBlockWidth(m.inputModel.View(m.running || m.loading), mainWidth)
 
 	inputLines := lipgloss.Height(inputArea)
@@ -266,9 +285,22 @@ func (m *model) statusRenderInput() StatusRenderInput {
 	}
 }
 
-// extensionsSummary is a spec #5 stub — the live-extension panel is not
-// wired in spec #1. Returns the zero value so status-bar rendering sees
-// no pending/running/errored extensions.
+// extensionsSummary returns live counts from the lifecycle service for the
+// status bar. Returns the zero value when no lifecycle service is available.
 func (m *model) extensionsSummary() ExtensionsSummary {
-	return ExtensionsSummary{}
+	if m.lifecycle == nil {
+		return ExtensionsSummary{}
+	}
+	var s ExtensionsSummary
+	for _, v := range m.lifecycle.List() {
+		switch v.State {
+		case host.StatePending:
+			s.Pending++
+		case host.StateRunning:
+			s.Running++
+		case host.StateErrored:
+			s.Errored++
+		}
+	}
+	return s
 }

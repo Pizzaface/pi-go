@@ -96,6 +96,9 @@ func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExtensionsCommand(parts[1:])
 	case "/exit", "/quit":
 		m.quitting = true
+		if m.extensionEventCancel != nil {
+			m.extensionEventCancel()
+		}
 		return m, tea.Quit
 	default:
 		name := strings.TrimPrefix(cmd, "/")
@@ -121,14 +124,15 @@ func (m *model) extensionCommands() []extension.SlashCommand {
 	return m.cfg.ExtensionCommands
 }
 
-// handleExtensionsCommand is a spec #5 stub — the interactive panel lands
-// with the runtime manager integration in a later spec.
 func (m *model) handleExtensionsCommand(args []string) (tea.Model, tea.Cmd) {
 	_ = args
-	m.chatModel.Messages = append(m.chatModel.Messages, message{
-		role:    "assistant",
-		content: "Extensions manager UI is not available in this build.",
-	})
+	if m.lifecycle == nil {
+		m.appendAssistant("Extensions manager not available (no lifecycle service).")
+		return m, nil
+	}
+	m.extensionPanel.OpenPanel()
+	m.extensionPanel.SetViews(m.lifecycle.List())
+	m.refreshExtensionToast()
 	return m, nil
 }
 

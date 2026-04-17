@@ -37,6 +37,11 @@ func (m *model) toggleDebugPanel() {
 func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.Key()
 
+	// Dismiss extension toast on any keystroke.
+	if m.extensionToast.pending > 0 && !m.extensionToast.dismissed {
+		m.extensionToast.Dismiss()
+	}
+
 	if handled, nextM, cmd := m.handleSetupAlertKey(key); handled {
 		return nextM, cmd
 	}
