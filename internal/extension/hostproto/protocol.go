@@ -97,3 +97,119 @@ type ExtensionEventParams struct {
 	Context    json.RawMessage `json:"context,omitempty"`
 	DeadlineMs int             `json:"deadline_ms,omitempty"`
 }
+
+// Service names (spec #5+).
+const (
+	ServiceSession        = "session"
+	ServiceSessionControl = "session_control"
+	ServiceToolStream     = "tool_stream"
+	ServiceLog            = "log"
+	ServiceTools          = "tools"
+	ServiceEvents         = "events"
+	ServiceHooks          = "hooks"
+)
+
+// Method names within services (spec #5).
+const (
+	MethodSessionAppendEntry       = "append_entry"
+	MethodSessionSendCustomMessage = "send_custom_message"
+	MethodSessionSendUserMessage   = "send_user_message"
+	MethodSessionSetTitle          = "set_title"
+	MethodSessionGetTitle          = "get_title"
+	MethodSessionSetEntryLabel     = "set_entry_label"
+
+	MethodSessionControlWaitIdle = "wait_idle"
+	MethodSessionControlNew      = "new"
+	MethodSessionControlFork     = "fork"
+	MethodSessionControlNavigate = "navigate"
+	MethodSessionControlSwitch   = "switch"
+	MethodSessionControlReload   = "reload"
+
+	MethodToolStreamUpdate = "update"
+	MethodLogAppend        = "append"
+)
+
+// Payload shapes for the new services.
+
+type SessionAppendEntryParams struct {
+	Kind    string          `json:"kind"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+type SessionSendCustomMessageParams struct {
+	CustomType  string         `json:"custom_type"`
+	Content     string         `json:"content"`
+	Display     bool           `json:"display"`
+	Details     map[string]any `json:"details,omitempty"`
+	DeliverAs   string         `json:"deliver_as,omitempty"`
+	TriggerTurn bool           `json:"trigger_turn,omitempty"`
+}
+
+type ContentPartProto struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type SessionSendUserMessageParams struct {
+	Content     []ContentPartProto `json:"content"`
+	DeliverAs   string             `json:"deliver_as,omitempty"`
+	TriggerTurn bool               `json:"trigger_turn,omitempty"`
+}
+
+type SessionSetTitleParams struct {
+	Title string `json:"title"`
+}
+
+type SessionGetTitleResult struct {
+	Title string `json:"title"`
+}
+
+type SessionSetEntryLabelParams struct {
+	EntryID string `json:"entry_id"`
+	Label   string `json:"label"`
+}
+
+type SessionControlForkParams struct {
+	EntryID string `json:"entry_id"`
+}
+
+type SessionControlForkResult struct {
+	BranchID    string `json:"branch_id"`
+	BranchTitle string `json:"branch_title"`
+	Cancelled   bool   `json:"cancelled"`
+}
+
+type SessionControlNewResult struct {
+	ID        string `json:"id"`
+	Cancelled bool   `json:"cancelled"`
+}
+
+type SessionControlNavigateParams struct {
+	TargetID string `json:"target_id"`
+}
+
+type SessionControlNavigateResult struct {
+	BranchID  string `json:"branch_id"`
+	Cancelled bool   `json:"cancelled"`
+}
+
+type SessionControlSwitchParams struct {
+	SessionPath string `json:"session_path"`
+}
+
+type SessionControlSwitchResult struct {
+	SessionID string `json:"session_id"`
+	Cancelled bool   `json:"cancelled"`
+}
+
+type ToolStreamUpdateParams struct {
+	ToolCallID string          `json:"tool_call_id"`
+	Partial    json.RawMessage `json:"partial"`
+}
+
+type LogParams struct {
+	Level   string         `json:"level"`
+	Message string         `json:"message"`
+	Fields  map[string]any `json:"fields,omitempty"`
+	Ts      string         `json:"ts,omitempty"`
+}
