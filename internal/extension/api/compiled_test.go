@@ -127,3 +127,20 @@ func TestCompiled_OnOtherEventErrors(t *testing.T) {
 		t.Fatalf("expected ErrNotImplementedSentinel; got %v", err)
 	}
 }
+
+func TestCompiled_SendUserMessageAcceptsSteerWithTrigger(t *testing.T) {
+	fb := &testbridge.FakeBridge{}
+	reg := &host.Registration{ID: "e", Metadata: piapi.Metadata{Name: "e", Version: "0.0"}}
+	api := NewCompiled(reg, host.NewManager(nil), fb)
+
+	err := api.SendUserMessage(
+		piapi.UserMessage{Content: []piapi.ContentPart{{Type: "text", Text: "abort"}}},
+		piapi.SendOptions{DeliverAs: "steer", TriggerTurn: true},
+	)
+	if err != nil {
+		t.Fatalf("steer with TriggerTurn=true should succeed; got %v", err)
+	}
+	if len(fb.Calls) != 1 || fb.Calls[0].Method != "SendUserMessage" {
+		t.Fatalf("expected single SendUserMessage call; got %+v", fb.Calls)
+	}
+}
