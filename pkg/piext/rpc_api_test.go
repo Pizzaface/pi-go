@@ -50,8 +50,4 @@ func TestRPCAPI_NotImplementedStubs(t *testing.T) {
 	if !errors.Is(err, piapi.ErrNotImplementedSentinel) {
 		t.Fatalf("RegisterCommand: got %v; want ErrNotImplemented", err)
 	}
-	err = api.SendMessage(piapi.CustomMessage{}, piapi.SendOptions{})
-	if !errors.Is(err, piapi.ErrNotImplementedSentinel) {
-		t.Fatalf("SendMessage: got %v; want ErrNotImplemented", err)
-	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"regexp"
 	"sync"
 
 	"github.com/dimetron/pi-go/pkg/piapi"
@@ -187,21 +188,67 @@ func (a *rpcAPI) handleToolExecute(payload json.RawMessage) (any, error) {
 
 func (a *rpcAPI) Events() piapi.EventBus { return noopBus{} }
 
-func (a *rpcAPI) SendMessage(_ piapi.CustomMessage, _ piapi.SendOptions) error {
-	return piapi.ErrNotImplemented{Method: "SendMessage", Spec: "#5"}
+func (a *rpcAPI) SendMessage(msg piapi.CustomMessage, opts piapi.SendOptions) error {
+	if opts.DeliverAs == "steer" {
+		return piapi.ErrIncoherentOptions{Reason: "SendMessage cannot steer; use SendUserMessage"}
+	}
+	payload := map[string]any{
+		"custom_type": msg.CustomType, "content": msg.Content,
+		"display": msg.Display, "details": msg.Details,
+		"deliver_as": opts.DeliverAs, "trigger_turn": opts.TriggerTurn,
+	}
+	var res map[string]any
+	return a.hostCall("session.send_custom_message", payload, &res)
 }
-func (a *rpcAPI) SendUserMessage(_ piapi.UserMessage, _ piapi.SendOptions) error {
-	return piapi.ErrNotImplemented{Method: "SendUserMessage", Spec: "#5"}
+
+func (a *rpcAPI) SendUserMessage(msg piapi.UserMessage, opts piapi.SendOptions) error {
+	if opts.DeliverAs == "steer" && !opts.TriggerTurn {
+		return piapi.ErrIncoherentOptions{Reason: "steer requires TriggerTurn=true"}
+	}
+	content := make([]map[string]any, 0, len(msg.Content))
+	for _, c := range msg.Content {
+		content = append(content, map[string]any{"type": c.Type, "text": c.Text})
+	}
+	payload := map[string]any{
+		"content":      content,
+		"deliver_as":   opts.DeliverAs,
+		"trigger_turn": opts.TriggerTurn,
+	}
+	var res map[string]any
+	return a.hostCall("session.send_user_message", payload, &res)
 }
-func (a *rpcAPI) AppendEntry(_ string, _ any) error {
-	return piapi.ErrNotImplemented{Method: "AppendEntry", Spec: "#5"}
+
+func (a *rpcAPI) AppendEntry(kind string, payload any) error {
+	if !isValidPiextKind(kind) {
+		return piapi.ErrInvalidKind{Kind: kind}
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	p := map[string]any{"kind": kind, "payload": json.RawMessage(body)}
+	var res map[string]any
+	return a.hostCall("session.append_entry", p, &res)
 }
-func (a *rpcAPI) SetSessionName(_ string) error {
-	return piapi.ErrNotImplemented{Method: "SetSessionName", Spec: "#5"}
+
+func (a *rpcAPI) SetSessionName(name string) error {
+	var res map[string]any
+	return a.hostCall("session.set_title", map[string]any{"title": name}, &res)
 }
-func (a *rpcAPI) GetSessionName() string { return "" }
-func (a *rpcAPI) SetLabel(_, _ string) error {
-	return piapi.ErrNotImplemented{Method: "SetLabel", Spec: "#5"}
+
+func (a *rpcAPI) GetSessionName() string {
+	var res struct {
+		Title string `json:"title"`
+	}
+	if err := a.hostCall("session.get_title", map[string]any{}, &res); err != nil {
+		return ""
+	}
+	return res.Title
+}
+
+func (a *rpcAPI) SetLabel(entryID, label string) error {
+	var res map[string]any
+	return a.hostCall("session.set_entry_label", map[string]any{"entry_id": entryID, "label": label}, &res)
 }
 func (a *rpcAPI) GetActiveTools() []string      { return nil }
 func (a *rpcAPI) GetAllTools() []piapi.ToolInfo { return nil }
@@ -246,3 +293,7 @@ func (noopBus) On(string, func(any)) error {
 func (noopBus) Emit(string, any) error {
 	return piapi.ErrNotImplemented{Method: "Events.Emit", Spec: "#3"}
 }
+
+var piextKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+func isValidPiextKind(k string) bool { return piextKindPattern.MatchString(k) }

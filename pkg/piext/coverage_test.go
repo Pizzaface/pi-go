@@ -31,10 +31,6 @@ func TestRPCAPI_Stubs_ReturnNotImplemented(t *testing.T) {
 		{"RegisterProvider", api.RegisterProvider("x", piapi.ProviderDescriptor{})},
 		{"UnregisterProvider", api.UnregisterProvider("x")},
 		{"RegisterMessageRenderer", api.RegisterMessageRenderer("x", piapi.RendererDescriptor{})},
-		{"SendUserMessage", api.SendUserMessage(piapi.UserMessage{}, piapi.SendOptions{})},
-		{"AppendEntry", api.AppendEntry("kind", nil)},
-		{"SetSessionName", api.SetSessionName("x")},
-		{"SetLabel", api.SetLabel("id", "label")},
 		{"SetActiveTools", api.SetActiveTools(nil)},
 		{"SetThinkingLevel", api.SetThinkingLevel(piapi.ThinkingLow)},
 	}
