@@ -1,0 +1,10 @@
+name = "hosted-showcase-go"
+version = "0.1.0"
+description = "Showcase hosted-go extension; demonstrates multi-tool registration, event handling, streaming updates, and system introspection."
+runtime = "hosted"
+command = ["go", "run", "."]
+requested_capabilities = [
+    "tools.register",
+    "events.session_start",
+    "events.tool_execute",
+]
