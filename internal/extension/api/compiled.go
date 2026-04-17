@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 type compiledAPI struct {
 	reg     *host.Registration
 	manager *host.Manager
+	bridge  SessionBridge
 
 	mu       sync.Mutex
 	tools    map[string]piapi.ToolDescriptor
@@ -25,10 +27,16 @@ type compiledAPI struct {
 }
 
 // NewCompiled builds a piapi.API backed by direct in-process dispatch.
-func NewCompiled(reg *host.Registration, manager *host.Manager) piapi.API {
+// The bridge receives every spec #5 method call. Pass NoopBridge{} when
+// a real host is not available.
+func NewCompiled(reg *host.Registration, manager *host.Manager, bridge SessionBridge) piapi.API {
+	if bridge == nil {
+		bridge = NoopBridge{}
+	}
 	return &compiledAPI{
 		reg:      reg,
 		manager:  manager,
+		bridge:   bridge,
 		tools:    map[string]piapi.ToolDescriptor{},
 		handlers: map[string][]piapi.EventHandler{},
 	}
@@ -126,21 +134,30 @@ func (c *compiledAPI) Events() piapi.EventBus {
 	return notImplementedBus{}
 }
 
-func (c *compiledAPI) SendMessage(piapi.CustomMessage, piapi.SendOptions) error {
-	return piapi.ErrNotImplemented{Method: "SendMessage", Spec: "#5"}
+func (c *compiledAPI) SendMessage(msg piapi.CustomMessage, opts piapi.SendOptions) error {
+	if opts.DeliverAs == "steer" {
+		return piapi.ErrIncoherentOptions{Reason: "SendMessage cannot steer; use SendUserMessage"}
+	}
+	return c.bridge.SendCustomMessage(c.reg.ID, msg, opts)
 }
-func (c *compiledAPI) SendUserMessage(piapi.UserMessage, piapi.SendOptions) error {
-	return piapi.ErrNotImplemented{Method: "SendUserMessage", Spec: "#5"}
+func (c *compiledAPI) SendUserMessage(msg piapi.UserMessage, opts piapi.SendOptions) error {
+	if opts.DeliverAs == "steer" && !opts.TriggerTurn {
+		return piapi.ErrIncoherentOptions{Reason: "steer requires TriggerTurn=true"}
+	}
+	return c.bridge.SendUserMessage(c.reg.ID, msg, opts)
 }
-func (c *compiledAPI) AppendEntry(string, any) error {
-	return piapi.ErrNotImplemented{Method: "AppendEntry", Spec: "#5"}
+func (c *compiledAPI) AppendEntry(kind string, payload any) error {
+	if !isValidKind(kind) {
+		return piapi.ErrInvalidKind{Kind: kind}
+	}
+	return c.bridge.AppendEntry(c.reg.ID, kind, payload)
 }
-func (c *compiledAPI) SetSessionName(string) error {
-	return piapi.ErrNotImplemented{Method: "SetSessionName", Spec: "#5"}
+func (c *compiledAPI) SetSessionName(name string) error {
+	return c.bridge.SetSessionTitle(name)
 }
-func (c *compiledAPI) GetSessionName() string { return "" }
-func (c *compiledAPI) SetLabel(string, string) error {
-	return piapi.ErrNotImplemented{Method: "SetLabel", Spec: "#5"}
+func (c *compiledAPI) GetSessionName() string { return c.bridge.GetSessionTitle() }
+func (c *compiledAPI) SetLabel(entryID, label string) error {
+	return c.bridge.SetEntryLabel(entryID, label)
 }
 
 func (c *compiledAPI) GetActiveTools() []string      { return nil }
@@ -189,6 +206,10 @@ func (c *compiledAPI) Exec(ctx context.Context, cmd string, args []string, opts 
 
 func (c *compiledAPI) GetCommands() []piapi.CommandInfo { return nil }
 func (c *compiledAPI) GetFlag(string) any               { return nil }
+
+var kindPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+func isValidKind(kind string) bool { return kindPattern.MatchString(kind) }
 
 type collectingBuffer struct {
 	data []byte

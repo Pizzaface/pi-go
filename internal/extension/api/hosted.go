@@ -115,7 +115,7 @@ func (h *HostedAPIHandler) execShell(payload json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("exec.shell: invalid payload: %w", err)
 	}
 	tmp := &host.Registration{ID: h.reg.ID, Trust: host.TrustCompiledIn, Metadata: h.reg.Metadata}
-	capi := NewCompiled(tmp, h.manager).(*compiledAPI)
+	capi := NewCompiled(tmp, h.manager, NoopBridge{}).(*compiledAPI)
 	res, err := capi.Exec(context.Background(), p.Cmd, p.Args, piapi.ExecOptions{Timeout: p.Timeout})
 	if err != nil {
 		return nil, err

@@ -28,6 +28,9 @@ type RuntimeConfig struct {
 	BaseInstruction string
 	ScreenProvider  tools.ScreenProvider
 	RestartFunc     tools.RestartFunc
+	// Bridge is the session/UI bridge for spec #5 operations. Nil means
+	// the NoopBridge is used (messaging + session control become no-ops).
+	Bridge extapi.SessionBridge
 }
 
 // Runtime is the assembled extension runtime output consumed by CLI/TUI startup.
@@ -118,7 +121,7 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		if err := manager.Register(reg); err != nil {
 			return nil, fmt.Errorf("register compiled-in %q: %w", entry.Name, err)
 		}
-		api := extapi.NewCompiled(reg, manager)
+		api := extapi.NewCompiled(reg, manager, cfg.Bridge)
 		reg.API = api
 		if err := entry.Register(api); err != nil {
 			return nil, fmt.Errorf("compiled-in %q Register: %w", entry.Name, err)

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/dimetron/pi-go/internal/extension/host"
 	"github.com/dimetron/pi-go/pkg/piapi"
+	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
 )
 
 func newTestAPI(t *testing.T) (*compiledAPI, *host.Manager) {
@@ -23,7 +25,7 @@ func newTestAPI(t *testing.T) (*compiledAPI, *host.Manager) {
 	if err := m.Register(reg); err != nil {
 		t.Fatal(err)
 	}
-	api := NewCompiled(reg, m).(*compiledAPI)
+	api := NewCompiled(reg, m, NoopBridge{}).(*compiledAPI)
 	return api, m
 }
 
@@ -43,11 +45,59 @@ func TestCompiled_RegisterToolLands(t *testing.T) {
 	}
 }
 
-func TestCompiled_SendMessageNotImplemented(t *testing.T) {
-	api, _ := newTestAPI(t)
-	err := api.SendMessage(piapi.CustomMessage{}, piapi.SendOptions{})
-	if !errors.Is(err, piapi.ErrNotImplementedSentinel) {
-		t.Fatalf("expected ErrNotImplementedSentinel; got %v", err)
+func TestCompiled_Spec5RoutesToBridge(t *testing.T) {
+	fb := &testbridge.FakeBridge{}
+	reg := &host.Registration{ID: "e", Trust: host.TrustCompiledIn, Metadata: piapi.Metadata{Name: "e", Version: "0.0"}}
+	api := NewCompiled(reg, host.NewManager(nil), fb)
+
+	if err := api.AppendEntry("info", map[string]any{"k": "v"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.SendMessage(piapi.CustomMessage{CustomType: "note", Content: "x"}, piapi.SendOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.SendUserMessage(piapi.UserMessage{Content: []piapi.ContentPart{{Type: "text", Text: "hi"}}}, piapi.SendOptions{TriggerTurn: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.SetSessionName("title"); err != nil {
+		t.Fatal(err)
+	}
+	if got := api.GetSessionName(); got != "title" {
+		t.Fatalf("GetSessionName = %q; want title", got)
+	}
+	if err := api.SetLabel("branch-1", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+
+	wantMethods := []string{"AppendEntry", "SendCustomMessage", "SendUserMessage", "SetSessionTitle", "GetSessionTitle", "SetEntryLabel"}
+	var gotMethods []string
+	for _, c := range fb.Calls {
+		gotMethods = append(gotMethods, c.Method)
+	}
+	if !reflect.DeepEqual(gotMethods, wantMethods) {
+		t.Fatalf("calls = %v; want %v", gotMethods, wantMethods)
+	}
+}
+
+func TestCompiled_AppendEntryRejectsInvalidKind(t *testing.T) {
+	fb := &testbridge.FakeBridge{}
+	reg := &host.Registration{ID: "e", Metadata: piapi.Metadata{Name: "e", Version: "0.0"}}
+	api := NewCompiled(reg, host.NewManager(nil), fb)
+
+	err := api.AppendEntry("Bad Kind!", nil)
+	if !errors.Is(err, piapi.ErrInvalidKindSentinel) {
+		t.Fatalf("got %v; want ErrInvalidKind", err)
+	}
+}
+
+func TestCompiled_SendMessageRejectsSteer(t *testing.T) {
+	fb := &testbridge.FakeBridge{}
+	reg := &host.Registration{ID: "e", Metadata: piapi.Metadata{Name: "e", Version: "0.0"}}
+	api := NewCompiled(reg, host.NewManager(nil), fb)
+
+	err := api.SendMessage(piapi.CustomMessage{CustomType: "x"}, piapi.SendOptions{DeliverAs: "steer", TriggerTurn: true})
+	if !errors.Is(err, piapi.ErrIncoherentOptionsSentinel) {
+		t.Fatalf("got %v; want ErrIncoherentOptions", err)
 	}
 }
 
