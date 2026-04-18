@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/dimetron/pi-go/pkg/piapi"
@@ -297,3 +298,24 @@ func (noopBus) Emit(string, any) error {
 var piextKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 func isValidPiextKind(k string) bool { return piextKindPattern.MatchString(k) }
+
+type transportLogWriter struct {
+	api *rpcAPI
+}
+
+// Write splits p on newlines; each non-empty line becomes a log.append
+// notification. Returns len(p) unconditionally (never blocks stderr semantics).
+func (w transportLogWriter) Write(p []byte) (int, error) {
+	lines := strings.Split(string(p), "\n")
+	for _, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		_ = w.api.transport.Notify("pi.extension/host_call", map[string]any{
+			"service": "log", "version": 1, "method": "append",
+			"payload": map[string]any{"level": "info", "message": ln},
+		})
+	}
+	return len(p), nil
+}

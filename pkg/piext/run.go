@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/dimetron/pi-go/pkg/piapi"
@@ -59,6 +60,8 @@ func runInternal(in io.ReadCloser, out io.WriteCloser, metadata piapi.Metadata, 
 	}
 
 	api := newRPCAPI(transport, metadata, hsResp.GrantedServices)
+	SetLogWriter(transportLogWriter{api: api})
+	defer SetLogWriter(nil)
 	if err := register(api); err != nil {
 		return err
 	}
@@ -108,16 +111,31 @@ func splitCap(cap string) (service, method string) {
 	return cap, ""
 }
 
-// Log returns a writer that emits each write as a pi.extension/log
-// notification to the host. Extensions should NOT write to os.Stdout
-// directly (the transport owns stdout).
+// logWriterBox wraps an io.Writer so that atomic.Value always stores the
+// same concrete type regardless of which writer is active.
+type logWriterBox struct{ w io.Writer }
+
+// currentLogWriter holds a *logWriterBox set by Run() once the transport is
+// active. A nil load means no transport yet — fall back to stderr.
+var currentLogWriter atomic.Value // stores *logWriterBox
+
+// Log returns an io.Writer for hosted-extension logging. When a transport
+// is active (set by Run()), each newline-terminated write becomes a
+// log.append notification. Pre-handshake (transport nil) falls back to
+// stderr so early startup messages aren't lost.
 func Log() io.Writer {
-	return logWriter{}
+	if v := currentLogWriter.Load(); v != nil {
+		return v.(*logWriterBox).w
+	}
+	return os.Stderr
 }
 
-type logWriter struct{}
-
-func (logWriter) Write(p []byte) (int, error) {
-	_, _ = os.Stderr.Write(p)
-	return len(p), nil
+// SetLogWriter is called by Run() to swap Log() to a writer backed by
+// the active transport. Pass nil to restore stderr behavior.
+func SetLogWriter(w io.Writer) {
+	if w == nil {
+		currentLogWriter.Store(&logWriterBox{w: os.Stderr})
+		return
+	}
+	currentLogWriter.Store(&logWriterBox{w: w})
 }

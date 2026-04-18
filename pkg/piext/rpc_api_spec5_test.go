@@ -60,3 +60,35 @@ func TestRPCAPI_AppendEntryRejectsInvalidKind(t *testing.T) {
 		t.Fatalf("expected ErrInvalidKind, got %v", err)
 	}
 }
+
+func TestTransportLogWriterEmitsNotify(t *testing.T) {
+	extIn, hostOut := io.Pipe()
+	hostIn, extOut := io.Pipe()
+	transport := newTransport(extIn, extOut)
+	api := newRPCAPI(transport, piapi.Metadata{Name: "t"}, nil)
+
+	done := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _ := hostIn.Read(buf)
+		done <- buf[:n]
+	}()
+
+	w := transportLogWriter{api: api}
+	if _, err := w.Write([]byte("hello\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := <-done
+	var msg map[string]any
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg["method"] != "pi.extension/host_call" {
+		t.Fatalf("method = %v; want host_call", msg["method"])
+	}
+	_ = hostIn.Close()
+	_ = hostOut.Close()
+	_ = extOut
+	_ = transport.Close()
+}
