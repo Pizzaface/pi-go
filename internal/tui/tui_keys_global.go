@@ -51,13 +51,6 @@ func (m *model) handleGlobalKey(msg tea.KeyPressMsg, key tea.Key) (tea.Model, te
 		return m, nil
 	}
 
-	// 'e' opens the extensions panel when idle and lifecycle is available.
-	if key.Text == "e" && key.Mod == 0 && !m.running && m.lifecycle != nil {
-		m.extensionPanel.OpenPanel()
-		m.extensionPanel.SetViews(m.lifecycle.List())
-		return m, nil
-	}
-
 	if key.Code == 'o' && key.Mod == tea.ModCtrl {
 		m.chatModel.ToolDisplay.CollapsedTools = !m.chatModel.ToolDisplay.CollapsedTools
 		saveCollapsedTools(m.chatModel.ToolDisplay.CollapsedTools)
