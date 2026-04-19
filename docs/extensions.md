@@ -105,8 +105,8 @@ The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
    go 1.22
 
    require (
-       github.com/dimetron/pi-go/pkg/piapi v0.0.0
-       github.com/dimetron/pi-go/pkg/piext v0.0.0
+       github.com/pizzaface/go-pi/pkg/piapi v0.0.0
+       github.com/pizzaface/go-pi/pkg/piext v0.0.0
    )
    ```
 
@@ -131,8 +131,8 @@ The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
    import (
        "context"
 
-       "github.com/dimetron/pi-go/pkg/piapi"
-       "github.com/dimetron/pi-go/pkg/piext"
+       "github.com/pizzaface/go-pi/pkg/piapi"
+       "github.com/pizzaface/go-pi/pkg/piext"
    )
 
    var Metadata = piapi.Metadata{
@@ -253,6 +253,60 @@ Fields the TUI doesn't name are preserved on disk — future pi-go releases may 
 
 Changes to `approvals.json` are picked up on the next pi-go start or on
 an explicit extension-reload (`R` in the panel).
+
+## Session & UI (Spec #5)
+
+Extensions granted `session.*` capabilities can read and write the
+running session.
+
+### Messaging
+
+| Method | Capability | Effect |
+|---|---|---|
+| `pi.AppendEntry(kind, payload)` | `session.append_entry` | Append a typed entry to the transcript. `kind` must match `^[a-z][a-z0-9_-]*$`. |
+| `pi.SendMessage(msg, opts)` | `session.append_entry` + `session.trigger_turn` (if `TriggerTurn`) | Append an extension-authored custom message. `opts.DeliverAs="steer"` is rejected. |
+| `pi.SendUserMessage(msg, opts)` | `session.send_user_message` + `session.trigger_turn` (if `TriggerTurn` or `DeliverAs="steer"`) | Inject a user-role message. See delivery modes below. |
+| `pi.SetSessionName` / `GetSessionName` | `session.manage` | Read/write the current session's title. |
+| `pi.SetLabel(entryID, label)` | `session.manage` | Rename a branch (`entryID` is the branch ID). |
+
+Delivery modes:
+
+- `nextTurn` — append to transcript; wait for user to press enter unless `TriggerTurn=true`.
+- `followUp` — queue; run automatically after the current turn ends.
+- `steer` — abort the current turn, prepend the message as the next turn's input. Requires `TriggerTurn=true`.
+
+### Session control (command handlers only)
+
+These methods only run inside `CommandContext` (i.e. spec #2 command handlers). From event handlers they return `ErrSessionControlInEventHandler`. From the CLI they return `ErrSessionControlUnsupportedInCLI`.
+
+- `WaitForIdle(ctx)` — block until no turn is running.
+- `NewSession()` — start a fresh session.
+- `Fork(branchID)` — fork a branch. Empty string = current session.
+- `NavigateTree(branchID)` — switch to an existing branch.
+- `SwitchSession(sessionID)` — resume a session by ID.
+- `Reload(ctx)` — re-read approvals and provider registry without restarting extensions.
+
+### Lifecycle hooks
+
+Extensions declare hooks in `pi.toml`:
+
+```toml
+[[hooks]]
+event   = "session_start"   # startup | session_start | before_turn | after_turn | shutdown
+command = "ext_announce"    # must be a tool the extension registers
+tools   = ["*"]             # hook fires only when these tools are active; "*" = always
+timeout = 5000              # ms; default 5000, max 60000
+```
+
+Declaring any `[[hooks]]` entry requires the `hooks.register` capability. `critical = true` aborts startup on hook failure; only first-party extensions may set it.
+
+### Streaming & logs
+
+Partial `ToolResult` updates from `onUpdate(partial)` callbacks reach the TUI tool-display panel and the trace log. Extension log writes via `piext.Log()` — and direct `log.append` calls — stream to the TUI trace panel and `~/.pi-go/logs/extensions.log` (rotated at 10 MB, last 3 retained).
+
+### Deprecations
+
+Direct invocation of the legacy JSON-RPC method names `pi.extension/tool_update` and `pi.extension/log` remains supported for one release but is deprecated. Use the service-form `tool_stream.update` and `log.append` instead. They're removed in spec #6.
 
 ## Related
 
