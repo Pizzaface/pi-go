@@ -2,9 +2,11 @@ package extension
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
@@ -52,14 +54,20 @@ type Runtime struct {
 	LifecycleHooks      []HookConfig
 	Instruction         string
 	Lifecycle           lifecycle.Service
+	// Bridge is the session/UI bridge for spec #5 operations. Nil means
+	// lifecycle hooks that append entries are no-ops.
+	Bridge extapi.SessionBridge
 }
 
-// HookConfig is a spec #5 stub retained to keep CLI callers compiling.
+// HookConfig is one aggregated lifecycle hook, copied from a
+// piapi.HookConfig plus the owning extension's ID.
 type HookConfig struct {
-	Event   string
-	Command string
-	Tools   []string
-	Timeout int
+	ExtensionID string
+	Event       string
+	Command     string
+	Tools       []string
+	Timeout     int
+	Critical    bool
 }
 
 // Lifecycle event name stubs — spec #5 will wire these. Retained so CLI
@@ -184,6 +192,24 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		slashCommands = append(slashCommands, tpl.SlashCommand())
 	}
 
+	// Aggregate lifecycle hooks from all registrations.
+	var lifecycleHooks []HookConfig
+	for _, reg := range registrations {
+		for _, h := range reg.Metadata.Hooks {
+			if h.Critical && reg.Trust != host.TrustFirstParty && reg.Trust != host.TrustCompiledIn {
+				continue
+			}
+			lifecycleHooks = append(lifecycleHooks, HookConfig{
+				ExtensionID: reg.ID,
+				Event:       h.Event,
+				Command:     h.Command,
+				Tools:       append([]string(nil), h.Tools...),
+				Timeout:     h.Timeout,
+				Critical:    h.Critical,
+			})
+		}
+	}
+
 	rt := &Runtime{
 		Extensions:       registrations,
 		Tools:            coreTools,
@@ -195,17 +221,128 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		Manager:          manager,
 		SlashCommands:    slashCommands,
 		Instruction:      instruction,
+		LifecycleHooks:   lifecycleHooks,
+		Bridge:           cfg.Bridge,
 	}
 	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir)
 	_ = ctx
 	return rt, nil
 }
 
-// RunLifecycleHooks is a spec #5 stub — no hooks are defined in spec #1.
+// RunLifecycleHooks fires all hooks subscribed to the given event in
+// declaration order. Hook errors are logged but don't abort the caller
+// unless a hook has Critical=true and the event is "startup".
+//
+// Hooks are invoked by synthesizing a ToolCall against the extension's
+// registered tool of the same name. before_turn hook results with text
+// content are appended via Bridge.AppendEntry so the LLM sees them.
 func (r *Runtime) RunLifecycleHooks(ctx context.Context, event string, data map[string]any) error {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("RunLifecycleHooks: marshal: %w", err)
+	}
+
+	for _, h := range r.LifecycleHooks {
+		if h.Event != event {
+			continue
+		}
+		if !hookMatchesTools(h.Tools, r.activeToolNames()) {
+			continue
+		}
+
+		reg := r.findRegistration(h.ExtensionID)
+		if reg == nil || reg.API == nil {
+			continue
+		}
+		toolMap := extapi.CompiledTools(reg.API)
+		if toolMap == nil {
+			continue
+		}
+		toolDesc, ok := toolMap[h.Command]
+		if !ok {
+			continue
+		}
+
+		timeout := time.Duration(h.Timeout) * time.Millisecond
+		if timeout == 0 {
+			timeout = 5 * time.Second
+		}
+		hookCtx, cancel := context.WithTimeout(ctx, timeout)
+		call := piapi.ToolCall{
+			ID:   fmt.Sprintf("hook-%s-%d", event, time.Now().UnixNano()),
+			Name: h.Command,
+			Args: payload,
+		}
+		result, hookErr := toolDesc.Execute(hookCtx, call, nil)
+		cancel()
+
+		if hookErr != nil {
+			if event == "startup" && h.Critical {
+				return fmt.Errorf("critical startup hook %s/%s failed: %w", h.ExtensionID, h.Command, hookErr)
+			}
+			continue
+		}
+
+		if event == "before_turn" && r.Bridge != nil {
+			for _, c := range result.Content {
+				if c.Type == "text" {
+					_ = r.Bridge.AppendEntry(h.ExtensionID, "hook/before_turn", c.Text)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// hookMatchesTools returns true when filter is empty (no constraint) or
+// when filter contains "*" or any name found in active.
+func hookMatchesTools(filter, active []string) bool {
+	if len(filter) == 0 {
+		return true
+	}
+	for _, f := range filter {
+		if f == "*" {
+			return true
+		}
+		for _, a := range active {
+			if a == f {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *Runtime) activeToolNames() []string {
+	out := make([]string, 0, len(r.Tools))
+	for _, t := range r.Tools {
+		out = append(out, t.Name())
+	}
+	return out
+}
+
+func (r *Runtime) findRegistration(id string) *host.Registration {
+	for _, reg := range r.Extensions {
+		if reg.ID == id {
+			return reg
+		}
+	}
+	return nil
+}
+
+// Reload re-reads approvals.json and updates the gate in place without
+// restarting any running extensions.
+func (r *Runtime) Reload(ctx context.Context) error {
 	_ = ctx
-	_ = event
-	_ = data
+	if r.Manager == nil {
+		return nil
+	}
+	approvalsPath := DefaultApprovalsPath()
+	gate, err := host.NewGate(approvalsPath)
+	if err != nil {
+		return fmt.Errorf("reload approvals: %w", err)
+	}
+	r.Manager.SetGate(gate)
 	return nil
 }
 

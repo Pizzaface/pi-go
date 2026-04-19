@@ -75,7 +75,19 @@ func NewManager(gate *Gate) *Manager {
 }
 
 // Gate returns the capability gate.
-func (m *Manager) Gate() *Gate { return m.gate }
+func (m *Manager) Gate() *Gate {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.gate
+}
+
+// SetGate replaces the capability gate atomically. Useful for hot-reloading
+// approvals.json without restarting running extensions.
+func (m *Manager) SetGate(g *Gate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gate = g
+}
 
 // Dispatcher returns the event dispatcher.
 func (m *Manager) Dispatcher() *Dispatcher { return m.dispatcher }
