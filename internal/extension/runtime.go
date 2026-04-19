@@ -226,7 +226,7 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		LifecycleHooks:   lifecycleHooks,
 		Bridge:           cfg.Bridge,
 	}
-	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir)
+	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir, cfg.Bridge)
 	rt.Lifecycle.SetShutdownHook(rt.RunLifecycleHooks, "")
 
 	// Fire startup hooks now that all extensions are registered.

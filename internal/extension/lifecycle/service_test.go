@@ -27,7 +27,7 @@ func newTestService(t *testing.T) (Service, *host.Manager, string) {
 		t.Fatal(err)
 	}
 	mgr := host.NewManager(gate)
-	svc := New(mgr, gate, approvalsPath, tmp)
+	svc := New(mgr, gate, approvalsPath, tmp, nil)
 	return svc, mgr, approvalsPath
 }
 

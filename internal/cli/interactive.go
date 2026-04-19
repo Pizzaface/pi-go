@@ -15,6 +15,7 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	extapi "github.com/dimetron/pi-go/internal/extension/api"
 	"github.com/dimetron/pi-go/internal/guardrail"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
@@ -58,12 +59,19 @@ func runInteractive(
 	initDone := make(chan struct{})
 	initCtx, initCancel := context.WithCancel(ctx)
 
+	// Pre-construct the bridge with nil prog so it can be passed into
+	// BuildRuntime (extensions may call bridge methods during startup hooks).
+	// AttachProgram is called inside tui.Run once the Program exists.
+	homeDir, _ := os.UserHomeDir()
+	logPath := filepath.Join(homeDir, ".pi-go", "logs", "extensions.log")
+	bridge := tui.NewSessionBridge(logPath)
+
 	if !noModelConfigured {
 		initCh = make(chan tui.InitEvent, 32)
 		go func() {
 			defer close(initDone)
 			defer close(initCh)
-			deferredInit(initCtx, cfg, llm, cwd, sandboxRoot, initCh, &res)
+			deferredInit(initCtx, cfg, llm, cwd, sandboxRoot, initCh, &res, bridge)
 		}()
 	} else {
 		close(initDone)
@@ -87,6 +95,7 @@ func runInteractive(
 		DeferredInit:      initCh,
 		DebugTracer:       debugTracer,
 		NoModelConfigured: noModelConfigured,
+		Bridge:            bridge,
 	})
 
 	initCancel() // signal deferred init to stop
@@ -103,7 +112,9 @@ func runInteractive(
 }
 
 // deferredInit performs all heavy initialization, sending progress via ch.
-// Resources that need cleanup are stored in res.
+// Resources that need cleanup are stored in res. bridge is the TUI session
+// bridge pre-constructed in runInteractive; it is passed to BuildRuntime so
+// extension hooks and hosted handlers share the same bridge instance.
 func deferredInit(
 	ctx context.Context,
 	cfg config.Config,
@@ -111,6 +122,7 @@ func deferredInit(
 	cwd, sandboxRoot string,
 	ch chan<- tui.InitEvent,
 	res *initResources,
+	bridge extapi.SessionBridge,
 ) {
 	send := func(item string, done bool) {
 		ch <- tui.InitEvent{Item: item, Done: done}
@@ -137,6 +149,7 @@ func deferredInit(
 		Sandbox:         sandbox,
 		BaseInstruction: baseInstruction(),
 		ScreenProvider:  screen,
+		Bridge:          bridge,
 		RestartFunc: func() {
 			select {
 			case restartCh <- struct{}{}:
@@ -290,6 +303,8 @@ func deferredInit(
 			GitBranch:      ps.gitBranch,
 			DiffAdded:      ps.diffAdded,
 			DiffRemoved:    ps.diffRemoved,
+			Runtime:        runtime,
+			Bridge:         bridge,
 		},
 	}
 }

@@ -43,14 +43,16 @@ type Service interface {
 // New constructs a Service. All mutating methods are safe for concurrent
 // use. approvalsPath is the absolute path to approvals.json (may not
 // exist yet). workDir is the project CWD used by Reload to re-walk
-// discovery roots.
-func New(mgr *host.Manager, gate *host.Gate, approvalsPath, workDir string) Service {
+// discovery roots. bridge is passed to api.NewHostedHandler for each
+// hosted extension launch; nil means a NoopBridge is used.
+func New(mgr *host.Manager, gate *host.Gate, approvalsPath, workDir string, bridge api.SessionBridge) Service {
 	s := &service{
 		mgr:           mgr,
 		gate:          gate,
 		approvalsPath: approvalsPath,
 		workDir:       workDir,
 		subs:          map[int]chan Event{},
+		bridge:        bridge,
 	}
 	s.launchFunc = s.defaultLaunch
 	s.stopFunc = s.defaultStop
@@ -84,12 +86,16 @@ type service struct {
 	shutdownHook HookFunc
 	// stopReason is passed to the shutdown hook data map.
 	stopReason string
+
+	// bridge is the session/UI bridge forwarded to api.NewHostedHandler on
+	// each extension launch. Nil means NoopBridge.
+	bridge api.SessionBridge
 }
 
 // defaultLaunch wraps host.LaunchHosted with a router backed by
 // api.NewHostedHandler. Split out for test injection.
 func (s *service) defaultLaunch(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error {
-	handler := api.NewHostedHandler(mgr, reg, nil)
+	handler := api.NewHostedHandler(mgr, reg, s.bridge)
 	return host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle)
 }
 

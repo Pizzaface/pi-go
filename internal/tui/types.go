@@ -10,6 +10,7 @@ import (
 	"github.com/dimetron/pi-go/internal/agent"
 	"github.com/dimetron/pi-go/internal/config"
 	"github.com/dimetron/pi-go/internal/extension"
+	extapi "github.com/dimetron/pi-go/internal/extension/api"
 	"github.com/dimetron/pi-go/internal/extension/lifecycle"
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
@@ -96,6 +97,11 @@ type Config struct {
 	// May be nil when extensions are disabled or not yet wired.
 	Runtime *extension.Runtime
 
+	// Bridge is the session bridge pre-constructed before the bubbletea
+	// Program. Run calls AttachProgram on it (via type assertion) once the
+	// Program exists. May be nil when running without extension bridge support.
+	Bridge extapi.SessionBridge
+
 	// NoModelConfigured is true when no API key / model is available at startup.
 	// The TUI shows a setup alert directing the user to /login.
 	NoModelConfigured bool
@@ -134,6 +140,11 @@ type InitResult struct {
 	GitBranch         string
 	DiffAdded         int
 	DiffRemoved       int
+	// Runtime is the extension runtime, wired into cfg.Runtime on init completion.
+	Runtime *extension.Runtime
+	// Bridge is the session bridge, wired into m.bridge on init completion.
+	// A *tuiSessionBridge is passed here; handleInitEvent uses a type assertion.
+	Bridge extapi.SessionBridge
 }
 
 // CompactStatsProvider provides compaction statistics for TUI display.

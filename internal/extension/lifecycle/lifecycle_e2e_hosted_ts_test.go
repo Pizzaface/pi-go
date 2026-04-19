@@ -45,7 +45,7 @@ func TestLifecycleE2E_HostedTS(t *testing.T) {
 		t.Fatal(err)
 	}
 	mgr := host.NewManager(gate)
-	svc := New(mgr, gate, approvalsPath, tmp)
+	svc := New(mgr, gate, approvalsPath, tmp, nil)
 
 	if err := svc.Reload(context.Background()); err != nil {
 		t.Fatal(err)

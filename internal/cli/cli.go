@@ -255,11 +255,16 @@ func runNonInteractive(
 	compactorMetrics := tools.NewCompactMetrics()
 	compactorCB := tools.BuildCompactorCallback(compactorCfg, compactorMetrics)
 
+	cliHome, _ := os.UserHomeDir()
+	cliLogPath := filepath.Join(cliHome, ".pi-go", "logs", "extensions.log")
+	cliBridge := NewSessionBridge(os.Stderr, cliLogPath, nil)
+
 	runtime, err := extension.BuildRuntime(parentCtx, extension.RuntimeConfig{
 		Config:          cfg,
 		WorkDir:         cwd,
 		Sandbox:         sandbox,
 		BaseInstruction: instruction,
+		Bridge:          cliBridge,
 	})
 	if err != nil {
 		return fmt.Errorf("building extension runtime: %w", err)

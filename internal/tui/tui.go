@@ -180,6 +180,12 @@ func Run(ctx context.Context, cfg Config) error {
 	chat.ToolDisplay.RenderTimeout = chat.RenderTimeout
 	chat.ToolDisplay.CollapsedTools = loadCollapsedTools()
 
+	// Resolve the concrete bridge type so agent_loop can call markBusy/markIdle.
+	var tuiBridge *tuiSessionBridge
+	if b, ok := cfg.Bridge.(*tuiSessionBridge); ok {
+		tuiBridge = b
+	}
+
 	m := model{
 		cfg:          cfg,
 		ctx:          ctx,
@@ -191,6 +197,7 @@ func Run(ctx context.Context, cfg Config) error {
 		face:         NewFaceRenderer(),
 		effortLevel:  cfg.EffortLevel,
 		setupAlert:   cfg.NoModelConfigured,
+		bridge:       tuiBridge,
 	}
 	if cfg.DeferredInit != nil {
 		m.loading = true
@@ -201,6 +208,9 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	p := tea.NewProgram(&m, tea.WithContext(ctx))
+	if tuiBridge != nil {
+		tuiBridge.AttachProgram(p)
+	}
 	_, err := p.Run()
 	if m.initErr != nil {
 		return m.initErr

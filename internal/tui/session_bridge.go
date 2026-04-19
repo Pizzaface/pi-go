@@ -41,6 +41,24 @@ func newTUISessionBridge(prog programSender, logPath string) *tuiSessionBridge {
 	}
 }
 
+// NewSessionBridge constructs a TUI session bridge with a nil program
+// pointer. The caller must pass the result to tui.Config.Bridge; tui.Run
+// calls AttachProgram once the bubbletea Program is created.
+// Callers outside this package receive the bridge as api.SessionBridge;
+// tui.Run recovers the concrete type internally via type assertion.
+func NewSessionBridge(logPath string) api.SessionBridge {
+	return newTUISessionBridge(nil, logPath)
+}
+
+// AttachProgram wires a bubbletea Program into a bridge that was constructed
+// with a nil prog. Must be called before any extension can invoke bridge
+// methods that dispatch through prog. All bridge send methods guard against
+// nil prog, so calls that arrive before attachment return errBridgeNotReady
+// rather than panicking.
+func (b *tuiSessionBridge) AttachProgram(p programSender) {
+	b.prog = p
+}
+
 func (b *tuiSessionBridge) AppendEntry(extID, kind string, payload any) error {
 	if b.prog == nil {
 		return errBridgeNotReady

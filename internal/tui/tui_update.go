@@ -299,6 +299,12 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.cfg.RestartCh = r.RestartCh
 		m.cfg.Screen = r.Screen
 		m.lifecycle = r.Lifecycle
+		if r.Runtime != nil {
+			m.cfg.Runtime = r.Runtime
+		}
+		if b, ok := r.Bridge.(*tuiSessionBridge); ok && b != nil {
+			m.bridge = b
+		}
 		m.statusModel.GitBranch = r.GitBranch
 		m.diffAdded = r.DiffAdded
 		m.diffRemoved = r.DiffRemoved
@@ -326,9 +332,10 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 	return m, waitForInitEvent(msg.ch)
 }
 
-// reloadExtensions asks the extension runtime to reload all extensions.
-// Runtime wiring is added in Task 16; until then this is a no-op.
+// reloadExtensions asks the extension runtime to reload approvals.
 func (m *model) reloadExtensions() error {
-	// TODO(Task 16): call m.cfg.Runtime.Reload(m.ctx) once Runtime field is wired.
-	return nil
+	if m.cfg.Runtime == nil {
+		return nil
+	}
+	return m.cfg.Runtime.Reload(m.ctx)
 }
