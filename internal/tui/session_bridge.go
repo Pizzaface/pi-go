@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -67,21 +66,73 @@ func (b *tuiSessionBridge) SetEntryLabel(entryID, label string) error {
 	return nil
 }
 
-// Stubs filled in Task 9 / Task 10 / Task 11.
-func (b *tuiSessionBridge) WaitForIdle(context.Context) error { return errors.New("not yet wired") }
-func (b *tuiSessionBridge) NewSession(piapi.NewSessionOptions) (piapi.NewSessionResult, error) {
-	return piapi.NewSessionResult{}, errors.New("not yet wired")
+func (b *tuiSessionBridge) WaitForIdle(ctx context.Context) error {
+	b.mu.Lock()
+	if b.isIdle {
+		b.mu.Unlock()
+		return nil
+	}
+	ch := make(chan struct{})
+	b.idleWaiters = append(b.idleWaiters, ch)
+	b.mu.Unlock()
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
-func (b *tuiSessionBridge) Fork(string) (piapi.ForkResult, error) {
-	return piapi.ForkResult{}, errors.New("not yet wired")
+
+func (b *tuiSessionBridge) markBusy() {
+	b.mu.Lock()
+	b.isIdle = false
+	b.mu.Unlock()
 }
-func (b *tuiSessionBridge) NavigateBranch(string) (piapi.NavigateResult, error) {
-	return piapi.NavigateResult{}, errors.New("not yet wired")
+
+func (b *tuiSessionBridge) markIdle() {
+	b.mu.Lock()
+	b.isIdle = true
+	waiters := b.idleWaiters
+	b.idleWaiters = nil
+	b.mu.Unlock()
+	for _, w := range waiters {
+		close(w)
+	}
 }
-func (b *tuiSessionBridge) SwitchSession(string) (piapi.SwitchResult, error) {
-	return piapi.SwitchResult{}, errors.New("not yet wired")
+
+func (b *tuiSessionBridge) NewSession(_ piapi.NewSessionOptions) (piapi.NewSessionResult, error) {
+	done := make(chan ExtensionNewSessionReply, 1)
+	b.prog.Send(ExtensionNewSessionReq{Done: done})
+	r := <-done
+	return r.Result, r.Err
 }
-func (b *tuiSessionBridge) Reload(context.Context) error                                    { return errors.New("not yet wired") }
+
+func (b *tuiSessionBridge) Fork(entryID string) (piapi.ForkResult, error) {
+	done := make(chan ExtensionForkReply, 1)
+	b.prog.Send(ExtensionForkReq{EntryID: entryID, Done: done})
+	r := <-done
+	return r.Result, r.Err
+}
+
+func (b *tuiSessionBridge) NavigateBranch(targetID string) (piapi.NavigateResult, error) {
+	done := make(chan ExtensionNavigateReply, 1)
+	b.prog.Send(ExtensionNavigateReq{TargetID: targetID, Done: done})
+	r := <-done
+	return r.Result, r.Err
+}
+
+func (b *tuiSessionBridge) SwitchSession(path string) (piapi.SwitchResult, error) {
+	done := make(chan ExtensionSwitchReply, 1)
+	b.prog.Send(ExtensionSwitchReq{SessionPath: path, Done: done})
+	r := <-done
+	return r.Result, r.Err
+}
+
+func (b *tuiSessionBridge) Reload(_ context.Context) error {
+	done := make(chan error, 1)
+	b.prog.Send(ExtensionReloadReq{Done: done})
+	return <-done
+}
 func (b *tuiSessionBridge) EmitToolUpdate(string, piapi.ToolResult) error                   { return nil }
 func (b *tuiSessionBridge) AppendExtensionLog(string, string, string, map[string]any) error { return nil }
 

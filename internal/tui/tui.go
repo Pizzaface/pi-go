@@ -49,6 +49,10 @@ type model struct {
 	extensionEventCancel func()
 	extensionEventCh     <-chan lifecycle.Event
 
+	// Session bridge used by extensions for session-control calls.
+	// Set during model construction; nil until wired by BuildRuntime (Task 16).
+	bridge *tuiSessionBridge
+
 	// Agent state.
 	running bool
 	agentCh chan agentMsg // channel for receiving agent events

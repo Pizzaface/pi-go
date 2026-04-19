@@ -6,6 +6,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/dimetron/pi-go/internal/agent"
+	"github.com/dimetron/pi-go/pkg/piapi"
 )
 
 // spinnerTickMsg drives the Agent active spinner animation.
@@ -94,6 +97,57 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.cfg.Agent.SetSessionTitle(m.ctx, msg.EntryID, msg.Label)
 		}
 		return m, nil
+
+	case ExtensionNewSessionReq:
+		if m.cfg.Agent == nil {
+			msg.Done <- ExtensionNewSessionReply{Err: fmt.Errorf("agent not configured")}
+			return m, nil
+		}
+		id, err := m.cfg.Agent.CreateSession(m.ctx)
+		if err != nil {
+			msg.Done <- ExtensionNewSessionReply{Err: err}
+			return m, nil
+		}
+		m.cfg.SessionID = id
+		m.chatModel.Messages = nil
+		msg.Done <- ExtensionNewSessionReply{Result: piapi.NewSessionResult{ID: id}}
+		return m, nil
+
+	case ExtensionForkReq:
+		if m.cfg.SessionService == nil {
+			msg.Done <- ExtensionForkReply{Err: fmt.Errorf("session service not configured")}
+			return m, nil
+		}
+		name := "fork-" + time.Now().UTC().Format("20060102T150405.000")
+		err := m.cfg.SessionService.CreateBranch(m.cfg.SessionID, agent.AppName, agent.DefaultUserID, name)
+		if err != nil {
+			msg.Done <- ExtensionForkReply{Err: err}
+			return m, nil
+		}
+		msg.Done <- ExtensionForkReply{Result: piapi.ForkResult{BranchID: name, BranchTitle: name}}
+		return m, nil
+
+	case ExtensionNavigateReq:
+		if err := m.loadSessionMessages(msg.TargetID); err != nil {
+			msg.Done <- ExtensionNavigateReply{Err: piapi.ErrBranchNotFound{ID: msg.TargetID}}
+			return m, nil
+		}
+		msg.Done <- ExtensionNavigateReply{Result: piapi.NavigateResult{BranchID: msg.TargetID}}
+		return m, nil
+
+	case ExtensionSwitchReq:
+		id := strings.TrimPrefix(msg.SessionPath, "sessions/")
+		if err := m.loadSessionMessages(id); err != nil {
+			msg.Done <- ExtensionSwitchReply{Err: piapi.ErrSessionNotFound{ID: id}}
+			return m, nil
+		}
+		msg.Done <- ExtensionSwitchReply{Result: piapi.SwitchResult{SessionID: id}}
+		return m, nil
+
+	case ExtensionReloadReq:
+		msg.Done <- m.reloadExtensions()
+		return m, nil
+
 	case SteeringSubmitMsg:
 		return m.handleSteeringSubmit(msg)
 	case FollowUpSubmitMsg:
@@ -243,4 +297,11 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, waitForInitEvent(msg.ch)
+}
+
+// reloadExtensions asks the extension runtime to reload all extensions.
+// Runtime wiring is added in Task 16; until then this is a no-op.
+func (m *model) reloadExtensions() error {
+	// TODO(Task 16): call m.cfg.Runtime.Reload(m.ctx) once Runtime field is wired.
+	return nil
 }

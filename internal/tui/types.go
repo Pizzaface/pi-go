@@ -173,3 +173,40 @@ func (s *Screen) update(content string) {
 	defer s.mu.Unlock()
 	s.content = content
 }
+
+// Session-control request/reply messages dispatched through the tea program.
+
+type ExtensionNewSessionReq struct {
+	Done chan ExtensionNewSessionReply
+}
+type ExtensionNewSessionReply struct {
+	Result piapi.NewSessionResult
+	Err    error
+}
+type ExtensionForkReq struct {
+	EntryID string
+	Done    chan ExtensionForkReply
+}
+type ExtensionForkReply struct {
+	Result piapi.ForkResult
+	Err    error
+}
+type ExtensionNavigateReq struct {
+	TargetID string
+	Done     chan ExtensionNavigateReply
+}
+type ExtensionNavigateReply struct {
+	Result piapi.NavigateResult
+	Err    error
+}
+type ExtensionSwitchReq struct {
+	SessionPath string
+	Done        chan ExtensionSwitchReply
+}
+type ExtensionSwitchReply struct {
+	Result piapi.SwitchResult
+	Err    error
+}
+type ExtensionReloadReq struct {
+	Done chan error
+}

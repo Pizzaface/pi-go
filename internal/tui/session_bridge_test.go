@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -70,5 +72,89 @@ func TestTUISessionBridge_SteerSendUserMessageDispatches(t *testing.T) {
 	msgs := captured()
 	if len(msgs) != 1 {
 		t.Fatalf("msgs = %d; want 1", len(msgs))
+	}
+}
+
+func TestTUISessionBridge_WaitForIdleReturnsWhenIdle(t *testing.T) {
+	prog, _ := newCapturingProgram(t)
+	b := newTUISessionBridge(prog)
+	// bridge starts idle by default
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := b.WaitForIdle(ctx); err != nil {
+		t.Fatalf("WaitForIdle on idle bridge returned error: %v", err)
+	}
+}
+
+func TestTUISessionBridge_WaitForIdleBlocksUntilMark(t *testing.T) {
+	prog, _ := newCapturingProgram(t)
+	b := newTUISessionBridge(prog)
+	b.markBusy()
+
+	done := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		done <- b.WaitForIdle(ctx)
+	}()
+
+	// Should not be done yet
+	select {
+	case err := <-done:
+		t.Fatalf("WaitForIdle returned early with: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	b.markIdle()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("WaitForIdle returned error after markIdle: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WaitForIdle did not return after markIdle")
+	}
+}
+
+func TestTUISessionBridge_ForkSendsReq(t *testing.T) {
+	prog, captured := newCapturingProgram(t)
+	b := newTUISessionBridge(prog)
+
+	// Fork sends ExtensionForkReq and blocks on Done channel.
+	// We run it in a goroutine and reply manually.
+	done := make(chan piapi.ForkResult, 1)
+	go func() {
+		result, _ := b.Fork("entry-abc")
+		done <- result
+	}()
+
+	// Wait for the message to be sent.
+	var req ExtensionForkReq
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		msgs := captured()
+		for _, m := range msgs {
+			if r, ok := m.(ExtensionForkReq); ok {
+				req = r
+				goto found
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("ExtensionForkReq not dispatched within 1s")
+found:
+	if req.EntryID != "entry-abc" {
+		t.Fatalf("EntryID = %q; want entry-abc", req.EntryID)
+	}
+	req.Done <- ExtensionForkReply{Result: piapi.ForkResult{BranchID: "branch-1"}}
+
+	select {
+	case r := <-done:
+		if r.BranchID != "branch-1" {
+			t.Fatalf("BranchID = %q; want branch-1", r.BranchID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Fork did not return after reply")
 	}
 }

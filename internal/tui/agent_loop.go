@@ -61,6 +61,9 @@ func (m *model) cancelAgent() {
 		m.runCancel = nil
 	}
 	m.running = false
+	if m.bridge != nil {
+		m.bridge.markIdle()
+	}
 	m.statusModel.ActiveTool = ""
 	m.statusModel.ActiveTools = nil
 	m.chatModel.Streaming = ""
@@ -123,6 +126,9 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 	m.chatModel.Streaming = ""
 	m.chatModel.Thinking = ""
 	m.running = true
+	if m.bridge != nil {
+		m.bridge.markBusy()
+	}
 	m.chatModel.Scroll = 0
 	if m.face != nil {
 		m.face.SetMood(MoodThinking)
@@ -486,6 +492,9 @@ func (m *model) handleFollowUpSubmit(msg FollowUpSubmitMsg) (tea.Model, tea.Cmd)
 // handleAgentDone processes an agentDoneMsg.
 func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	m.running = false
+	if m.bridge != nil {
+		m.bridge.markIdle()
+	}
 	m.statusModel.ActiveTool = ""
 	m.statusModel.ActiveTools = nil
 	if msg.err != nil {
