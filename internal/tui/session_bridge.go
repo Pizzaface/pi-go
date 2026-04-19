@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,6 +10,8 @@ import (
 	"github.com/dimetron/pi-go/internal/extension/api"
 	"github.com/dimetron/pi-go/pkg/piapi"
 )
+
+var errBridgeNotReady = errors.New("tui session bridge not attached to a running program")
 
 // programSender is the Send interface of *tea.Program, extracted so
 // tests can inject a recording fake.
@@ -33,21 +36,33 @@ func newTUISessionBridge(prog programSender) *tuiSessionBridge {
 }
 
 func (b *tuiSessionBridge) AppendEntry(extID, kind string, payload any) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
 	b.prog.Send(ExtensionEntryMsg{ExtensionID: extID, Kind: kind, Payload: payload})
 	return nil
 }
 
 func (b *tuiSessionBridge) SendCustomMessage(extID string, msg piapi.CustomMessage, opts piapi.SendOptions) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
 	b.prog.Send(ExtensionSendCustomMsg{ExtensionID: extID, Message: msg, Options: opts})
 	return nil
 }
 
 func (b *tuiSessionBridge) SendUserMessage(extID string, msg piapi.UserMessage, opts piapi.SendOptions) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
 	b.prog.Send(ExtensionSendUserMsg{ExtensionID: extID, Message: msg, Options: opts})
 	return nil
 }
 
 func (b *tuiSessionBridge) SetSessionTitle(title string) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
 	b.mu.Lock()
 	b.latestTitle = title
 	b.mu.Unlock()
@@ -62,6 +77,9 @@ func (b *tuiSessionBridge) GetSessionTitle() string {
 }
 
 func (b *tuiSessionBridge) SetEntryLabel(entryID, label string) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
 	b.prog.Send(ExtensionSetLabelMsg{EntryID: entryID, Label: label})
 	return nil
 }
@@ -79,8 +97,22 @@ func (b *tuiSessionBridge) WaitForIdle(ctx context.Context) error {
 	case <-ch:
 		return nil
 	case <-ctx.Done():
+		b.mu.Lock()
+		for i, w := range b.idleWaiters {
+			if w == ch {
+				b.idleWaiters = append(b.idleWaiters[:i], b.idleWaiters[i+1:]...)
+				break
+			}
+		}
+		b.mu.Unlock()
 		return ctx.Err()
 	}
+}
+
+func (b *tuiSessionBridge) idleWaiterCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.idleWaiters)
 }
 
 func (b *tuiSessionBridge) markBusy() {
@@ -101,6 +133,9 @@ func (b *tuiSessionBridge) markIdle() {
 }
 
 func (b *tuiSessionBridge) NewSession(_ piapi.NewSessionOptions) (piapi.NewSessionResult, error) {
+	if b.prog == nil {
+		return piapi.NewSessionResult{}, errBridgeNotReady
+	}
 	done := make(chan ExtensionNewSessionReply, 1)
 	b.prog.Send(ExtensionNewSessionReq{Done: done})
 	r := <-done
@@ -108,6 +143,9 @@ func (b *tuiSessionBridge) NewSession(_ piapi.NewSessionOptions) (piapi.NewSessi
 }
 
 func (b *tuiSessionBridge) Fork(entryID string) (piapi.ForkResult, error) {
+	if b.prog == nil {
+		return piapi.ForkResult{}, errBridgeNotReady
+	}
 	done := make(chan ExtensionForkReply, 1)
 	b.prog.Send(ExtensionForkReq{EntryID: entryID, Done: done})
 	r := <-done
@@ -115,6 +153,9 @@ func (b *tuiSessionBridge) Fork(entryID string) (piapi.ForkResult, error) {
 }
 
 func (b *tuiSessionBridge) NavigateBranch(targetID string) (piapi.NavigateResult, error) {
+	if b.prog == nil {
+		return piapi.NavigateResult{}, errBridgeNotReady
+	}
 	done := make(chan ExtensionNavigateReply, 1)
 	b.prog.Send(ExtensionNavigateReq{TargetID: targetID, Done: done})
 	r := <-done
@@ -122,6 +163,9 @@ func (b *tuiSessionBridge) NavigateBranch(targetID string) (piapi.NavigateResult
 }
 
 func (b *tuiSessionBridge) SwitchSession(path string) (piapi.SwitchResult, error) {
+	if b.prog == nil {
+		return piapi.SwitchResult{}, errBridgeNotReady
+	}
 	done := make(chan ExtensionSwitchReply, 1)
 	b.prog.Send(ExtensionSwitchReq{SessionPath: path, Done: done})
 	r := <-done
@@ -129,6 +173,9 @@ func (b *tuiSessionBridge) SwitchSession(path string) (piapi.SwitchResult, error
 }
 
 func (b *tuiSessionBridge) Reload(_ context.Context) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
 	done := make(chan error, 1)
 	b.prog.Send(ExtensionReloadReq{Done: done})
 	return <-done

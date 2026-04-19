@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -114,6 +115,52 @@ func TestTUISessionBridge_WaitForIdleBlocksUntilMark(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("WaitForIdle did not return after markIdle")
+	}
+}
+
+func TestTUISessionBridge_WaitForIdleRemovesWaiterOnCancel(t *testing.T) {
+	prog, _ := newCapturingProgram(t)
+	b := newTUISessionBridge(prog)
+	b.markBusy()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := b.WaitForIdle(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitForIdle error = %v; want context.DeadlineExceeded", err)
+	}
+	if count := b.idleWaiterCount(); count != 0 {
+		t.Fatalf("idleWaiterCount = %d; want 0 after ctx cancel", count)
+	}
+}
+
+func TestTUISessionBridge_NilProgReturnsError(t *testing.T) {
+	b := newTUISessionBridge(nil)
+
+	_, err := b.NewSession(piapi.NewSessionOptions{})
+	if !errors.Is(err, errBridgeNotReady) {
+		t.Errorf("NewSession: got %v; want errBridgeNotReady", err)
+	}
+
+	_, err = b.Fork("entry-1")
+	if !errors.Is(err, errBridgeNotReady) {
+		t.Errorf("Fork: got %v; want errBridgeNotReady", err)
+	}
+
+	_, err = b.NavigateBranch("target-1")
+	if !errors.Is(err, errBridgeNotReady) {
+		t.Errorf("NavigateBranch: got %v; want errBridgeNotReady", err)
+	}
+
+	_, err = b.SwitchSession("/some/path")
+	if !errors.Is(err, errBridgeNotReady) {
+		t.Errorf("SwitchSession: got %v; want errBridgeNotReady", err)
+	}
+
+	err = b.Reload(context.Background())
+	if !errors.Is(err, errBridgeNotReady) {
+		t.Errorf("Reload: got %v; want errBridgeNotReady", err)
 	}
 }
 
