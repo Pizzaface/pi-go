@@ -273,9 +273,9 @@ func (t *ToolDisplayModel) renderToolBody(msg message, dim lipgloss.Style, custo
 	return strings.Join(bodyLines, "\n")
 }
 
-// renderWithExtension is a spec #5 stub — no extension renderers exist in
-// spec #1. Returns ("", false) so callers fall back to the default TUI
-// rendering path.
+// renderWithExtension is reserved for spec #6 extension renderer
+// registration. Returns ("", false) so callers fall back to the default
+// TUI rendering path.
 func (t *ToolDisplayModel) renderWithExtension(
 	msg message,
 	surface string,

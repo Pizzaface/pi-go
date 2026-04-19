@@ -490,9 +490,9 @@ func (c *ChatModel) RenderMessages(running bool) string {
 	return b.String()
 }
 
-// renderCustomAssistantMessage is a spec #5 stub — extension-driven
-// message rendering lands later. Always returns ("", false) so the
-// default rendering path runs.
+// renderCustomAssistantMessage is reserved for spec #6 extension renderer
+// registration. Always returns ("", false) so the default rendering path
+// runs.
 func (c *ChatModel) renderCustomAssistantMessage(msg message, content string) (string, bool) {
 	_ = msg
 	_ = content

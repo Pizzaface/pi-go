@@ -2,7 +2,7 @@ package piapi
 
 import "context"
 
-// CustomMessage is the payload for API.SendMessage (spec #5 stub).
+// CustomMessage is the payload for API.SendMessage.
 type CustomMessage struct {
 	CustomType string
 	Content    string
@@ -10,12 +10,12 @@ type CustomMessage struct {
 	Details    map[string]any
 }
 
-// UserMessage is the payload for API.SendUserMessage (spec #5 stub).
+// UserMessage is the payload for API.SendUserMessage.
 type UserMessage struct {
 	Content []ContentPart
 }
 
-// SendOptions controls message delivery (spec #5 stub).
+// SendOptions controls message delivery.
 type SendOptions struct {
 	DeliverAs   string // "steer" | "followUp" | "nextTurn"
 	TriggerTurn bool
