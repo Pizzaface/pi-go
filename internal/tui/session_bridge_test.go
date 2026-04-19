@@ -164,6 +164,21 @@ func TestTUISessionBridge_NilProgReturnsError(t *testing.T) {
 	}
 }
 
+func TestTUISessionBridge_AttachProgramRaceFree(t *testing.T) {
+	// Run with -race to catch a regression.
+	b := newTUISessionBridge(nil, "")
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			_ = b.AppendEntry("ext", "info", "x")
+		}
+		close(done)
+	}()
+	prog, _ := newCapturingProgram(t)
+	b.AttachProgram(prog)
+	<-done
+}
+
 func TestTUISessionBridge_ForkSendsReq(t *testing.T) {
 	prog, captured := newCapturingProgram(t)
 	b := newTUISessionBridge(prog, "")

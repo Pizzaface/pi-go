@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -24,7 +25,10 @@ type programSender interface {
 // All mutations are dispatched through prog.Send so they're serialized
 // on the model's Update goroutine.
 type tuiSessionBridge struct {
-	prog    programSender
+	// prog is accessed atomically so AttachProgram and bridge methods can
+	// race safely. We store *programSender because atomic.Pointer requires
+	// a concrete pointer type; the interface value lives behind the pointer.
+	prog    atomic.Pointer[programSender]
 	logFile *extensionLogFile
 
 	mu          sync.Mutex
@@ -34,11 +38,14 @@ type tuiSessionBridge struct {
 }
 
 func newTUISessionBridge(prog programSender, logPath string) *tuiSessionBridge {
-	return &tuiSessionBridge{
-		prog:    prog,
+	b := &tuiSessionBridge{
 		isIdle:  true,
 		logFile: newExtensionLogFile(logPath),
 	}
+	if prog != nil {
+		b.prog.Store(&prog)
+	}
+	return b
 }
 
 // NewSessionBridge constructs a TUI session bridge with a nil program
@@ -56,41 +63,48 @@ func NewSessionBridge(logPath string) api.SessionBridge {
 // nil prog, so calls that arrive before attachment return errBridgeNotReady
 // rather than panicking.
 func (b *tuiSessionBridge) AttachProgram(p programSender) {
-	b.prog = p
+	if p == nil {
+		return
+	}
+	b.prog.Store(&p)
 }
 
 func (b *tuiSessionBridge) AppendEntry(extID, kind string, payload any) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
-	b.prog.Send(ExtensionEntryMsg{ExtensionID: extID, Kind: kind, Payload: payload})
+	(*p).Send(ExtensionEntryMsg{ExtensionID: extID, Kind: kind, Payload: payload})
 	return nil
 }
 
 func (b *tuiSessionBridge) SendCustomMessage(extID string, msg piapi.CustomMessage, opts piapi.SendOptions) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
-	b.prog.Send(ExtensionSendCustomMsg{ExtensionID: extID, Message: msg, Options: opts})
+	(*p).Send(ExtensionSendCustomMsg{ExtensionID: extID, Message: msg, Options: opts})
 	return nil
 }
 
 func (b *tuiSessionBridge) SendUserMessage(extID string, msg piapi.UserMessage, opts piapi.SendOptions) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
-	b.prog.Send(ExtensionSendUserMsg{ExtensionID: extID, Message: msg, Options: opts})
+	(*p).Send(ExtensionSendUserMsg{ExtensionID: extID, Message: msg, Options: opts})
 	return nil
 }
 
 func (b *tuiSessionBridge) SetSessionTitle(title string) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
 	b.mu.Lock()
 	b.latestTitle = title
 	b.mu.Unlock()
-	b.prog.Send(ExtensionSetTitleMsg{Title: title})
+	(*p).Send(ExtensionSetTitleMsg{Title: title})
 	return nil
 }
 
@@ -101,10 +115,11 @@ func (b *tuiSessionBridge) GetSessionTitle() string {
 }
 
 func (b *tuiSessionBridge) SetEntryLabel(entryID, label string) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
-	b.prog.Send(ExtensionSetLabelMsg{EntryID: entryID, Label: label})
+	(*p).Send(ExtensionSetLabelMsg{EntryID: entryID, Label: label})
 	return nil
 }
 
@@ -157,64 +172,70 @@ func (b *tuiSessionBridge) markIdle() {
 }
 
 func (b *tuiSessionBridge) NewSession(_ piapi.NewSessionOptions) (piapi.NewSessionResult, error) {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return piapi.NewSessionResult{}, errBridgeNotReady
 	}
 	done := make(chan ExtensionNewSessionReply, 1)
-	b.prog.Send(ExtensionNewSessionReq{Done: done})
+	(*p).Send(ExtensionNewSessionReq{Done: done})
 	r := <-done
 	return r.Result, r.Err
 }
 
 func (b *tuiSessionBridge) Fork(entryID string) (piapi.ForkResult, error) {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return piapi.ForkResult{}, errBridgeNotReady
 	}
 	done := make(chan ExtensionForkReply, 1)
-	b.prog.Send(ExtensionForkReq{EntryID: entryID, Done: done})
+	(*p).Send(ExtensionForkReq{EntryID: entryID, Done: done})
 	r := <-done
 	return r.Result, r.Err
 }
 
 func (b *tuiSessionBridge) NavigateBranch(targetID string) (piapi.NavigateResult, error) {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return piapi.NavigateResult{}, errBridgeNotReady
 	}
 	done := make(chan ExtensionNavigateReply, 1)
-	b.prog.Send(ExtensionNavigateReq{TargetID: targetID, Done: done})
+	(*p).Send(ExtensionNavigateReq{TargetID: targetID, Done: done})
 	r := <-done
 	return r.Result, r.Err
 }
 
 func (b *tuiSessionBridge) SwitchSession(path string) (piapi.SwitchResult, error) {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return piapi.SwitchResult{}, errBridgeNotReady
 	}
 	done := make(chan ExtensionSwitchReply, 1)
-	b.prog.Send(ExtensionSwitchReq{SessionPath: path, Done: done})
+	(*p).Send(ExtensionSwitchReq{SessionPath: path, Done: done})
 	r := <-done
 	return r.Result, r.Err
 }
 
 func (b *tuiSessionBridge) Reload(_ context.Context) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
 	done := make(chan error, 1)
-	b.prog.Send(ExtensionReloadReq{Done: done})
+	(*p).Send(ExtensionReloadReq{Done: done})
 	return <-done
 }
 func (b *tuiSessionBridge) EmitToolUpdate(toolCallID string, partial piapi.ToolResult) error {
-	if b.prog == nil {
+	p := b.prog.Load()
+	if p == nil {
 		return errBridgeNotReady
 	}
-	b.prog.Send(ExtensionToolStreamMsg{ToolCallID: toolCallID, Partial: partial})
+	(*p).Send(ExtensionToolStreamMsg{ToolCallID: toolCallID, Partial: partial})
 	return nil
 }
 func (b *tuiSessionBridge) AppendExtensionLog(extID, level, message string, fields map[string]any) error {
 	ts := time.Now()
-	if b.prog != nil {
-		b.prog.Send(ExtensionLogMsg{ExtensionID: extID, Level: level, Message: message, Fields: fields, Ts: ts})
+	if p := b.prog.Load(); p != nil {
+		(*p).Send(ExtensionLogMsg{ExtensionID: extID, Level: level, Message: message, Fields: fields, Ts: ts})
 	}
 	return b.logFile.Write(extID, level, message, fields, ts)
 }
