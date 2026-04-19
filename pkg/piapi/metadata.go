@@ -16,7 +16,8 @@ type Metadata struct {
 	Prompt                string
 	RequestedCapabilities []string
 	Entry                 string
-	Command               []string // hosted-go launch command from pi.toml
+	Command               []string     // hosted-go launch command from pi.toml
+	Hooks                 []HookConfig // validated lifecycle hooks from pi.toml
 }
 
 // Validate returns a non-nil error if the metadata is incomplete or

@@ -23,15 +23,9 @@ type piTOML struct {
 	Hooks                []HookConfig `toml:"hooks"`
 }
 
-// HookConfig is a single [[hooks]] table in pi.toml. It declares a
-// tool-backed lifecycle hook.
-type HookConfig struct {
-	Event    string   `toml:"event"`
-	Command  string   `toml:"command"`
-	Tools    []string `toml:"tools"`
-	Timeout  int      `toml:"timeout"`
-	Critical bool     `toml:"critical"`
-}
+// HookConfig is a type alias for piapi.HookConfig so that existing loader
+// tests can reference the short name without import changes.
+type HookConfig = piapi.HookConfig
 
 type packageJSONPi struct {
 	Entry                string   `json:"entry"`
@@ -91,6 +85,7 @@ func parsePiToml(path string) (piapi.Metadata, []string, error) {
 		RequestedCapabilities: p.RequestedCapabilities,
 		Entry:                 p.Entry,
 		Command:               p.Command,
+		Hooks:                 p.Hooks,
 	}
 	return md, p.Command, nil
 }
