@@ -13,10 +13,20 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/dimetron/pi-go/pkg/piapi"
 )
 
 // spinnerFrames are the braille-dot frames for the Agent active spinner.
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// streamingRow tracks partial ToolResult updates pushed by an extension for a
+// long-running tool. Keyed by ToolCallID in ToolDisplayModel.streamingRows.
+type streamingRow struct {
+	ToolCallID string
+	Content    []piapi.ContentPart
+	Updates    int
+}
 
 // ToolDisplayModel manages the formatting and rendering of tool call/result
 // messages in the chat view. It owns per-tool formatters, syntax highlighting,
@@ -36,6 +46,9 @@ type ToolDisplayModel struct {
 	AgentChildCount int
 	// SpinnerFrame is the current animation frame for Agent active spinners.
 	SpinnerFrame int
+	// streamingRows holds partial ToolResult updates from extensions,
+	// keyed by ToolCallID. Entries are removed when the final result arrives.
+	streamingRows map[string]*streamingRow
 }
 
 // isAgentTool returns true if the tool name represents a sub-agent invocation.
@@ -272,6 +285,65 @@ func (t *ToolDisplayModel) renderWithExtension(
 	_ = surface
 	_ = payload
 	return "", false
+}
+
+// partialSummary returns a short plain-text summary of a partial ToolResult,
+// truncated to 120 characters. Used for trace-log entries.
+func partialSummary(p piapi.ToolResult) string {
+	var sb strings.Builder
+	for _, c := range p.Content {
+		if c.Type == "text" {
+			sb.WriteString(c.Text)
+			sb.WriteByte(' ')
+		}
+	}
+	s := strings.TrimSpace(sb.String())
+	if len(s) > 120 {
+		s = s[:117] + "..."
+	}
+	return s
+}
+
+// streamingSpinnerFrames are the braille spinner glyphs for streaming rows.
+var streamingSpinnerFrames = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+
+// RenderStreamingRows renders any in-progress streaming rows (extension partial
+// tool updates) appended after completed tool rows. Returns empty string if
+// there are no streaming rows.
+func (t *ToolDisplayModel) RenderStreamingRows() string {
+	if len(t.streamingRows) == 0 {
+		return ""
+	}
+	panelWidth := t.Width
+	if panelWidth < 24 {
+		panelWidth = 24
+	}
+	innerWidth := panelWidth - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	panelStyle := lipgloss.NewStyle().Background(lipgloss.Color("236")).Padding(0, 1)
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	var sb strings.Builder
+	for _, row := range t.streamingRows {
+		frame := string(streamingSpinnerFrames[row.Updates%len(streamingSpinnerFrames)])
+		activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+		header := headerStyle.Render("● "+row.ToolCallID) + " " + activeStyle.Render(frame)
+
+		var sections []string
+		sections = append(sections, wrapPlainText(header, innerWidth))
+		if text := partialSummary(piapi.ToolResult{Content: row.Content}); text != "" {
+			if len(text) > innerWidth {
+				text = text[:innerWidth]
+			}
+			sections = append(sections, dim.Render(text))
+		}
+		sb.WriteString(panelStyle.Width(panelWidth).Render(strings.Join(sections, "\n")))
+		sb.WriteByte('\n')
+	}
+	return sb.String()
 }
 
 func ensureTrailingNewline(content string) string {

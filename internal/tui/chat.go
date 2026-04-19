@@ -482,6 +482,11 @@ func (c *ChatModel) RenderMessages(running bool) string {
 		renderAgentResp(pendingResp.content)
 	}
 
+	// Render extension streaming rows (partial tool updates) at the bottom.
+	if rows := c.ToolDisplay.RenderStreamingRows(); rows != "" {
+		write(rows)
+	}
+
 	return b.String()
 }
 

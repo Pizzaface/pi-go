@@ -180,7 +180,13 @@ func (b *tuiSessionBridge) Reload(_ context.Context) error {
 	b.prog.Send(ExtensionReloadReq{Done: done})
 	return <-done
 }
-func (b *tuiSessionBridge) EmitToolUpdate(string, piapi.ToolResult) error                   { return nil }
+func (b *tuiSessionBridge) EmitToolUpdate(toolCallID string, partial piapi.ToolResult) error {
+	if b.prog == nil {
+		return errBridgeNotReady
+	}
+	b.prog.Send(ExtensionToolStreamMsg{ToolCallID: toolCallID, Partial: partial})
+	return nil
+}
 func (b *tuiSessionBridge) AppendExtensionLog(string, string, string, map[string]any) error { return nil }
 
 var _ api.SessionBridge = (*tuiSessionBridge)(nil)

@@ -174,6 +174,13 @@ func (s *Screen) update(content string) {
 	s.content = content
 }
 
+// ExtensionToolStreamMsg delivers a partial ToolResult update from an extension
+// for a long-running tool. Dispatched by tuiSessionBridge.EmitToolUpdate.
+type ExtensionToolStreamMsg struct {
+	ToolCallID string
+	Partial    piapi.ToolResult
+}
+
 // Session-control request/reply messages dispatched through the tea program.
 
 type ExtensionNewSessionReq struct {

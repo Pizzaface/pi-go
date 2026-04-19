@@ -446,6 +446,10 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 			break
 		}
 	}
+	// Clear any extension streaming row for this tool when the final result arrives.
+	if m.chatModel.ToolDisplay.streamingRows != nil {
+		delete(m.chatModel.ToolDisplay.streamingRows, msg.name)
+	}
 	// Pop agent group stack when an Agent tool completes.
 	if isAgentTool(msg.name) && len(m.agentGroupStack) > 0 {
 		m.agentGroupStack = m.agentGroupStack[:len(m.agentGroupStack)-1]

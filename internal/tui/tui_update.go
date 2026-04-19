@@ -148,6 +148,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Done <- m.reloadExtensions()
 		return m, nil
 
+	case ExtensionToolStreamMsg:
+		if m.chatModel.ToolDisplay.streamingRows == nil {
+			m.chatModel.ToolDisplay.streamingRows = map[string]*streamingRow{}
+		}
+		row, ok := m.chatModel.ToolDisplay.streamingRows[msg.ToolCallID]
+		if !ok {
+			row = &streamingRow{ToolCallID: msg.ToolCallID}
+			m.chatModel.ToolDisplay.streamingRows[msg.ToolCallID] = row
+		}
+		row.Content = msg.Partial.Content
+		row.Updates++
+		m.chatModel.TraceLog = append(m.chatModel.TraceLog, traceEntry{
+			kind:    "tool-stream",
+			summary: "stream " + msg.ToolCallID,
+			detail:  partialSummary(msg.Partial),
+		})
+		return m, nil
+
 	case SteeringSubmitMsg:
 		return m.handleSteeringSubmit(msg)
 	case FollowUpSubmitMsg:
