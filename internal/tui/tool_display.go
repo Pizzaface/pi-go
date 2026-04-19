@@ -287,6 +287,20 @@ func (t *ToolDisplayModel) renderWithExtension(
 	return "", false
 }
 
+// truncateRunes truncates s to at most max runes, appending suffix when truncated.
+// Safe for multi-byte UTF-8 strings.
+func truncateRunes(s string, max int, suffix string) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	sr := []rune(suffix)
+	if max < len(sr) {
+		return string(r[:max])
+	}
+	return string(r[:max-len(sr)]) + suffix
+}
+
 // partialSummary returns a short plain-text summary of a partial ToolResult,
 // truncated to 120 characters. Used for trace-log entries.
 func partialSummary(p piapi.ToolResult) string {
@@ -298,10 +312,7 @@ func partialSummary(p piapi.ToolResult) string {
 		}
 	}
 	s := strings.TrimSpace(sb.String())
-	if len(s) > 120 {
-		s = s[:117] + "..."
-	}
-	return s
+	return truncateRunes(s, 120, "...")
 }
 
 // streamingSpinnerFrames are the braille spinner glyphs for streaming rows.
@@ -335,10 +346,7 @@ func (t *ToolDisplayModel) RenderStreamingRows() string {
 		var sections []string
 		sections = append(sections, wrapPlainText(header, innerWidth))
 		if text := partialSummary(piapi.ToolResult{Content: row.Content}); text != "" {
-			if len(text) > innerWidth {
-				text = text[:innerWidth]
-			}
-			sections = append(sections, dim.Render(text))
+			sections = append(sections, dim.Render(truncateRunes(text, innerWidth, "")))
 		}
 		sb.WriteString(panelStyle.Width(panelWidth).Render(strings.Join(sections, "\n")))
 		sb.WriteByte('\n')

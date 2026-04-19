@@ -110,6 +110,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cfg.SessionID = id
 		m.chatModel.Messages = nil
+		m.chatModel.ToolDisplay.streamingRows = nil
 		msg.Done <- ExtensionNewSessionReply{Result: piapi.NewSessionResult{ID: id}}
 		return m, nil
 

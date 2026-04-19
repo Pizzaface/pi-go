@@ -447,6 +447,8 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 		}
 	}
 	// Clear any extension streaming row for this tool when the final result arrives.
+	// TODO: clear by tool call ID once agentToolResultMsg propagates FunctionResponse.ID
+	// (currently dropped during construction in agent_loop.go ~L247-250).
 	if m.chatModel.ToolDisplay.streamingRows != nil {
 		delete(m.chatModel.ToolDisplay.streamingRows, msg.name)
 	}

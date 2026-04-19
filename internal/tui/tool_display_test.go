@@ -604,6 +604,18 @@ func TestRenderAgentTool_ZeroCountHidden(t *testing.T) {
 	}
 }
 
+func TestTruncateRunesPreservesUTF8(t *testing.T) {
+	in := "あいうえおかきくけこ" // 10 runes, 30 bytes
+	got := truncateRunes(in, 5, "")
+	if got != "あいうえお" {
+		t.Fatalf("got %q", got)
+	}
+	got = truncateRunes("hello world", 8, "...")
+	if got != "hello..." {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func stripToolANSI(s string) string {
 	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	return ansi.ReplaceAllString(s, "")
