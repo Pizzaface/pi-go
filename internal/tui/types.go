@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"sync"
+	"time"
 
 	llmmodel "google.golang.org/adk/model"
 
@@ -172,6 +173,15 @@ func (s *Screen) update(content string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.content = content
+}
+
+// ExtensionLogMsg routes an extension log line to the trace panel.
+type ExtensionLogMsg struct {
+	ExtensionID string
+	Level       string
+	Message     string
+	Fields      map[string]any
+	Ts          time.Time
 }
 
 // ExtensionToolStreamMsg delivers a partial ToolResult update from an extension

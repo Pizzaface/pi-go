@@ -35,7 +35,7 @@ func newCapturingProgram(t *testing.T) (programSender, func() []tea.Msg) {
 
 func TestTUISessionBridge_AppendEntryDispatches(t *testing.T) {
 	prog, captured := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 
 	if err := b.AppendEntry("ext", "info", map[string]any{"k": "v"}); err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestTUISessionBridge_AppendEntryDispatches(t *testing.T) {
 
 func TestTUISessionBridge_TitleRoundtrip(t *testing.T) {
 	prog, _ := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 
 	_ = b.SetSessionTitle("alpha")
 	if got := b.GetSessionTitle(); got != "alpha" {
@@ -66,7 +66,7 @@ func TestTUISessionBridge_TitleRoundtrip(t *testing.T) {
 
 func TestTUISessionBridge_SteerSendUserMessageDispatches(t *testing.T) {
 	prog, captured := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 	_ = b.SendUserMessage("ext", piapi.UserMessage{
 		Content: []piapi.ContentPart{{Type: "text", Text: "abort"}},
 	}, piapi.SendOptions{DeliverAs: "steer", TriggerTurn: true})
@@ -78,7 +78,7 @@ func TestTUISessionBridge_SteerSendUserMessageDispatches(t *testing.T) {
 
 func TestTUISessionBridge_WaitForIdleReturnsWhenIdle(t *testing.T) {
 	prog, _ := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 	// bridge starts idle by default
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -89,7 +89,7 @@ func TestTUISessionBridge_WaitForIdleReturnsWhenIdle(t *testing.T) {
 
 func TestTUISessionBridge_WaitForIdleBlocksUntilMark(t *testing.T) {
 	prog, _ := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 	b.markBusy()
 
 	done := make(chan error, 1)
@@ -120,7 +120,7 @@ func TestTUISessionBridge_WaitForIdleBlocksUntilMark(t *testing.T) {
 
 func TestTUISessionBridge_WaitForIdleRemovesWaiterOnCancel(t *testing.T) {
 	prog, _ := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 	b.markBusy()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -136,7 +136,7 @@ func TestTUISessionBridge_WaitForIdleRemovesWaiterOnCancel(t *testing.T) {
 }
 
 func TestTUISessionBridge_NilProgReturnsError(t *testing.T) {
-	b := newTUISessionBridge(nil)
+	b := newTUISessionBridge(nil, "")
 
 	_, err := b.NewSession(piapi.NewSessionOptions{})
 	if !errors.Is(err, errBridgeNotReady) {
@@ -166,7 +166,7 @@ func TestTUISessionBridge_NilProgReturnsError(t *testing.T) {
 
 func TestTUISessionBridge_ForkSendsReq(t *testing.T) {
 	prog, captured := newCapturingProgram(t)
-	b := newTUISessionBridge(prog)
+	b := newTUISessionBridge(prog, "")
 
 	// Fork sends ExtensionForkReq and blocks on Done channel.
 	// We run it in a goroutine and reply manually.

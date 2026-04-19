@@ -149,6 +149,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Done <- m.reloadExtensions()
 		return m, nil
 
+	case ExtensionLogMsg:
+		m.chatModel.TraceLog = append(m.chatModel.TraceLog, traceEntry{
+			kind:    "extension-log",
+			summary: fmt.Sprintf("[%s] %s", msg.ExtensionID, msg.Level),
+			detail:  msg.Message,
+		})
+		return m, nil
+
 	case ExtensionToolStreamMsg:
 		if m.chatModel.ToolDisplay.streamingRows == nil {
 			m.chatModel.ToolDisplay.streamingRows = map[string]*streamingRow{}

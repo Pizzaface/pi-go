@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -23,7 +24,8 @@ type programSender interface {
 // All mutations are dispatched through prog.Send so they're serialized
 // on the model's Update goroutine.
 type tuiSessionBridge struct {
-	prog programSender
+	prog    programSender
+	logFile *extensionLogFile
 
 	mu          sync.Mutex
 	latestTitle string
@@ -31,8 +33,12 @@ type tuiSessionBridge struct {
 	isIdle      bool
 }
 
-func newTUISessionBridge(prog programSender) *tuiSessionBridge {
-	return &tuiSessionBridge{prog: prog, isIdle: true}
+func newTUISessionBridge(prog programSender, logPath string) *tuiSessionBridge {
+	return &tuiSessionBridge{
+		prog:    prog,
+		isIdle:  true,
+		logFile: newExtensionLogFile(logPath),
+	}
 }
 
 func (b *tuiSessionBridge) AppendEntry(extID, kind string, payload any) error {
@@ -187,6 +193,12 @@ func (b *tuiSessionBridge) EmitToolUpdate(toolCallID string, partial piapi.ToolR
 	b.prog.Send(ExtensionToolStreamMsg{ToolCallID: toolCallID, Partial: partial})
 	return nil
 }
-func (b *tuiSessionBridge) AppendExtensionLog(string, string, string, map[string]any) error { return nil }
+func (b *tuiSessionBridge) AppendExtensionLog(extID, level, message string, fields map[string]any) error {
+	ts := time.Now()
+	if b.prog != nil {
+		b.prog.Send(ExtensionLogMsg{ExtensionID: extID, Level: level, Message: message, Fields: fields, Ts: ts})
+	}
+	return b.logFile.Write(extID, level, message, fields, ts)
+}
 
 var _ api.SessionBridge = (*tuiSessionBridge)(nil)
