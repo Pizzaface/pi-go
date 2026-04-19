@@ -92,6 +92,10 @@ type Config struct {
 	// EffortLevel is the initial reasoning/thinking effort level.
 	EffortLevel provider.EffortLevel
 
+	// Runtime is the extension runtime. Used to fire lifecycle hooks.
+	// May be nil when extensions are disabled or not yet wired.
+	Runtime *extension.Runtime
+
 	// NoModelConfigured is true when no API key / model is available at startup.
 	// The TUI shows a setup alert directing the user to /login.
 	NoModelConfigured bool

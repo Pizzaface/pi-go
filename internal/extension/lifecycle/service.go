@@ -33,6 +33,11 @@ type Service interface {
 	Reload(ctx context.Context) error
 
 	Subscribe() (<-chan Event, func())
+
+	// SetShutdownHook registers a callback fired by StopAll before extensions
+	// are stopped. Used to fire the "shutdown" lifecycle event without
+	// importing the extension package (which would create an import cycle).
+	SetShutdownHook(fn HookFunc, reason string)
 }
 
 // New constructs a Service. All mutating methods are safe for concurrent
@@ -52,6 +57,11 @@ func New(mgr *host.Manager, gate *host.Gate, approvalsPath, workDir string) Serv
 	return s
 }
 
+// HookFunc is a callback fired for process-level lifecycle events. It
+// takes an event name and a data map. Errors are ignored by the caller.
+// Used to break the import cycle between lifecycle and extension packages.
+type HookFunc func(ctx context.Context, event string, data map[string]any) error
+
 type service struct {
 	mgr           *host.Manager
 	gate          *host.Gate
@@ -69,6 +79,11 @@ type service struct {
 	launchFunc func(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error
 	// stopFunc is called by Stop on a running reg; overridable for tests.
 	stopFunc func(ctx context.Context, reg *host.Registration) error
+
+	// shutdownHook is fired by StopAll before stopping extensions.
+	shutdownHook HookFunc
+	// stopReason is passed to the shutdown hook data map.
+	stopReason string
 }
 
 // defaultLaunch wraps host.LaunchHosted with a router backed by
@@ -97,6 +112,12 @@ func (s *service) defaultStop(ctx context.Context, reg *host.Registration) error
 	}
 	reg.Conn.Close()
 	return nil
+}
+
+// SetShutdownHook registers the callback fired by StopAll before extensions stop.
+func (s *service) SetShutdownHook(fn HookFunc, reason string) {
+	s.shutdownHook = fn
+	s.stopReason = reason
 }
 
 func (s *service) List() []View {

@@ -145,6 +145,7 @@ func (f *fakeLifecycle) Restart(_ context.Context, id string) error {
 func (f *fakeLifecycle) StartApproved(context.Context) []error { return nil }
 func (f *fakeLifecycle) StopAll(context.Context) []error       { return nil }
 func (f *fakeLifecycle) Reload(context.Context) error          { f.reloadCalls++; return nil }
+func (f *fakeLifecycle) SetShutdownHook(lifecycle.HookFunc, string) {}
 func (f *fakeLifecycle) Subscribe() (<-chan lifecycle.Event, func()) {
 	ch := make(chan lifecycle.Event)
 	return ch, func() {}

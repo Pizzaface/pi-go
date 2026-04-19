@@ -317,6 +317,13 @@ func (m *model) handleNewCommand(args []string) {
 			}
 		}
 	}
+	if m.cfg.Runtime != nil {
+		_ = m.cfg.Runtime.RunLifecycleHooks(m.ctx, extension.LifecycleEventSessionStart, map[string]any{
+			"session_id": sessionID,
+			"reason":     "new",
+			"title":      title,
+		})
+	}
 	m.appendAssistant(fmt.Sprintf("Started %s. Ask a question or use `/resume` to jump back to another thread.", formatSessionLabel(pisession.Meta{ID: sessionID, Title: title})))
 }
 
@@ -370,6 +377,13 @@ func (m *model) handleResumeCommand(args []string) {
 		m.appendAssistant(fmt.Sprintf("Error loading session `%s`: %v", matches[0].ID, err))
 		return
 	}
+	if m.cfg.Runtime != nil {
+		_ = m.cfg.Runtime.RunLifecycleHooks(m.ctx, extension.LifecycleEventSessionStart, map[string]any{
+			"session_id": matches[0].ID,
+			"reason":     "resume",
+			"title":      strings.TrimSpace(matches[0].Title),
+		})
+	}
 	m.appendAssistant(fmt.Sprintf("Resumed %s.", formatSessionLabel(matches[0])))
 }
 
@@ -388,6 +402,13 @@ func (m *model) handleSessionPickerSelect() (tea.Model, tea.Cmd) {
 		m.appendAssistant(fmt.Sprintf("Error loading session `%s`: %v", sessionID, err))
 		return m, nil
 	}
+	if m.cfg.Runtime != nil {
+		_ = m.cfg.Runtime.RunLifecycleHooks(m.ctx, extension.LifecycleEventSessionStart, map[string]any{
+			"session_id": sessionID,
+			"reason":     "resume",
+			"title":      strings.TrimSpace(selected.Title),
+		})
+	}
 	m.appendAssistant(fmt.Sprintf("Resumed %s.", formatSessionLabel(*selected)))
 	return m, nil
 }
@@ -398,6 +419,13 @@ func (m *model) handleForkCommand(args []string) {
 		return
 	}
 	m.handleBranchCommand(args)
+	if m.cfg.Runtime != nil {
+		_ = m.cfg.Runtime.RunLifecycleHooks(m.ctx, extension.LifecycleEventSessionStart, map[string]any{
+			"session_id": m.cfg.SessionID,
+			"reason":     "fork",
+			"title":      args[0],
+		})
+	}
 }
 
 func (m *model) handleTreeCommand() {

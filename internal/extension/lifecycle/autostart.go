@@ -36,9 +36,18 @@ func (s *service) StartApproved(ctx context.Context) []error {
 	return nil
 }
 
-// StopAll calls Stop on every running hosted registration in parallel,
-// bounded by a 3s per-extension wait. Returns collected errors.
+// StopAll fires the shutdown hook (if any), then calls Stop on every running
+// hosted registration in parallel, bounded by a 3s per-extension wait. Returns
+// collected errors.
 func (s *service) StopAll(ctx context.Context) []error {
+	if s.shutdownHook != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_ = s.shutdownHook(shutdownCtx, "shutdown", map[string]any{
+			"reason": s.stopReason,
+		})
+		cancel()
+	}
+
 	regs := s.mgr.List()
 	var (
 		wg   sync.WaitGroup

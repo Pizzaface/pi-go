@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/dimetron/pi-go/internal/extension"
 	"github.com/dimetron/pi-go/internal/llmutil"
 )
 
@@ -143,6 +144,14 @@ func (m *model) submitPrompt(text string, mentions []string) (tea.Model, tea.Cmd
 	m.agentCh = make(chan agentMsg, 64)
 	m.steeringNotify = make(chan struct{}, 1)
 	m.messageQueue.ClearSteering()
+
+	if m.cfg.Runtime != nil {
+		_ = m.cfg.Runtime.RunLifecycleHooks(parentCtx, extension.LifecycleEventBeforeTurn, map[string]any{
+			"session_id": m.cfg.SessionID,
+			"user_text":  promptText,
+		})
+	}
+
 	go m.runAgentLoop(runCtx, promptText)
 
 	return m, tea.Batch(waitForAgent(m.agentCh), spinnerTick())
@@ -526,6 +535,14 @@ func (m *model) handleAgentDone(msg agentDoneMsg) (tea.Model, tea.Cmd) {
 	m.steeringNotify = nil
 	m.agentGroupStack = m.agentGroupStack[:0]
 	m.refreshDiffStats()
+
+	if m.cfg.Runtime != nil {
+		aborted := msg.err != nil
+		_ = m.cfg.Runtime.RunLifecycleHooks(m.ctx, extension.LifecycleEventAfterTurn, map[string]any{
+			"session_id": m.cfg.SessionID,
+			"aborted":    aborted,
+		})
+	}
 
 	// Check for orphaned steering messages that the agent loop didn't consume
 	// (e.g., the LLM responded with text only, no tool calls).

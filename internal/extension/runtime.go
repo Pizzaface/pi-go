@@ -70,11 +70,13 @@ type HookConfig struct {
 	Critical    bool
 }
 
-// Lifecycle event name stubs — spec #5 will wire these. Retained so CLI
-// code continues to compile without conditional import.
+// Lifecycle event names fired at the 5 standard call sites.
 const (
 	LifecycleEventStartup      = "startup"
 	LifecycleEventSessionStart = "session_start"
+	LifecycleEventBeforeTurn   = "before_turn"
+	LifecycleEventAfterTurn    = "after_turn"
+	LifecycleEventShutdown     = "shutdown"
 )
 
 // BuildRuntime assembles core tools and extension contributions behind one startup boundary.
@@ -225,7 +227,20 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		Bridge:           cfg.Bridge,
 	}
 	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir)
-	_ = ctx
+	rt.Lifecycle.SetShutdownHook(rt.RunLifecycleHooks, "")
+
+	// Fire startup hooks now that all extensions are registered.
+	names := make([]string, 0, len(registrations))
+	for _, r := range registrations {
+		names = append(names, r.ID)
+	}
+	if err := rt.RunLifecycleHooks(ctx, LifecycleEventStartup, map[string]any{
+		"work_dir":   cfg.WorkDir,
+		"extensions": names,
+	}); err != nil {
+		return nil, fmt.Errorf("startup hooks: %w", err)
+	}
+
 	return rt, nil
 }
 

@@ -2,6 +2,7 @@ package extension
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	extapi "github.com/dimetron/pi-go/internal/extension/api"
@@ -157,5 +158,40 @@ func TestRunLifecycleHooks_BeforeTurnAppendsEntry(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected AppendEntry to be called for before_turn hook")
+	}
+}
+
+func TestRunLifecycleHooks_SessionStartReceivesReason(t *testing.T) {
+	fb := &testbridge.FakeBridge{}
+	captured := make(chan map[string]any, 1)
+
+	reg := &host.Registration{ID: "ext1", Trust: host.TrustCompiledIn, Metadata: piapi.Metadata{Name: "ext1"}}
+	api := extapi.NewCompiled(reg, host.NewManager(nil), fb)
+	_ = api.RegisterTool(piapi.ToolDescriptor{
+		Name:        "on_session",
+		Description: "x",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+		Execute: func(_ context.Context, call piapi.ToolCall, _ piapi.UpdateFunc) (piapi.ToolResult, error) {
+			var data map[string]any
+			_ = json.Unmarshal(call.Args, &data)
+			captured <- data
+			return piapi.ToolResult{}, nil
+		},
+	})
+	reg.API = api
+
+	rt := &Runtime{
+		Extensions:     []*host.Registration{reg},
+		LifecycleHooks: []HookConfig{{ExtensionID: "ext1", Event: "session_start", Command: "on_session", Tools: []string{"*"}, Timeout: 5000}},
+		Bridge:         fb,
+	}
+
+	_ = rt.RunLifecycleHooks(context.Background(), "session_start", map[string]any{
+		"session_id": "s1", "reason": "new", "title": "hello",
+	})
+
+	data := <-captured
+	if data["reason"] != "new" {
+		t.Fatalf("reason = %v; want new", data["reason"])
 	}
 }
