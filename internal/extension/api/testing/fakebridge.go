@@ -34,6 +34,16 @@ func (f *FakeBridge) record(m string, a map[string]any) error {
 	return f.Err
 }
 
+// Snapshot returns a copy of all recorded calls, safe to read after the
+// source of bridge calls has been shut down.
+func (f *FakeBridge) Snapshot() []Call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]Call, len(f.Calls))
+	copy(out, f.Calls)
+	return out
+}
+
 func (f *FakeBridge) AppendEntry(extID, kind string, payload any) error {
 	return f.record("AppendEntry", map[string]any{"ext": extID, "kind": kind, "payload": payload})
 }

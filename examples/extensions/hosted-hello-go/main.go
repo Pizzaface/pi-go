@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/dimetron/pi-go/pkg/piapi"
 	"github.com/dimetron/pi-go/pkg/piext"
@@ -42,7 +43,7 @@ func register(pi piapi.API) error {
 	}); err != nil {
 		return err
 	}
-	return pi.RegisterTool(piapi.ToolDescriptor{
+	if err := pi.RegisterTool(piapi.ToolDescriptor{
 		Name:        "greet",
 		Label:       "Greet",
 		Description: "Returns a friendly greeting.",
@@ -61,11 +62,34 @@ func register(pi piapi.API) error {
 				Content: []piapi.ContentPart{{Type: "text", Text: "Hello, " + a.Name + "!"}},
 			}, nil
 		},
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Spec #5 probe: when PI_SPEC5_PROBE=1 the extension fires AppendEntry
+	// and a log.append call immediately during Register so the E2E test can
+	// assert the FakeBridge captured them without needing to invoke a tool.
+	if os.Getenv("PI_SPEC5_PROBE") == "1" {
+		if err := pi.AppendEntry("probe", map[string]any{"hi": true}); err != nil {
+			return fmt.Errorf("spec5_probe AppendEntry: %w", err)
+		}
+		fmt.Fprintln(piext.Log(), "spec5_probe: hello from log.append")
+	}
+	return nil
 }
 
 func main() {
-	if err := piext.Run(Metadata, register); err != nil {
+	meta := Metadata
+	if os.Getenv("PI_SPEC5_PROBE") == "1" {
+		// Request spec #5 capabilities so the host includes them in the
+		// granted-services handshake response.
+		meta.RequestedCapabilities = append(
+			append([]string(nil), meta.RequestedCapabilities...),
+			"session.append_entry",
+			"log.append",
+		)
+	}
+	if err := piext.Run(meta, register); err != nil {
 		fmt.Fprintln(piext.Log(), "hosted-hello-go: fatal:", err)
 	}
 }
