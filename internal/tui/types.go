@@ -13,7 +13,41 @@ import (
 	"github.com/dimetron/pi-go/internal/logger"
 	"github.com/dimetron/pi-go/internal/provider"
 	pisession "github.com/dimetron/pi-go/internal/session"
+	"github.com/dimetron/pi-go/pkg/piapi"
 )
+
+// ExtensionEntryMsg appends an extension-authored entry to the
+// transcript. Dispatched by tuiSessionBridge.AppendEntry.
+type ExtensionEntryMsg struct {
+	ExtensionID string
+	Kind        string
+	Payload     any
+}
+
+// ExtensionSendCustomMsg dispatches a CustomMessage from an extension.
+type ExtensionSendCustomMsg struct {
+	ExtensionID string
+	Message     piapi.CustomMessage
+	Options     piapi.SendOptions
+}
+
+// ExtensionSendUserMsg dispatches a user-authored message from an extension.
+type ExtensionSendUserMsg struct {
+	ExtensionID string
+	Message     piapi.UserMessage
+	Options     piapi.SendOptions
+}
+
+// ExtensionSetTitleMsg updates the current session's title.
+type ExtensionSetTitleMsg struct {
+	Title string
+}
+
+// ExtensionSetLabelMsg relabels a branch.
+type ExtensionSetLabelMsg struct {
+	EntryID string
+	Label   string
+}
 
 // Config holds configuration for the TUI.
 type Config struct {

@@ -284,6 +284,21 @@ func (a *Agent) RebuildWithModel(newModel model.LLM) error {
 	return nil
 }
 
+// SetSessionTitle updates the title of an existing session. Used by
+// extensions to rename the active session via pi.SetSessionName.
+func (a *Agent) SetSessionTitle(_ context.Context, sessionID, title string) error {
+	if sessionID == "" {
+		return fmt.Errorf("SetSessionTitle: empty sessionID")
+	}
+	type titleSetter interface {
+		SetTitle(sessionID, appName, userID, title string) error
+	}
+	if ts, ok := a.sessionService.(titleSetter); ok {
+		return ts.SetTitle(sessionID, AppName, DefaultUserID, title)
+	}
+	return fmt.Errorf("SetSessionTitle: session service %T does not support title updates", a.sessionService)
+}
+
 // CreateSession creates a new session and returns its ID.
 func (a *Agent) CreateSession(ctx context.Context) (string, error) {
 	resp, err := a.sessionService.Create(ctx, &session.CreateRequest{

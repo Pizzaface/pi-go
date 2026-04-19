@@ -334,6 +334,21 @@ func (s *FileService) loadSession(sessionID, appName, userID string) (*fileSessi
 	return sess, nil
 }
 
+// SetTitle updates the title of the specified session. Intended for
+// extension-driven renames via pi.SetSessionName.
+func (s *FileService) SetTitle(sessionID, appName, userID, title string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, err := s.loadSession(sessionID, appName, userID)
+	if err != nil {
+		return err
+	}
+	sess.meta.Title = title
+	sess.meta.UpdatedAt = time.Now()
+	sessionDir := filepath.Join(s.baseDir, sessionID)
+	return writeMeta(sessionDir, &sess.meta)
+}
+
 // LastSessionID returns the most recently updated session ID, or "" if none.
 func (s *FileService) LastSessionID(appName, userID string) string {
 	metas, err := s.ListMeta(appName, userID, 1)

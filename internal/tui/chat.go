@@ -48,6 +48,9 @@ type message struct {
 	extensionOwner string // optional extension id for custom render surfaces
 	collapsed      bool   // per-message collapse state (used by Agent accordion)
 	agentGroupID   int    // >0 means this tool belongs to an Agent invocation group
+	extID          string // extension ID for extension-originated messages
+	kind           string // entry kind for ExtensionEntryMsg
+	customType     string // custom message type for ExtensionSendCustomMsg
 }
 
 // traceEntry represents a single entry in the debug trace log.

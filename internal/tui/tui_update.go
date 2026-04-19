@@ -48,6 +48,52 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleSlashCommand(msg.Text)
 		}
 		return m.submitPrompt(msg.Text, msg.Mentions)
+	case ExtensionEntryMsg:
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "extension",
+			content: formatExtensionPayload(msg.Kind, msg.Payload),
+			extID:   msg.ExtensionID,
+			kind:    msg.Kind,
+		})
+		return m, nil
+	case ExtensionSendCustomMsg:
+		if !msg.Message.Display {
+			return m, nil
+		}
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:       "extension-custom",
+			content:    msg.Message.Content,
+			extID:      msg.ExtensionID,
+			customType: msg.Message.CustomType,
+		})
+		if msg.Options.TriggerTurn {
+			return m, m.startTurnWithText("")
+		}
+		return m, nil
+	case ExtensionSendUserMsg:
+		text := joinContent(msg.Message.Content)
+		if msg.Options.DeliverAs == "steer" {
+			m.abortCurrentTurn()
+		}
+		if msg.Options.TriggerTurn {
+			return m, m.startTurnWithText(text)
+		}
+		m.chatModel.Messages = append(m.chatModel.Messages, message{
+			role:    "user",
+			content: text,
+			extID:   msg.ExtensionID,
+		})
+		return m, nil
+	case ExtensionSetTitleMsg:
+		if m.cfg.Agent != nil && m.cfg.SessionID != "" {
+			_ = m.cfg.Agent.SetSessionTitle(m.ctx, m.cfg.SessionID, msg.Title)
+		}
+		return m, nil
+	case ExtensionSetLabelMsg:
+		if m.cfg.Agent != nil && msg.EntryID != "" {
+			_ = m.cfg.Agent.SetSessionTitle(m.ctx, msg.EntryID, msg.Label)
+		}
+		return m, nil
 	case SteeringSubmitMsg:
 		return m.handleSteeringSubmit(msg)
 	case FollowUpSubmitMsg:
