@@ -12,14 +12,25 @@ import (
 )
 
 type piTOML struct {
-	Name                 string   `toml:"name"`
-	Version              string   `toml:"version"`
-	Description          string   `toml:"description"`
-	Prompt               string   `toml:"prompt"`
-	Runtime              string   `toml:"runtime"`
-	Command              []string `toml:"command"`
-	Entry                string   `toml:"entry"`
-	RequestedCapabilities []string `toml:"requested_capabilities"`
+	Name                 string       `toml:"name"`
+	Version              string       `toml:"version"`
+	Description          string       `toml:"description"`
+	Prompt               string       `toml:"prompt"`
+	Runtime              string       `toml:"runtime"`
+	Command              []string     `toml:"command"`
+	Entry                string       `toml:"entry"`
+	RequestedCapabilities []string    `toml:"requested_capabilities"`
+	Hooks                []HookConfig `toml:"hooks"`
+}
+
+// HookConfig is a single [[hooks]] table in pi.toml. It declares a
+// tool-backed lifecycle hook.
+type HookConfig struct {
+	Event    string   `toml:"event"`
+	Command  string   `toml:"command"`
+	Tools    []string `toml:"tools"`
+	Timeout  int      `toml:"timeout"`
+	Critical bool     `toml:"critical"`
 }
 
 type packageJSONPi struct {
@@ -48,6 +59,30 @@ func parsePiToml(path string) (piapi.Metadata, []string, error) {
 	if p.Version == "" {
 		return piapi.Metadata{}, nil, fmt.Errorf("loader: pi.toml at %s missing version", path)
 	}
+
+	// Validate hooks
+	for i, h := range p.Hooks {
+		if h.Event == "" {
+			return piapi.Metadata{}, nil, fmt.Errorf("pi.toml [[hooks]][%d]: event is required", i)
+		}
+		switch h.Event {
+		case "startup", "session_start", "before_turn", "after_turn", "shutdown":
+		default:
+			return piapi.Metadata{}, nil, fmt.Errorf("pi.toml [[hooks]][%d]: unknown event %q", i, h.Event)
+		}
+		if h.Command == "" {
+			return piapi.Metadata{}, nil, fmt.Errorf("pi.toml [[hooks]][%d]: command is required", i)
+		}
+		if len(h.Tools) == 0 {
+			p.Hooks[i].Tools = []string{"*"}
+		}
+		if h.Timeout == 0 {
+			p.Hooks[i].Timeout = 5000
+		} else if h.Timeout < 0 || h.Timeout > 60000 {
+			return piapi.Metadata{}, nil, fmt.Errorf("pi.toml [[hooks]][%d]: timeout must be 1..60000 ms", i)
+		}
+	}
+
 	md := piapi.Metadata{
 		Name:                  p.Name,
 		Version:               p.Version,
