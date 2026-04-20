@@ -20,9 +20,20 @@ type HostedAPIHandler struct {
 	reg     *host.Registration
 	bridge  SessionBridge
 
+	registry  *HostedToolRegistry
+	readiness *Readiness
+
 	mu    sync.Mutex
 	tools map[string]hostedTool
 }
+
+// SetRegistry wires the shared HostedToolRegistry so tools.register/unregister
+// calls land in the global namespace.
+func (h *HostedAPIHandler) SetRegistry(r *HostedToolRegistry) { h.registry = r }
+
+// SetReadiness wires the shared Readiness tracker so tools.register/unregister
+// kick the quiescence window and ext.ready explicitly promotes the extension.
+func (h *HostedAPIHandler) SetReadiness(r *Readiness) { h.readiness = r }
 
 type hostedTool struct {
 	Name        string          `json:"name"`
@@ -81,13 +92,23 @@ func (h *HostedAPIHandler) handleHostCall(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("host_call: invalid params: %w", err)
 	}
 	capability := p.Service + "." + p.Method
-	if ok, reason := h.manager.Gate().Allowed(h.reg.ID, capability, h.reg.Trust); !ok {
-		return nil, fmt.Errorf("capability denied: %s (%s)", capability, reason)
+	// ext.ready is infrastructure — not gated by a capability.
+	if !(p.Service == hostproto.ServiceExt && p.Method == hostproto.MethodExtReady) {
+		if ok, reason := h.manager.Gate().Allowed(h.reg.ID, capability, h.reg.Trust); !ok {
+			return nil, fmt.Errorf("capability denied: %s (%s)", capability, reason)
+		}
 	}
 	switch p.Service {
 	case hostproto.ServiceTools:
-		if p.Method == "register" {
+		switch p.Method {
+		case hostproto.MethodToolsRegister:
 			return h.registerTool(p.Payload)
+		case hostproto.MethodToolsUnregister:
+			return h.unregisterTool(p.Payload)
+		}
+	case hostproto.ServiceExt:
+		if p.Method == hostproto.MethodExtReady {
+			return h.extReady(p.Payload)
 		}
 	case "exec":
 		if p.Method == "shell" {
@@ -117,10 +138,55 @@ func (h *HostedAPIHandler) registerTool(payload json.RawMessage) (any, error) {
 	if t.Name == "" {
 		return nil, fmt.Errorf("tools.register: name is required")
 	}
+	if h.registry != nil {
+		desc := piapi.ToolDescriptor{
+			Name:        t.Name,
+			Label:       t.Label,
+			Description: t.Description,
+			Parameters:  t.Parameters,
+		}
+		if err := h.registry.Add(h.reg.ID, desc, h.reg, h.manager); err != nil {
+			return nil, err
+		}
+	}
+	if h.readiness != nil {
+		h.readiness.Kick(h.reg.ID)
+	}
 	h.mu.Lock()
 	h.tools[t.Name] = t
 	h.mu.Unlock()
 	return map[string]any{"registered": true}, nil
+}
+
+func (h *HostedAPIHandler) unregisterTool(payload json.RawMessage) (any, error) {
+	var p struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, fmt.Errorf("tools.unregister: invalid payload: %w", err)
+	}
+	if p.Name == "" {
+		return nil, fmt.Errorf("tools.unregister: name is required")
+	}
+	if h.registry != nil {
+		if err := h.registry.Remove(h.reg.ID, p.Name); err != nil {
+			return nil, err
+		}
+	}
+	h.mu.Lock()
+	delete(h.tools, p.Name)
+	h.mu.Unlock()
+	if h.readiness != nil {
+		h.readiness.Kick(h.reg.ID)
+	}
+	return map[string]any{"unregistered": true}, nil
+}
+
+func (h *HostedAPIHandler) extReady(_ json.RawMessage) (any, error) {
+	if h.readiness != nil {
+		h.readiness.MarkReady(h.reg.ID)
+	}
+	return map[string]any{"acknowledged": true}, nil
 }
 
 func (h *HostedAPIHandler) execShell(payload json.RawMessage) (any, error) {
