@@ -3,7 +3,7 @@ package hostproto
 import "encoding/json"
 
 // ProtocolVersion is the wire contract between go-pi and extensions.
-const ProtocolVersion = "2.1"
+const ProtocolVersion = "2.2"
 
 // Error codes.
 const (
@@ -111,6 +111,14 @@ const (
 	ServiceEvents         = "events"
 	ServiceHooks          = "hooks"
 	ServiceExt            = "ext"
+)
+
+// Service names (v2.2).
+const (
+	ServiceState    = "state"
+	ServiceCommands = "commands"
+	ServiceUI       = "ui"
+	ServiceSigils   = "sigils"
 )
 
 // Method names within services (spec #5).
