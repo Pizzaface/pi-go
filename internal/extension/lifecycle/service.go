@@ -110,6 +110,8 @@ func (s *service) SetReadiness(r *api.Readiness) { s.readiness = r }
 // api.NewHostedHandler. Split out for test injection.
 func (s *service) defaultLaunch(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error {
 	handler := api.NewHostedHandler(mgr, reg, s.bridge)
+	handler.SetRegistry(s.registry)
+	handler.SetReadiness(s.readiness)
 	if err := host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle); err != nil {
 		return err
 	}
@@ -421,6 +423,7 @@ func (s *service) watchHandshakeTimeout(ctx context.Context, id string, timeout 
 			return
 		}
 		if reg.State == host.StateRunning || reg.State == host.StateErrored {
+			s.publish(Event{Kind: EventStateChanged, View: s.viewFromRegistration(reg)})
 			return
 		}
 		if time.Now().After(deadline) {

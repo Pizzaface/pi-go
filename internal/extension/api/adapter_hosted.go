@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"google.golang.org/adk/model"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/genai"
 
 	"github.com/pizzaface/go-pi/internal/extension/host"
 	"github.com/pizzaface/go-pi/internal/extension/hostproto"
@@ -28,6 +30,42 @@ type hostedToolAdapter struct {
 // HostedEntry returns the HostedToolEntry that produced this adapter.
 // Exposed for tests; the ADK runner never calls it.
 func (h hostedToolAdapter) HostedEntry() HostedToolEntry { return h.entry }
+
+// ProcessRequest forwards to the embedded functiontool so the ADK runner's
+// RequestProcessor type-assertion succeeds. Go's interface embedding only
+// promotes interface methods — ProcessRequest lives on the concrete
+// functionTool value, not on tool.Tool, so we expose it explicitly.
+func (h hostedToolAdapter) ProcessRequest(ctx tool.Context, req *model.LLMRequest) error {
+	if rp, ok := h.Tool.(interface {
+		ProcessRequest(tool.Context, *model.LLMRequest) error
+	}); ok {
+		return rp.ProcessRequest(ctx, req)
+	}
+	return fmt.Errorf("hosted adapter %q: inner tool missing ProcessRequest", h.Tool.Name())
+}
+
+// Declaration forwards the embedded functiontool's declaration so callers
+// (and ADK internals) that inspect the function signature work.
+func (h hostedToolAdapter) Declaration() *genai.FunctionDeclaration {
+	if d, ok := h.Tool.(interface {
+		Declaration() *genai.FunctionDeclaration
+	}); ok {
+		return d.Declaration()
+	}
+	return nil
+}
+
+// Run forwards to the embedded functiontool so the ADK runner can invoke
+// the adapter. Without this, the runner's FunctionTool type-assertion
+// falls through and the call errors.
+func (h hostedToolAdapter) Run(ctx tool.Context, args any) (map[string]any, error) {
+	if r, ok := h.Tool.(interface {
+		Run(tool.Context, any) (map[string]any, error)
+	}); ok {
+		return r.Run(ctx, args)
+	}
+	return nil, fmt.Errorf("hosted adapter %q: inner tool missing Run", h.Tool.Name())
+}
 
 // NewHostedToolAdapter wraps a HostedToolEntry as an ADK tool.Tool. On
 // invocation, the adapter gate-checks events.tool_execute and then sends

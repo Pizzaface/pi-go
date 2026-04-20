@@ -29,6 +29,7 @@ type agentToolCallMsg struct {
 }
 type agentToolResultMsg struct {
 	name    string
+	callID  string
 	content string
 }
 type agentDoneMsg struct{ err error }
@@ -255,6 +256,7 @@ func (m *model) runAgentLoop(runCtx context.Context, prompt string) {
 					}
 					m.agentCh <- agentToolResultMsg{
 						name:    part.FunctionResponse.Name,
+						callID:  part.FunctionResponse.ID,
 						content: string(respJSON),
 					}
 				}
@@ -455,10 +457,14 @@ func (m *model) handleAgentToolResult(msg agentToolResultMsg) (tea.Model, tea.Cm
 			break
 		}
 	}
-	// Clear any extension streaming row for this tool when the final result arrives.
-	// TODO: clear by tool call ID once agentToolResultMsg propagates FunctionResponse.ID
-	// (currently dropped during construction in agent_loop.go ~L247-250).
+	// Clear any extension streaming row for this tool when the final result
+	// arrives. streamingRows is keyed by tool-call ID (set by the extension
+	// bridge); fall back to name-keyed deletion for older callers that still
+	// miss an ID on the response.
 	if m.chatModel.ToolDisplay.streamingRows != nil {
+		if msg.callID != "" {
+			delete(m.chatModel.ToolDisplay.streamingRows, msg.callID)
+		}
 		delete(m.chatModel.ToolDisplay.streamingRows, msg.name)
 	}
 	// Pop agent group stack when an Agent tool completes.

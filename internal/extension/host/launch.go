@@ -1,10 +1,15 @@
 package host
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
+	"sync"
 
 	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
@@ -14,8 +19,10 @@ import (
 type InboundRouter func(method string, params json.RawMessage) (any, error)
 
 // LaunchHosted starts the hosted extension subprocess described by command,
-// pipes stdin/stdout, wraps the process in an RPC connection, services the
-// initial handshake, and transitions the registration to StateRunning.
+// pipes stdin/stdout, wraps the process in an RPC connection, and services
+// the initial handshake. The registration transitions to StateRunning only
+// when the handshake succeeds; if the process exits before that, the state
+// is set to StateErrored and the tail of stderr is attached.
 //
 // router handles every inbound JSON-RPC method other than
 // hostproto.MethodHandshake — typically (*api.HostedAPIHandler).Handle.
@@ -35,6 +42,8 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 	if reg.WorkDir != "" {
 		cmd.Dir = reg.WorkDir
 	}
+	cmd.Env = buildChildEnv(reg, command, os.Environ())
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		manager.SetState(reg.ID, StateErrored, err)
@@ -46,6 +55,9 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 		manager.SetState(reg.ID, StateErrored, err)
 		return fmt.Errorf("launch: stdout pipe: %w", err)
 	}
+	stderrBuf := newStderrRing(8 * 1024)
+	cmd.Stderr = stderrBuf
+
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
@@ -55,7 +67,11 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 
 	handler := func(method string, params json.RawMessage) (any, error) {
 		if method == hostproto.MethodHandshake {
-			return BuildHandshakeResponse(reg, manager, params)
+			resp, herr := BuildHandshakeResponse(reg, manager, params)
+			if herr == nil {
+				manager.SetState(reg.ID, StateRunning, nil)
+			}
+			return resp, herr
 		}
 		if router == nil {
 			return nil, fmt.Errorf("launch: no router for method %q", method)
@@ -65,8 +81,125 @@ func LaunchHosted(ctx context.Context, reg *Registration, manager *Manager, comm
 
 	conn := NewRPCConn(stdout, stdin, handler)
 	reg.Conn = conn
-	manager.SetState(reg.ID, StateRunning, nil)
+
+	go watchProcessExit(cmd, reg, manager, conn, stderrBuf)
 	return nil
+}
+
+// watchProcessExit waits for the subprocess to exit and reconciles state.
+// If the process exits before reaching StateRunning, the registration is
+// marked StateErrored and stderr is attached. If it exits after the
+// handshake, any StateRunning registration flips to StateErrored so the
+// UI reflects the crash; StateStopped (set by a clean shutdown) is left
+// alone.
+func watchProcessExit(cmd *exec.Cmd, reg *Registration, manager *Manager, conn *RPCConn, stderrBuf *stderrRing) {
+	waitErr := cmd.Wait()
+	cur := manager.Get(reg.ID)
+	if cur == nil {
+		conn.Close()
+		return
+	}
+	switch cur.State {
+	case StateStopped:
+		// Clean shutdown already recorded.
+	case StateRunning:
+		// Crashed after handshake.
+		manager.SetState(reg.ID, StateErrored, buildExitError("extension exited while running", waitErr, stderrBuf))
+	default:
+		// Exited before handshake — startup failure.
+		manager.SetState(reg.ID, StateErrored, buildExitError("extension exited before handshake", waitErr, stderrBuf))
+	}
+	conn.Close()
+}
+
+func buildExitError(prefix string, waitErr error, stderrBuf *stderrRing) error {
+	msg := prefix
+	if waitErr != nil {
+		msg = fmt.Sprintf("%s: %v", msg, waitErr)
+	}
+	if tail := stderrBuf.String(); tail != "" {
+		msg = fmt.Sprintf("%s\nstderr:\n%s", msg, strings.TrimRight(tail, "\n"))
+	}
+	return errors.New(msg)
+}
+
+// buildChildEnv composes the child process environment. For hosted-go
+// extensions invoked via `go`, GOWORK=off is injected (unless the caller
+// already set GOWORK) so the child build is isolated from the host
+// project's go.work workspace file. GOROOT and GOTOOLCHAIN are also
+// stripped so the `go` binary on PATH uses the stdlib it was shipped with
+// — otherwise a go-pi binary built under a newer toolchain leaks its
+// GOROOT to an older child `go` and compilation aborts with
+// "version go1.X does not match go tool version go1.Y".
+func buildChildEnv(reg *Registration, command []string, parentEnv []string) []string {
+	if reg == nil || reg.Mode != "hosted-go" || len(command) == 0 || !isGoInvocation(command[0]) {
+		return append([]string(nil), parentEnv...)
+	}
+	env := make([]string, 0, len(parentEnv)+1)
+	for _, e := range parentEnv {
+		if strings.HasPrefix(e, "GOROOT=") || strings.HasPrefix(e, "GOTOOLCHAIN=") {
+			continue
+		}
+		env = append(env, e)
+	}
+	if !envHasKey(env, "GOWORK") {
+		env = append(env, "GOWORK=off")
+	}
+	return env
+}
+
+// isGoInvocation reports whether cmd is the Go toolchain entry point.
+// Matches "go" and "go.exe", bare or path-qualified.
+func isGoInvocation(cmd string) bool {
+	base := cmd
+	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.ToLower(base)
+	return base == "go" || base == "go.exe"
+}
+
+// envHasKey reports whether env contains an entry for key (case-sensitive
+// on Unix, case-insensitive on Windows — we keep it simple and treat
+// uppercase key names as-is, which matches every caller today).
+func envHasKey(env []string, key string) bool {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// stderrRing is a fixed-capacity ring buffer that keeps only the most
+// recent max bytes written to it. Safe for concurrent writes.
+type stderrRing struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+	max int
+}
+
+func newStderrRing(max int) *stderrRing { return &stderrRing{max: max} }
+
+func (r *stderrRing) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.buf.Write(p)
+	if over := r.buf.Len() - r.max; over > 0 {
+		tail := r.buf.Bytes()[over:]
+		cp := make([]byte, len(tail))
+		copy(cp, tail)
+		r.buf.Reset()
+		r.buf.Write(cp)
+	}
+	return len(p), nil
+}
+
+func (r *stderrRing) String() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.buf.String()
 }
 
 // BuildHandshakeResponse constructs the host's reply to an inbound handshake
