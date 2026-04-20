@@ -90,13 +90,34 @@ type service struct {
 	// bridge is the session/UI bridge forwarded to api.NewHostedHandler on
 	// each extension launch. Nil means NoopBridge.
 	bridge api.SessionBridge
+
+	// registry and readiness are wired in by BuildRuntime (Task 9). Stored
+	// here so that defaultLaunch can pass them into HostedHandler (Task 6
+	// adds the handler setters; for now they're just remembered).
+	registry  *api.HostedToolRegistry
+	readiness *api.Readiness
 }
+
+// SetRegistry stores the HostedToolRegistry for later wiring into each
+// hosted handler. Not part of the Service interface yet.
+func (s *service) SetRegistry(r *api.HostedToolRegistry) { s.registry = r }
+
+// SetReadiness stores the Readiness tracker for later wiring into each
+// hosted handler. Not part of the Service interface yet.
+func (s *service) SetReadiness(r *api.Readiness) { s.readiness = r }
 
 // defaultLaunch wraps host.LaunchHosted with a router backed by
 // api.NewHostedHandler. Split out for test injection.
 func (s *service) defaultLaunch(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error {
 	handler := api.NewHostedHandler(mgr, reg, s.bridge)
-	return host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle)
+	if err := host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle); err != nil {
+		return err
+	}
+	if reg.Conn != nil {
+		extID := reg.ID
+		reg.Conn.OnClose(func() { mgr.FireOnClose(extID) })
+	}
+	return nil
 }
 
 // defaultStop sends shutdown notification, gives 3s to react, then closes the conn.

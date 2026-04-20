@@ -63,6 +63,35 @@ type Manager struct {
 
 	mu   sync.RWMutex
 	regs map[string]*Registration
+
+	closeMu  sync.Mutex
+	closeCbs map[string][]func()
+}
+
+// OnClose registers a callback fired by FireOnClose(extID). Multiple
+// callbacks may be registered per extension.
+func (m *Manager) OnClose(extID string, fn func()) {
+	if fn == nil {
+		return
+	}
+	m.closeMu.Lock()
+	defer m.closeMu.Unlock()
+	if m.closeCbs == nil {
+		m.closeCbs = map[string][]func(){}
+	}
+	m.closeCbs[extID] = append(m.closeCbs[extID], fn)
+}
+
+// FireOnClose invokes all callbacks registered for extID (in goroutines,
+// so no lock is held while they run) and then clears them.
+func (m *Manager) FireOnClose(extID string) {
+	m.closeMu.Lock()
+	cbs := append([]func(){}, m.closeCbs[extID]...)
+	delete(m.closeCbs, extID)
+	m.closeMu.Unlock()
+	for _, f := range cbs {
+		go f()
+	}
 }
 
 // NewManager constructs a manager with the supplied gate.

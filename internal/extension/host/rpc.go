@@ -31,6 +31,28 @@ type RPCConn struct {
 	closeErr error
 
 	doneCh chan struct{}
+
+	closeCbsMu sync.Mutex
+	closeCbs   []func()
+}
+
+// OnClose registers a callback fired when the connection is closed. If the
+// connection is already closed, the callback fires immediately (in a
+// goroutine). Callbacks never hold any lock while running.
+func (c *RPCConn) OnClose(fn func()) {
+	if fn == nil {
+		return
+	}
+	c.mu.Lock()
+	alreadyClosed := c.closed
+	c.mu.Unlock()
+	if alreadyClosed {
+		go fn()
+		return
+	}
+	c.closeCbsMu.Lock()
+	c.closeCbs = append(c.closeCbs, fn)
+	c.closeCbsMu.Unlock()
 }
 
 type rpcResult struct {
@@ -125,6 +147,14 @@ func (c *RPCConn) Close() {
 	}
 	c.mu.Unlock()
 	close(c.doneCh)
+
+	c.closeCbsMu.Lock()
+	cbs := append([]func(){}, c.closeCbs...)
+	c.closeCbs = nil
+	c.closeCbsMu.Unlock()
+	for _, f := range cbs {
+		go f()
+	}
 }
 
 func (c *RPCConn) writeMsg(m rpcMessage) error {
