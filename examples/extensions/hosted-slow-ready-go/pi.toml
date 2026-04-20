@@ -1,0 +1,9 @@
+name = "hosted-slow-ready-go"
+version = "0.0.1"
+description = "Slow-startup fixture: sleeps 300ms before registering"
+runtime = "hosted"
+command = ["go", "run", "."]
+requested_capabilities = [
+    "tools.register",
+    "events.tool_execute",
+]

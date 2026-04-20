@@ -7,4 +7,5 @@ use (
 	./examples/extensions/hosted-hello-go
 	./examples/extensions/hosted-showcase-go
 	./examples/extensions/hosted-collide
+	./examples/extensions/hosted-slow-ready-go
 )

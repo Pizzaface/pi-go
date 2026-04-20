@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "extensions": {
+    "hosted-slow-ready-go": {
+      "trust_class": "third-party",
+      "first_party": false,
+      "approved": true,
+      "approved_at": "2026-04-20T00:00:00Z",
+      "granted_capabilities": [
+        "tools.register",
+        "events.tool_execute"
+      ]
+    }
+  }
+}
