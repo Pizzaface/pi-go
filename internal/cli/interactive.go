@@ -165,6 +165,17 @@ func deferredInit(
 	if runtime.Lifecycle != nil {
 		go runtime.Lifecycle.StartApproved(ctx)
 	}
+
+	// Wait for hosted extensions to initialize before proceeding.
+	send("extensions", false)
+	if err := runtime.WaitForHostedReady(ctx, 5*time.Second); err != nil {
+		// Log warning but proceed; don't block the UI permanently.
+		if ctx.Err() == nil {
+			_, _ = fmt.Fprintf(os.Stderr, "warning: hosted extensions readiness timeout: %v\n", err)
+		}
+	}
+	send("extensions", true)
+
 	send("tools", true)
 
 	// --- Phase 2: Parallel subsystems ---

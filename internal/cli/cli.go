@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	adkmodel "google.golang.org/adk/model"
@@ -292,6 +293,12 @@ func runNonInteractive(
 	})
 	if err != nil {
 		return fmt.Errorf("creating agent: %w", err)
+	}
+
+	// Wait for hosted extensions to initialize before proceeding.
+	if err := runtime.WaitForHostedReady(parentCtx, 5*time.Second); err != nil {
+		// Log warning but proceed; don't block forever.
+		_, _ = fmt.Fprintf(os.Stderr, "go-pi: warning: hosted extensions readiness timeout: %v\n", err)
 	}
 
 	ctx, stop := signal.NotifyContext(parentCtx, os.Interrupt)
