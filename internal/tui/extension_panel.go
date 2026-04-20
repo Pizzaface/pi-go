@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
 	"github.com/pizzaface/go-pi/internal/extension/host"
 	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 )
@@ -18,6 +20,32 @@ type extensionPanelState struct {
 	selected int
 	filter   string
 	height   int
+
+	// Tools sub-view state: populated when SetToolRegistry is called.
+	registry   *extapi.HostedToolRegistry
+	collidedMu sync.Mutex
+	collided   []extapi.Change
+}
+
+// SetToolRegistry wires the panel to a HostedToolRegistry so the detail
+// pane can render the tools owned by the selected extension and track
+// collisions surfaced via OnChange. Safe to call at most once per panel.
+func (s *extensionPanelState) SetToolRegistry(reg *extapi.HostedToolRegistry) {
+	s.registry = reg
+	if reg == nil {
+		return
+	}
+	reg.OnChange(func(c extapi.Change) {
+		if c.Kind != extapi.ChangeCollisionRejected {
+			return
+		}
+		s.collidedMu.Lock()
+		s.collided = append(s.collided, c)
+		if len(s.collided) > 32 {
+			s.collided = s.collided[len(s.collided)-32:]
+		}
+		s.collidedMu.Unlock()
+	})
 }
 
 func (s *extensionPanelState) Open() bool { return s.open }
@@ -112,7 +140,42 @@ func (s *extensionPanelState) detailPane() string {
 	default:
 		b.WriteString(fmt.Sprintf("State: %s · Granted: %s", v.State, strings.Join(v.Granted, ", ")))
 	}
+	if s.registry != nil {
+		if tools := s.toolsOf(v.ID); len(tools) > 0 {
+			b.WriteString("\nTools: " + strings.Join(tools, ", "))
+		}
+		if rejected := s.collisionsFor(v.ID); len(rejected) > 0 {
+			b.WriteString("\nRejected: " + strings.Join(rejected, ", "))
+		}
+	}
 	return b.String()
+}
+
+// toolsOf returns the names of tools owned by extID, sorted by the
+// registry snapshot order.
+func (s *extensionPanelState) toolsOf(extID string) []string {
+	var out []string
+	for _, e := range s.registry.Snapshot() {
+		if e.ExtID == extID {
+			out = append(out, e.Desc.Name)
+		}
+	}
+	return out
+}
+
+// collisionsFor returns "<tool> (↯ <winner>)" entries recorded for
+// extID's rejected registrations.
+func (s *extensionPanelState) collisionsFor(extID string) []string {
+	s.collidedMu.Lock()
+	defer s.collidedMu.Unlock()
+	var out []string
+	for _, c := range s.collided {
+		if c.ExtID != extID {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s (↯ %s)", c.ToolName, c.ConflictWith))
+	}
+	return out
 }
 
 // SetFilter narrows visible rows to those whose ID or mode contain the

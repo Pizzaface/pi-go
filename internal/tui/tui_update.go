@@ -301,6 +301,7 @@ func (m *model) handleInitEvent(msg initEventMsg) (tea.Model, tea.Cmd) {
 		m.lifecycle = r.Lifecycle
 		if r.Runtime != nil {
 			m.cfg.Runtime = r.Runtime
+			m.extensionPanel.SetToolRegistry(r.Runtime.HostedToolRegistry)
 		}
 		if b, ok := r.Bridge.(*tuiSessionBridge); ok && b != nil {
 			m.bridge = b
