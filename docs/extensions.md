@@ -161,6 +161,31 @@ The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
 
 The canonical fixture lives at `examples/extensions/hosted-hello-go/`.
 
+## Invoking tools
+
+Tools registered via `pi.RegisterTool` are made available to the LLM as
+ADK function tools. When the model calls a hosted extension's tool, go-pi
+sends `extension_event/tool_execute` to the extension process; the
+extension's stored `Execute` closure runs and returns a `ToolResult` over
+the wire.
+
+Name collisions across extensions are rejected: the first registration
+wins, subsequent attempts receive error `-32099 ToolNameCollision`. Tool
+names are a global namespace.
+
+Extensions may call `pi.UnregisterTool(name)` to drop a tool without
+stopping the process. Stopping or revoking an extension removes all of
+its tools automatically.
+
+## Readiness
+
+Extensions that need to do slow startup work (remote fetches, cache
+warms) should call `pi.Ready()` as the last step of their `register`
+function. This tells the host the extension has finished initializing
+and any startup-time tools are now available. Without `Ready()`, the
+host infers readiness from a 250 ms quiescence window — adequate for
+synchronous registrations but unreliable for anything slower.
+
 ## Discovery paths
 
 Four directories are walked in order; later layers win on name collision:
