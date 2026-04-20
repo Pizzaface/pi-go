@@ -110,6 +110,21 @@ func (c *compiledAPI) RegisterMessageRenderer(string, piapi.RendererDescriptor) 
 	return piapi.ErrNotImplemented{Method: "RegisterMessageRenderer", Spec: "#6"}
 }
 
+func (c *compiledAPI) UnregisterTool(name string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.tools[name]; !ok {
+		return fmt.Errorf("piapi: tool %q not registered", name)
+	}
+	delete(c.tools, name)
+	return nil
+}
+
+func (c *compiledAPI) Ready() error {
+	// Compiled-in extensions are ready synchronously when Register returns.
+	return nil
+}
+
 func (c *compiledAPI) On(eventName string, handler piapi.EventHandler) error {
 	if eventName != piapi.EventSessionStart {
 		return piapi.ErrNotImplemented{Method: "On(" + eventName + ")", Spec: "#3"}

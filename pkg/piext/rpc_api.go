@@ -295,6 +295,23 @@ func (noopBus) Emit(string, any) error {
 	return piapi.ErrNotImplemented{Method: "Events.Emit", Spec: "#3"}
 }
 
+// UnregisterTool: real implementation lands in Task 11.
+func (a *rpcAPI) UnregisterTool(name string) error {
+	a.mu.Lock()
+	delete(a.tools, name)
+	a.mu.Unlock()
+	var result map[string]any
+	return a.hostCall("tools.unregister", map[string]any{"name": name}, &result)
+}
+
+// Ready: real implementation lands in Task 11.
+func (a *rpcAPI) Ready() error {
+	var result map[string]any
+	return a.transport.Call(context.Background(), "pi.extension/host_call", map[string]any{
+		"service": "ext", "version": 1, "method": "ready", "payload": map[string]any{},
+	}, &result)
+}
+
 var piextKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 func isValidPiextKind(k string) bool { return piextKindPattern.MatchString(k) }

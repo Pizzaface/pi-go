@@ -108,6 +108,10 @@ type API interface {
 	UnregisterProvider(string) error                          // spec #6
 	RegisterMessageRenderer(string, RendererDescriptor) error // spec #6
 
+	// Tool teardown + explicit readiness (spec: 2026-04-20-hosted-tool-invocation).
+	UnregisterTool(name string) error
+	Ready() error
+
 	// Event subscription (spec #1 supports session_start; others in spec #3).
 	On(eventName string, handler EventHandler) error
 
