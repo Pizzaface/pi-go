@@ -75,7 +75,7 @@ func register(pi piapi.API) error {
 		}
 		fmt.Fprintln(piext.Log(), "spec5_probe: hello from log.append")
 	}
-	return nil
+	return pi.Ready()
 }
 
 func main() {

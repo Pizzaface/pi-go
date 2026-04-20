@@ -204,7 +204,7 @@ func register(pi piapi.API) error {
 		return err
 	}
 
-	return nil
+	return pi.Ready()
 }
 
 func main() {
