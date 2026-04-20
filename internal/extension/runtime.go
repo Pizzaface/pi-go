@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,12 @@ type Runtime struct {
 	// Bridge is the session/UI bridge for spec #5 operations. Nil means
 	// lifecycle hooks that append entries are no-ops.
 	Bridge extapi.SessionBridge
+	// HostedToolRegistry is the live registry of tools contributed by hosted
+	// extensions. Populated as each extension's pi.tool/register call lands.
+	HostedToolRegistry *extapi.HostedToolRegistry
+	// Readiness tracks handshake completion of hosted extensions registered
+	// at runtime build time. WaitForHostedReady blocks on it.
+	Readiness *extapi.Readiness
 }
 
 // HookConfig is one aggregated lifecycle hook, copied from a
@@ -117,6 +124,10 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	}
 	manager := host.NewManager(gate)
 
+	registry := extapi.NewHostedToolRegistry()
+	readiness := extapi.NewReadiness()
+	toolsets := []tool.Toolset{extapi.NewHostedToolset(registry)}
+
 	instruction := strings.TrimSpace(cfg.BaseInstruction)
 	var registrations []*host.Registration
 
@@ -169,6 +180,19 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 			// Duplicate with a compiled-in? Skip.
 			continue
 		}
+		// Track readiness for hosted extensions that passed the gate and are
+		// ready to launch. Pending/denied ones don't contribute to startup
+		// readiness — they'll never handshake this session.
+		if reg.State == host.StateReady {
+			readiness.Track(reg.ID)
+		}
+		// On RPC close, drop the extension's tools from the live registry
+		// and mark readiness as errored so Wait unblocks.
+		extID := reg.ID
+		manager.OnClose(extID, func() {
+			registry.RemoveExt(extID)
+			readiness.MarkErrored(extID, errors.New("connection closed"))
+		})
 		registrations = append(registrations, reg)
 	}
 
@@ -213,21 +237,35 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	}
 
 	rt := &Runtime{
-		Extensions:       registrations,
-		Tools:            coreTools,
-		Skills:           skills,
-		SkillDirs:        skillDirs,
-		PromptTemplates:  promptTemplates,
-		ThemeDirs:        resources.ThemeDirs,
-		ProviderRegistry: providerRegistry,
-		Manager:          manager,
-		SlashCommands:    slashCommands,
-		Instruction:      instruction,
-		LifecycleHooks:   lifecycleHooks,
-		Bridge:           cfg.Bridge,
+		Extensions:         registrations,
+		Tools:              coreTools,
+		Toolsets:           toolsets,
+		Skills:             skills,
+		SkillDirs:          skillDirs,
+		PromptTemplates:    promptTemplates,
+		ThemeDirs:          resources.ThemeDirs,
+		ProviderRegistry:   providerRegistry,
+		Manager:            manager,
+		SlashCommands:      slashCommands,
+		Instruction:        instruction,
+		LifecycleHooks:     lifecycleHooks,
+		Bridge:             cfg.Bridge,
+		HostedToolRegistry: registry,
+		Readiness:          readiness,
 	}
 	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir, cfg.Bridge)
 	rt.Lifecycle.SetShutdownHook(rt.RunLifecycleHooks, "")
+	// Wire registry + readiness into the lifecycle service via a type-asserted
+	// optional interface. These setters live on *service (the concrete impl)
+	// rather than the lifecycle.Service interface to keep the TUI's fake
+	// implementations compiling without stubs. See Task 9.
+	if s, ok := rt.Lifecycle.(interface {
+		SetRegistry(*extapi.HostedToolRegistry)
+		SetReadiness(*extapi.Readiness)
+	}); ok {
+		s.SetRegistry(registry)
+		s.SetReadiness(readiness)
+	}
 
 	// Fire startup hooks now that all extensions are registered.
 	names := make([]string, 0, len(registrations))
@@ -359,6 +397,16 @@ func (r *Runtime) Reload(ctx context.Context) error {
 	}
 	r.Manager.SetGate(gate)
 	return nil
+}
+
+// WaitForHostedReady blocks until every tracked hosted extension has
+// completed its handshake (or errored), the context is cancelled, or the
+// timeout elapses. Returns nil when Readiness is nil (no extensions built).
+func (r *Runtime) WaitForHostedReady(ctx context.Context, timeout time.Duration) error {
+	if r.Readiness == nil {
+		return nil
+	}
+	return r.Readiness.Wait(ctx, timeout)
 }
 
 // DefaultApprovalsPath returns the path to the approvals.json file that
