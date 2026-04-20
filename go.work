@@ -6,4 +6,5 @@ use (
 	./pkg/piext
 	./examples/extensions/hosted-hello-go
 	./examples/extensions/hosted-showcase-go
+	./examples/extensions/hosted-collide
 )

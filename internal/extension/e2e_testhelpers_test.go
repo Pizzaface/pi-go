@@ -59,3 +59,51 @@ func setupHostedHelloGo(t *testing.T) (*Runtime, func()) {
 	cleanup := func() { rt.Manager.Shutdown(context.Background()) }
 	return rt, cleanup
 }
+
+// setupHostedFixtures symlinks each named example directory under a
+// shared temp extensions dir, writes the given approvals fixture, and
+// brings up a Runtime with StartApproved already called.
+func setupHostedFixtures(t *testing.T, approvalsFixture string, ids ...string) (*Runtime, func()) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping hosted-fixture setup under -short")
+	}
+	projectRoot, err := repoRoot()
+	if err != nil {
+		t.Skipf("locate repo root: %v", err)
+	}
+	tmp := t.TempDir()
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
+	if err := os.MkdirAll(extsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		src := filepath.Join(projectRoot, "examples", "extensions", id)
+		if _, err := os.Stat(filepath.Join(src, "main.go")); err != nil {
+			t.Skipf("%s example missing: %v", id, err)
+		}
+		if err := os.Symlink(src, filepath.Join(extsDir, id)); err != nil {
+			t.Skipf("symlink unsupported (Windows without admin?): %v", err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", approvalsFixture))
+	if err != nil {
+		t.Fatalf("read approvals fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(extsDir, "approvals.json"), data, 0o644); err != nil {
+		t.Fatalf("write approvals: %v", err)
+	}
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	rt, err := BuildRuntime(ctx, RuntimeConfig{WorkDir: tmp})
+	if err != nil {
+		t.Fatalf("BuildRuntime: %v", err)
+	}
+	if errs := rt.Lifecycle.StartApproved(ctx); len(errs) > 0 {
+		t.Fatalf("StartApproved: %v", errs)
+	}
+	return rt, func() { rt.Manager.Shutdown(context.Background()) }
+}

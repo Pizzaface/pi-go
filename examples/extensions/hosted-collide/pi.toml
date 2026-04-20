@@ -1,0 +1,9 @@
+name = "hosted-collide"
+version = "0.0.1"
+description = "Collision fixture: also tries to register 'greet'"
+runtime = "hosted"
+command = ["go", "run", "."]
+requested_capabilities = [
+    "tools.register",
+    "events.tool_execute",
+]
