@@ -295,7 +295,6 @@ func (noopBus) Emit(string, any) error {
 	return piapi.ErrNotImplemented{Method: "Events.Emit", Spec: "#3"}
 }
 
-// UnregisterTool: real implementation lands in Task 11.
 func (a *rpcAPI) UnregisterTool(name string) error {
 	a.mu.Lock()
 	delete(a.tools, name)
@@ -304,7 +303,7 @@ func (a *rpcAPI) UnregisterTool(name string) error {
 	return a.hostCall("tools.unregister", map[string]any{"name": name}, &result)
 }
 
-// Ready: real implementation lands in Task 11.
+// Ready bypasses checkGrant: ext.ready is an unconditional lifecycle signal.
 func (a *rpcAPI) Ready() error {
 	var result map[string]any
 	return a.transport.Call(context.Background(), "pi.extension/host_call", map[string]any{
