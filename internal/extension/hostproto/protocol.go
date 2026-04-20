@@ -13,6 +13,9 @@ const (
 	ErrCodeEventNotSupported  = -32004
 	ErrCodeHandlerTimeout     = -32005
 	ErrCodeHandshakeFailed    = -32006
+	ErrCodeToolNotOwned       = -32097
+	ErrCodeToolNotFound       = -32098
+	ErrCodeToolNameCollision  = -32099
 )
 
 // Method names.
@@ -107,6 +110,7 @@ const (
 	ServiceTools          = "tools"
 	ServiceEvents         = "events"
 	ServiceHooks          = "hooks"
+	ServiceExt            = "ext"
 )
 
 // Method names within services (spec #5).
@@ -127,6 +131,10 @@ const (
 
 	MethodToolStreamUpdate = "update"
 	MethodLogAppend        = "append"
+
+	MethodToolsRegister   = "register"
+	MethodToolsUnregister = "unregister"
+	MethodExtReady        = "ready"
 )
 
 // Payload shapes for the new services.
