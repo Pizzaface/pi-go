@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/pizzaface/go-pi/internal/extension/api"
 )
 
 type StateStore struct {
@@ -153,3 +155,20 @@ func (s *StateStore) pathFor(extensionID string) (string, bool) {
 	}
 	return filepath.Join(s.sessionsDir, s.sessionID, "state", "extensions", extensionID+".json"), true
 }
+
+// HostedView returns an api.StateStoreIface adapter for this store.
+// Used by the hosted RPC handler to access state without an import cycle.
+func (s *StateStore) HostedView() api.StateStoreIface { return &hostedStoreView{s: s} }
+
+type hostedStoreView struct{ s *StateStore }
+
+func (v *hostedStoreView) Namespace(extensionID string) api.StateNamespaceIface {
+	return &hostedNamespaceView{ns: v.s.Namespace(extensionID)}
+}
+
+type hostedNamespaceView struct{ ns StateNamespace }
+
+func (v *hostedNamespaceView) Get() (map[string]any, bool, error) { return v.ns.Get() }
+func (v *hostedNamespaceView) Set(value any) error                { return v.ns.Set(value) }
+func (v *hostedNamespaceView) Patch(merge json.RawMessage) error  { return v.ns.Patch(merge) }
+func (v *hostedNamespaceView) Delete() error                      { return v.ns.Delete() }

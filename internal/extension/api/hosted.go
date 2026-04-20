@@ -22,6 +22,7 @@ type HostedAPIHandler struct {
 
 	registry  *HostedToolRegistry
 	readiness *Readiness
+	state     StateStoreIface
 
 	mu    sync.Mutex
 	tools map[string]hostedTool
@@ -34,6 +35,23 @@ func (h *HostedAPIHandler) SetRegistry(r *HostedToolRegistry) { h.registry = r }
 // SetReadiness wires the shared Readiness tracker so tools.register/unregister
 // kick the quiescence window and ext.ready explicitly promotes the extension.
 func (h *HostedAPIHandler) SetReadiness(r *Readiness) { h.readiness = r }
+
+// StateStoreIface is the minimal surface HostedAPIHandler needs from the
+// per-session state store. Defined here to avoid an import cycle into the
+// parent extension package.
+type StateStoreIface interface {
+	Namespace(extensionID string) StateNamespaceIface
+}
+
+type StateNamespaceIface interface {
+	Get() (map[string]any, bool, error)
+	Set(value any) error
+	Patch(merge json.RawMessage) error
+	Delete() error
+}
+
+// SetStateStore wires the per-session state store used by the state service.
+func (h *HostedAPIHandler) SetStateStore(s StateStoreIface) { h.state = s }
 
 type hostedTool struct {
 	Name        string          `json:"name"`
@@ -126,6 +144,8 @@ func (h *HostedAPIHandler) handleHostCall(params json.RawMessage) (any, error) {
 		if p.Method == hostproto.MethodLogAppend {
 			return h.handleLogAppend(p.Payload)
 		}
+	case hostproto.ServiceState:
+		return h.handleState(p.Method, p.Payload)
 	}
 	return nil, fmt.Errorf("service %s.%s not implemented", p.Service, p.Method)
 }
@@ -367,4 +387,47 @@ func (h *HostedAPIHandler) handleSubscribeEvent(params json.RawMessage) (any, er
 		})
 	}
 	return map[string]any{"subscribed": len(p.Events)}, nil
+}
+
+func (h *HostedAPIHandler) handleState(method string, payload json.RawMessage) (any, error) {
+	if h.state == nil {
+		return nil, fmt.Errorf("state service not wired")
+	}
+	ns := h.state.Namespace(h.reg.ID)
+	switch method {
+	case hostproto.MethodStateGet:
+		val, exists, err := ns.Get()
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return hostproto.StateGetResult{Exists: false}, nil
+		}
+		b, err := json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+		return hostproto.StateGetResult{Exists: true, Value: b}, nil
+	case hostproto.MethodStateSet:
+		var p hostproto.StateSetParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		var val any
+		if len(p.Value) > 0 {
+			if err := json.Unmarshal(p.Value, &val); err != nil {
+				return nil, fmt.Errorf("state.set: invalid value: %w", err)
+			}
+		}
+		return map[string]any{}, ns.Set(val)
+	case hostproto.MethodStatePatch:
+		var p hostproto.StatePatchParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, ns.Patch(p.Patch)
+	case hostproto.MethodStateDelete:
+		return map[string]any{}, ns.Delete()
+	}
+	return nil, fmt.Errorf("state.%s not implemented", method)
 }
