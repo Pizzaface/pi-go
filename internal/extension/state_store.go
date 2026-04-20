@@ -97,6 +97,54 @@ func (n StateNamespace) Delete() error {
 	return nil
 }
 
+// Patch applies an RFC 7396 JSON Merge Patch to the namespace's stored
+// value. Null values in the patch delete keys; objects recurse; arrays and
+// scalars replace. A missing store is treated as an empty object.
+func (n StateNamespace) Patch(merge json.RawMessage) error {
+	if n.store == nil || n.extensionID == "" {
+		return nil
+	}
+	current, _, err := n.Get()
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		current = map[string]any{}
+	}
+	var patch any
+	if err := json.Unmarshal(merge, &patch); err != nil {
+		return fmt.Errorf("state.patch: invalid patch JSON: %w", err)
+	}
+	merged := mergePatch(current, patch)
+	return n.Set(merged)
+}
+
+// mergePatch implements RFC 7396 JSON Merge Patch.
+// - If patch is not a map, it replaces target wholesale.
+// - If patch is a map, each key: null deletes, map recurses, anything else replaces.
+func mergePatch(target, patch any) any {
+	pm, pOK := patch.(map[string]any)
+	if !pOK {
+		return patch
+	}
+	tm, tOK := target.(map[string]any)
+	if !tOK {
+		tm = map[string]any{}
+	}
+	for k, v := range pm {
+		if v == nil {
+			delete(tm, k)
+			continue
+		}
+		if _, isMap := v.(map[string]any); isMap {
+			tm[k] = mergePatch(tm[k], v)
+			continue
+		}
+		tm[k] = v
+	}
+	return tm
+}
+
 func (s *StateStore) pathFor(extensionID string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

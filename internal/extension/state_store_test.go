@@ -61,3 +61,80 @@ func TestStateStore_SerializesJSONValues(t *testing.T) {
 		t.Fatalf("expected items array roundtrip, got %+v", got["items"])
 	}
 }
+
+func TestStateNamespace_Patch_MergesShallow(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStateStore(dir, "sess-1")
+	ns := s.Namespace("ext-a")
+	if err := ns.Set(map[string]any{"a": 1.0, "b": 2.0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.Patch([]byte(`{"b": 99, "c": 3}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := ns.Get()
+	if err != nil || !ok {
+		t.Fatalf("Get: err=%v ok=%v", err, ok)
+	}
+	if got["a"] != 1.0 || got["b"] != 99.0 || got["c"] != 3.0 {
+		t.Fatalf("merged state = %v", got)
+	}
+}
+
+func TestStateNamespace_Patch_NullDeletesKey(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStateStore(dir, "sess-1")
+	ns := s.Namespace("ext-a")
+	_ = ns.Set(map[string]any{"a": 1.0, "b": 2.0})
+	if err := ns.Patch([]byte(`{"b": null}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := ns.Get()
+	if _, has := got["b"]; has {
+		t.Fatalf("key b should be deleted: %v", got)
+	}
+}
+
+func TestStateNamespace_Patch_ArrayReplaces(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStateStore(dir, "sess-1")
+	ns := s.Namespace("ext-a")
+	_ = ns.Set(map[string]any{"items": []any{"x", "y"}})
+	if err := ns.Patch([]byte(`{"items": ["z"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := ns.Get()
+	arr, ok := got["items"].([]any)
+	if !ok || len(arr) != 1 || arr[0] != "z" {
+		t.Fatalf("items = %v", got["items"])
+	}
+}
+
+func TestStateNamespace_Patch_RecursesNested(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStateStore(dir, "sess-1")
+	ns := s.Namespace("ext-a")
+	_ = ns.Set(map[string]any{"outer": map[string]any{"a": 1.0, "b": 2.0}})
+	if err := ns.Patch([]byte(`{"outer": {"b": 99, "c": 3}}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := ns.Get()
+	outer := got["outer"].(map[string]any)
+	if outer["a"] != 1.0 || outer["b"] != 99.0 || outer["c"] != 3.0 {
+		t.Fatalf("nested merge: %v", outer)
+	}
+}
+
+func TestStateNamespace_Patch_EmptyBaseCreates(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStateStore(dir, "sess-1")
+	ns := s.Namespace("ext-a")
+	if err := ns.Patch([]byte(`{"a": 1}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, _ := ns.Get()
+	if !ok || got["a"] != 1.0 {
+		t.Fatalf("patch on empty: ok=%v got=%v", ok, got)
+	}
+}
+
