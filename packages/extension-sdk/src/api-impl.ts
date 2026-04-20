@@ -85,6 +85,25 @@ export function createExtensionAPI(
         },
       }).catch((err) => { throw err; });
     },
+    unregisterTool: (name) => {
+      ensureGrant("tools", "unregister");
+      tools.delete(name);
+      transport.call("pi.extension/host_call", {
+        service: "tools",
+        version: 1,
+        method: "unregister",
+        payload: { name },
+      }).catch((err) => { throw err; });
+    },
+    ready: () => {
+      // ext.ready is an ungated lifecycle signal — bypass ensureGrant.
+      transport.call("pi.extension/host_call", {
+        service: "ext",
+        version: 1,
+        method: "ready",
+        payload: {},
+      }).catch((err) => { throw err; });
+    },
     registerCommand: notImpl("registerCommand", "#2") as (name: string, desc: CommandDescriptor) => void,
     registerShortcut: notImpl("registerShortcut", "#6") as (s: string, d: ShortcutDescriptor) => void,
     registerFlag: notImpl("registerFlag", "#6") as (n: string, d: FlagDescriptor) => void,

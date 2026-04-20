@@ -30,6 +30,8 @@ export interface ExtensionAPI {
   version(): string;
 
   registerTool(desc: ToolDescriptor): void;
+  unregisterTool(name: string): void;
+  ready(): void;
   registerCommand(name: string, desc: CommandDescriptor): void;
   registerShortcut(shortcut: string, desc: ShortcutDescriptor): void;
   registerFlag(name: string, desc: FlagDescriptor): void;
