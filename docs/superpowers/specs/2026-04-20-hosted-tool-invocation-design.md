@@ -230,11 +230,55 @@ Purpose: avoid a race where the user's first prompt fires before hosted extensio
 ### 4.1 Mechanism
 
 - `Lifecycle.StartApproved` already kicks off launch goroutines per extension. Extend it to return a `*HostedReadiness` handle that tracks per-extension state: `{launching, ready, errored, timed_out}`.
-- Readiness signal per extension = the **first batch of `tools.register` calls completes** OR the extension explicitly calls `pi.Ready()` (SDK helper; no-op for now) OR the `initial_registration` timeout elapses.
-- "First batch completes" is detected via a quiescence timer: after the handshake, if no `tools.register` call arrives for `250ms`, the extension is considered ready. This is a pragmatic heuristic; extensions that want deterministic signalling can add an explicit `Ready()` call in spec #6.
-- `Runtime.WaitForHostedReady(ctx, timeout)` (default `5s`) blocks until all launched-at-startup extensions are in a terminal state (`ready | errored | timed_out`).
+- Readiness signal per extension = **whichever fires first** of:
+  1. The extension calls `pi.Ready()` (explicit, deterministic — preferred).
+  2. Quiescence: no `tools.register`/`tools.unregister` call arrives for `250ms` after handshake (fallback for extensions that don't call `Ready()`).
+  3. The `initial_registration` timeout elapses (default `5s`; the extension becomes `timed_out` but the barrier releases so other extensions don't hang the host).
+- `Runtime.WaitForHostedReady(ctx, timeout)` (default `5s`) blocks until every launched-at-startup extension is in a terminal state (`ready | errored | timed_out`).
 
-### 4.2 Integration points
+### 4.2 `pi.Ready()` — explicit readiness signal
+
+Extensions that do slow startup work (remote schema fetches, config loads, cache warms) should call `pi.Ready()` as the last step of their `register` function. This tells the host "I'm fully initialized; any tools I intend to register at startup have been registered."
+
+Wire method:
+
+```
+Service: ext
+Method:  ready
+Payload: {}
+Response: {"acknowledged": true}
+```
+
+Not gated by a capability — it's infrastructure, not a privileged operation.
+
+SDK surface:
+
+```go
+// Go (pkg/piext)
+func (a *rpcAPI) Ready() error
+
+// TS (@go-pi/extension-sdk)
+pi.ready(): Promise<void>
+```
+
+Calling `Ready()` is optional but recommended. Extensions that don't call it rely on the 250 ms quiescence heuristic, which is fine for synchronous registration but risks a false-positive ready state during slow async setup.
+
+Once `Ready()` is received, the host marks the extension `ready`, cancels the quiescence timer, and any subsequent `tools.register` calls are treated as normal dynamic registrations (hot reload path) rather than startup registrations. This means `Ready()` is a one-way transition: the extension commits to a baseline toolset at that point.
+
+Example:
+
+```go
+func register(pi piapi.API) error {
+    schema, err := loadRemoteSchema()  // slow
+    if err != nil { return err }
+    for _, tool := range schema.Tools {
+        if err := pi.RegisterTool(tool); err != nil { return err }
+    }
+    return pi.Ready()
+}
+```
+
+### 4.3 Integration points
 
 - TUI (`internal/cli/interactive.go`): before enabling the prompt, show "Loading extensions…" with the list of still-pending IDs. Transition when `WaitForHostedReady` returns.
 - CLI headless (`internal/cli/cli.go`): wait silently, but log per-extension timeouts at `WARN`.
@@ -316,7 +360,14 @@ Extend `internal/extension/e2e_hosted_go_spec5_test.go` into `e2e_hosted_go_tool
 
 New fixture `examples/extensions/hosted-collide/` registering `greet`. Launch alongside `hosted-hello-go`; assert second registration returns `-32099`, first tool remains available, panel event emitted.
 
-### 8.4 Dynamic approval test
+### 8.4 Ready signal test
+
+New fixture `examples/extensions/hosted-slow-ready-go/` that sleeps 300 ms, registers a tool, then calls `pi.Ready()`. Assert:
+
+- With `Ready()` absent and 250 ms quiescence, the extension would have been marked ready prematurely and the tool would be missing from the first-turn snapshot.
+- With `Ready()` called after the sleep, `WaitForHostedReady` blocks until the explicit signal lands and the tool is present on turn one.
+
+### 8.5 Dynamic approval test
 
 1. Boot with only `hosted-hello-go` approved.
 2. Via Lifecycle API, approve+start `hosted-showcase-go` mid-session.
@@ -334,4 +385,3 @@ New fixture `examples/extensions/hosted-collide/` registering `greet`. Launch al
 - **Cross-extension tool invocation.** Extensions calling each other's tools. Not required for LLM→tool invocation; reconsider if a real use case emerges.
 - **Tool-level permissions.** Per-tool capability gates (approving `greet` but not `ext_shell`). The existing extension-level capability model suffices; finer-grained gating is spec #6+ territory.
 - **Per-extension tool namespacing UI.** Rejected in §6.2.
-- **Explicit `Ready()` SDK method.** Readiness is inferred from quiescence for now; an explicit signal can be added later without changing this design.
