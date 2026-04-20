@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestBuildHandshakeResponse_GrantsRequestedMethodsForCompiledIn(t *testing.T) {

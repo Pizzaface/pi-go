@@ -15,7 +15,7 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/llmutil"
 )
 
 const defaultMaxTokens int64 = 8192

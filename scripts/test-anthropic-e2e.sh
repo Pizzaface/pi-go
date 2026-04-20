@@ -3,7 +3,7 @@ set -euo pipefail
 
 # E2E test: run pi with Anthropic Claude (default params) to explore codebase and generate PI.md
 # Usage: ./scripts/test-anthropic-e2e.sh [model]
-# Default model: claude-sonnet-4-6 (pi-go default)
+# Default model: claude-sonnet-4-6 (go-pi default)
 #
 # Requires: ANTHROPIC_API_KEY environment variable
 
@@ -33,9 +33,9 @@ info "Checking prerequisites..."
 
 # Check ANTHROPIC_API_KEY is set
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    # Try loading from ~/.pi-go/.env
-    if [ -f "$HOME/.pi-go/.env" ]; then
-        export $(grep -v '^#' "$HOME/.pi-go/.env" | grep ANTHROPIC_API_KEY | xargs)
+    # Try loading from ~/.go-pi/.env
+    if [ -f "$HOME/.go-pi/.env" ]; then
+        export $(grep -v '^#' "$HOME/.go-pi/.env" | grep ANTHROPIC_API_KEY | xargs)
     fi
 fi
 
@@ -191,7 +191,7 @@ else
         pass "PI.md exists (${CHAR_COUNT} chars)"
     fi
 
-    if grep -qi "pi-go\|pi\.go\|project\|architecture\|package" "$PI_MD"; then
+    if grep -qi "go-pi\|pi\.go\|project\|architecture\|package" "$PI_MD"; then
         pass "PI.md contains expected project content"
     else
         error "PI.md does not contain expected project keywords"
@@ -202,7 +202,7 @@ fi
 
 info "Validating session logs..."
 
-LOG_DIR="$HOME/.pi-go/log/$(date +%Y-%m-%d)"
+LOG_DIR="$HOME/.go-pi/log/$(date +%Y-%m-%d)"
 if [ ! -d "$LOG_DIR" ]; then
     error "No log directory found at ${LOG_DIR}"
 else

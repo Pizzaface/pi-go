@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/internal/extension/host"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // TestE2E_HostedGo_Spec5 verifies that a hosted Go extension can call
@@ -35,7 +35,7 @@ func TestE2E_HostedGo_Spec5(t *testing.T) {
 	}
 
 	tmp := t.TempDir()
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/dimetron/pi-go/internal/agent"
+	"github.com/pizzaface/go-pi/internal/agent"
 )
 
 func baseInstruction() string {

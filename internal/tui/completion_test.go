@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension"
 )
 
 func TestComplete_CommandCompletion(t *testing.T) {

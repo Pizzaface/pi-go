@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
-	"github.com/dimetron/pi-go/pkg/piext"
+	"github.com/pizzaface/go-pi/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piext"
 )
 
 var Metadata = piapi.Metadata{

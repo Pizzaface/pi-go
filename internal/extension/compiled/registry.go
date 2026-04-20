@@ -1,5 +1,5 @@
 // Package compiled holds the registry of extensions linked directly into
-// the pi-go binary. Each compiled-in extension calls Append from its
+// the go-pi binary. Each compiled-in extension calls Append from its
 // package init() to add itself to the slice. BuildRuntime reads the
 // slice during startup and registers every entry with the host Manager.
 package compiled
@@ -7,7 +7,7 @@ package compiled
 import (
 	"sync"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // Entry describes one compiled-in extension.

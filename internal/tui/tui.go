@@ -6,9 +6,9 @@ import (
 
 	"github.com/charmbracelet/glamour"
 
-	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/provider"
 
 	tea "charm.land/bubbletea/v2"
 )

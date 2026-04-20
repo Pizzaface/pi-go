@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 func TestDefaults(t *testing.T) {
@@ -243,7 +243,7 @@ func TestLoad_WithGlobalAndProjectConfig(t *testing.T) {
 	home := t.TempDir()
 
 	// Create global config
-	globalDir := filepath.Join(home, ".pi-go")
+	globalDir := filepath.Join(home, ".go-pi")
 	if err := os.MkdirAll(globalDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestLoad_WithGlobalAndProjectConfig(t *testing.T) {
 	}
 
 	// Create project config
-	projectDir := filepath.Join(dir, ".pi-go")
+	projectDir := filepath.Join(dir, ".go-pi")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestExtraHeadersFromConfig(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	cfgDir := filepath.Join(tmp, ".pi-go")
+	cfgDir := filepath.Join(tmp, ".go-pi")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestInsecureSkipTLSFromConfig(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	cfgDir := filepath.Join(tmp, ".pi-go")
+	cfgDir := filepath.Join(tmp, ".go-pi")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestLegacyMemoryConfigIsIgnored(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	cfgDir := filepath.Join(tmp, ".pi-go")
+	cfgDir := filepath.Join(tmp, ".go-pi")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestLoad_MigratesDefaultModelToRolesActual(t *testing.T) {
 	home := t.TempDir()
 
 	// Write only a global config with defaultModel and NO roles.
-	globalDir := filepath.Join(home, ".pi-go")
+	globalDir := filepath.Join(home, ".go-pi")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestLoad_MigratesDefaultModelWhenDefaultRoleMissing(t *testing.T) {
 	tmp := t.TempDir()
 	home := t.TempDir()
 
-	globalDir := filepath.Join(home, ".pi-go")
+	globalDir := filepath.Join(home, ".go-pi")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -577,7 +577,7 @@ func TestLoad_MergesProviderAndModelDefinitionsAcrossGlobalAndProject(t *testing
 	dir := t.TempDir()
 	home := t.TempDir()
 
-	globalDir := filepath.Join(home, ".pi-go")
+	globalDir := filepath.Join(home, ".go-pi")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -588,7 +588,7 @@ func TestLoad_MergesProviderAndModelDefinitionsAcrossGlobalAndProject(t *testing
 		t.Fatal(err)
 	}
 
-	projectDir := filepath.Join(dir, ".pi-go")
+	projectDir := filepath.Join(dir, ".go-pi")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

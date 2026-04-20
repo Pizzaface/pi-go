@@ -12,8 +12,10 @@ updated: 2026-04-15T12:00:00Z
 
 1. A single programmatic surface (`lifecycle.Service`) owns approve / deny / revoke / start / stop / restart / reload for hosted extensions. The TUI consumes it. Future SDK work can expose a subset through `pkg/piapi` / `packages/extension-sdk` without rewriting either side.
 2. Approved hosted extensions auto-start at TUI boot without blocking startup.
-3. Unapproved hosted extensions are visible in the TUI and approvable from inside it — no more hand-editing `~/.pi-go/extensions/approvals.json`.
-4. Crashed, stuck, or failed extensions never hang or kill pi-go; they surface in the panel with an error and a retry path.
+3. Unapproved hosted extensions are visible in the TUI and approvable from inside it — no more hand-editing
+   `~/.go-pi/extensions/approvals.json`.
+4. Crashed, stuck, or failed extensions never hang or kill go-pi; they surface in the panel with an error and a retry
+   path.
 
 ## Non-goals
 
@@ -188,7 +190,8 @@ s.gate.Reload()
 
 **Unknown-field preservation** — entries round-trip through `json.RawMessage` then `map[string]any`. Fields we don't name (e.g. a future `hash`, `notes`, `installed_at`) survive rewrites unchanged.
 
-**No file lock across processes** — v1 is human-driven, single-pi-go-per-user. Last-write-wins. Future work can add `flock` if needed.
+**No file lock across processes** — v1 is human-driven, single-go-pi-per-user. Last-write-wins. Future work can add
+`flock` if needed.
 
 ## Auto-start flow
 
@@ -222,7 +225,9 @@ for reg in mgr.List():
 `buildCommand`:
 
 - **hosted-go** — returns `reg.Metadata.Command` (from `pi.toml`). Falls back to `["go", "run", "."]`.
-- **hosted-ts** — `["node", hostPath, "--entry", abs(reg.Metadata.Entry), "--name", reg.ID]` where `hostPath` comes from `host.ExtractedHostPath(piVersion)` (the pi-go build version — extraction is idempotent per version). Errors if `exec.LookPath("node")` fails.
+- **hosted-ts** — `["node", hostPath, "--entry", abs(reg.Metadata.Entry), "--name", reg.ID]` where `hostPath` comes from
+  `host.ExtractedHostPath(piVersion)` (the go-pi build version — extraction is idempotent per version). Errors if
+  `exec.LookPath("node")` fails.
 
 `watchHandshakeTimeout`:
 

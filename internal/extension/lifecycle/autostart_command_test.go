@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestBuildCommand_HostedGoUsesMetadataCommand(t *testing.T) {

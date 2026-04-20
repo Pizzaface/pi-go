@@ -3,9 +3,9 @@ package extension
 import (
 	"fmt"
 
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension/loader"
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension/loader"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 // BuildProviderRegistry composes built-in providers with discoverable model

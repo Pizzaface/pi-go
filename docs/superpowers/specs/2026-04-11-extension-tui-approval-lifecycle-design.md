@@ -10,9 +10,13 @@ updated: 2026-04-12T00:00:00Z
 
 ## Goals
 
-1. An unapproved hosted extension must never block pi-go startup. Today, a hosted extension that is missing from `approvals.json` either hard-fails `BuildRuntime` (earlier manager behavior) or, when approval is present but its subprocess is slow to handshake, hangs the TUI forever on "loading: tools...". Both are unacceptable.
-2. Extensions are approved interactively through the TUI instead of requiring the user to hand-edit `~/.pi-go/extensions/approvals.json`.
-3. Hosted extensions can be approved, denied, started, stopped, restarted, revoked, and reloaded from a running pi-go session without restarting the process.
+1. An unapproved hosted extension must never block go-pi startup. Today, a hosted extension that is missing from
+   `approvals.json` either hard-fails `BuildRuntime` (earlier manager behavior) or, when approval is present but its
+   subprocess is slow to handshake, hangs the TUI forever on "loading: tools...". Both are unacceptable.
+2. Extensions are approved interactively through the TUI instead of requiring the user to hand-edit
+   `~/.go-pi/extensions/approvals.json`.
+3. Hosted extensions can be approved, denied, started, stopped, restarted, revoked, and reloaded from a running go-pi
+   session without restarting the process.
 4. A single place (`/extensions`) to see every extension's current state.
 
 ## Non-goals
@@ -218,7 +222,7 @@ Total user-visible hang time: **zero**.
 
 **Flow C — `/extensions reload` after dropping a new manifest.**
 
-1. User drops `.pi-go/extensions/foo/extension.json` while pi-go is running.
+1. User drops `.go-pi/extensions/foo/extension.json` while go-pi is running.
 2. User presses `R` in the panel (or runs `/extensions reload`).
 3. `ReloadManifests` diffs current state against the re-scanned dirs:
    - New → registered (pending or ready per approvals.json).
@@ -236,7 +240,9 @@ Total user-visible hang time: **zero**.
 
 **`Permissions.Upsert(path, record)` and `Permissions.Delete(path, id)`.** Both write atomically — temp file in the same directory, fsync, rename — to avoid partial writes on crash. The manager caches `approvalsPath` at construction (`ManagerOptions.ApprovalsPath`) so callers don't re-compute `DefaultApprovalsPath()` on every grant.
 
-**`Denied` state is in-memory only.** A mistaken deny shouldn't force the user to hand-edit `approvals.json` to recover; after a pi-go restart, a denied extension is back in `Pending`. Users who want a permanent block can remove the extension directory.
+**`Denied` state is in-memory only.** A mistaken deny shouldn't force the user to hand-edit `approvals.json` to recover;
+after a go-pi restart, a denied extension is back in `Pending`. Users who want a permanent block can remove the
+extension directory.
 
 ### 7. Testing
 
@@ -280,7 +286,7 @@ Total user-visible hang time: **zero**.
 
 ## Migration & compatibility
 
-- `~/.pi-go/extensions/approvals.json` format is unchanged. Existing users' approvals continue to work.
+- `~/.go-pi/extensions/approvals.json` format is unchanged. Existing users' approvals continue to work.
 - Declarative and compiled-in extensions are unaffected — they still go straight to `Ready`.
 - The existing `extensionDialog` (informational) stays as-is; it's a different dialog type from the approval sub-dialog. `handleExtensionDialogKey` is untouched.
 - `internal/extension/hosted_hello_e2e_test.go` continues to run the approved-path scenario.

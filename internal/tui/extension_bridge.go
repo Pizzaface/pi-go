@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 
 	tea "charm.land/bubbletea/v2"
 )

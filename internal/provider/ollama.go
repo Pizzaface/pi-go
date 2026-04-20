@@ -13,7 +13,7 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/llmutil"
 )
 
 // ollamaModel implements model.LLM for the native Ollama API.

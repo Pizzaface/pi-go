@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // hostCallCapture spins up a goroutine that reads one JSON-RPC request

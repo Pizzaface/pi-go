@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestStartApproved_LaunchesEveryReadyHosted(t *testing.T) {

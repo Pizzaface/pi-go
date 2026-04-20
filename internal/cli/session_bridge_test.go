@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestCLISessionBridge_ForkReturnsUnsupported(t *testing.T) {

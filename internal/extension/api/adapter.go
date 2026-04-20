@@ -9,7 +9,7 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // NewPiapiToolAdapter wraps a piapi.ToolDescriptor so it satisfies the
@@ -35,7 +35,7 @@ func NewPiapiToolAdapter(desc piapi.ToolDescriptor) (tool.Tool, error) {
 			return nil, err
 		}
 		callID := ""
-		var runCtx context.Context = context.Background()
+		var runCtx = context.Background()
 		if ctx != nil {
 			runCtx = ctx
 			callID = ctx.FunctionCallID()

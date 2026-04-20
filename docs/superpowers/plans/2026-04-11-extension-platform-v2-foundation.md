@@ -451,7 +451,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 func TestRPCError_WrapsCodeAndMessage(t *testing.T) {
@@ -521,7 +521,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // Service is the host-side interface every v2 extension service
@@ -635,7 +635,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 type stubService struct {
@@ -832,7 +832,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // CapabilityGate decides whether an extension is allowed to call a
@@ -1155,7 +1155,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/services"
+	"github.com/pizzaface/go-pi/internal/extension/services"
 )
 
 func TestService_Metadata(t *testing.T) {
@@ -1309,8 +1309,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/internal/extension/services"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/services"
 )
 
 // Service implements the "ui" v2 service.
@@ -1402,7 +1402,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/services"
+	"github.com/pizzaface/go-pi/internal/extension/services"
 )
 
 func TestService_Metadata(t *testing.T) {
@@ -1593,8 +1593,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/internal/extension/services"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/services"
 )
 
 // Service implements the "commands" v2 service.
@@ -1713,7 +1713,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // newPipePair returns two connected (reader, writer) pairs for an
@@ -1801,7 +1801,7 @@ Expected: package does not exist, compilation error.
 - [ ] **Step 3: Create `internal/extension/sdk/sdk.go`**
 
 ```go
-// Package sdk provides helpers for authoring v2 pi-go extensions in Go.
+// Package sdk provides helpers for authoring v2 go-pi extensions in Go.
 // It handles the stdio JSON-RPC plumbing so extension authors can write
 // handlers instead of wire-protocol code.
 //
@@ -1828,7 +1828,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // Client is the extension-side SDK client. One per extension process.
@@ -2291,7 +2291,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // fakeDispatcher implements hostruntime.Dispatcher in tests.
@@ -2448,7 +2448,7 @@ func TestServeInbound_UnknownMethodIsError(t *testing.T) {
 
 Also add to the top of the test file (if not already present in imports):
 ```go
-import "github.com/dimetron/pi-go/internal/extension/hostruntime"
+import "github.com/pizzaface/go-pi/internal/extension/hostruntime"
 ```
 
 Actually, these tests live IN `package hostruntime`, so no external import needed. Ensure the test file declares `package hostruntime` at the top (matching `client_test.go`).
@@ -2804,7 +2804,7 @@ func (g managerCapabilityGate) Allowed(extensionID, service, method string) bool
 Add the required import at the top of `manager.go`:
 
 ```go
-"github.com/dimetron/pi-go/internal/extension/services"
+"github.com/pizzaface/go-pi/internal/extension/services"
 ```
 
 - [ ] **Step 4: Run build to verify everything compiles**
@@ -2928,7 +2928,7 @@ At the top of `manager_test.go`, add imports if missing:
 import (
 	"encoding/json"
 	"time"
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 ```
 
@@ -2942,8 +2942,8 @@ Expected: `DispatchHostCall` undefined; ui/commands services not yet registered.
 Import the new service packages at the top of `manager.go`:
 
 ```go
-uiservice "github.com/dimetron/pi-go/internal/extension/services/ui"
-commandsservice "github.com/dimetron/pi-go/internal/extension/services/commands"
+uiservice "github.com/pizzaface/go-pi/internal/extension/services/ui"
+commandsservice "github.com/pizzaface/go-pi/internal/extension/services/commands"
 ```
 
 In `NewManager`, after the `servicesRegistry` is created but before the final return, register the services:
@@ -3203,7 +3203,7 @@ type Dispatcher = hostruntime.Dispatcher
 Add the `hostruntime` import at the top of `manager.go`:
 
 ```go
-"github.com/dimetron/pi-go/internal/extension/hostruntime"
+"github.com/pizzaface/go-pi/internal/extension/hostruntime"
 ```
 
 Extend `HostedClient` to include `ServeInbound`:
@@ -3307,7 +3307,7 @@ reference it without an import cycle."
 Overwrite `examples/extensions/hosted-hello/main.go`:
 
 ```go
-// Package main is the pi-go hosted-hello example extension, rewritten
+// Package main is the go-pi hosted-hello example extension, rewritten
 // against the v2 host_call protocol. It registers a single slash
 // command (/hello) and pushes a status line entry via the ui service.
 package main
@@ -3319,10 +3319,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	commandstypes "github.com/dimetron/pi-go/internal/extension/services/commands"
-	uitypes "github.com/dimetron/pi-go/internal/extension/services/ui"
-	"github.com/dimetron/pi-go/internal/extension/sdk"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/sdk"
+	commandstypes "github.com/pizzaface/go-pi/internal/extension/services/commands"
+	uitypes "github.com/pizzaface/go-pi/internal/extension/services/ui"
 )
 
 func main() {
@@ -3374,7 +3374,7 @@ Overwrite `examples/extensions/hosted-hello/extension.json`:
 {
   "id": "hosted-hello",
   "name": "hosted-hello",
-  "description": "Minimal hosted extension example for pi-go v2 protocol",
+  "description": "Minimal hosted extension example for go-pi v2 protocol",
   "runtime": {
     "type": "hosted_stdio_jsonrpc",
     "command": "go",
@@ -3394,7 +3394,7 @@ Overwrite `examples/extensions/hosted-hello/README.md`:
 ```markdown
 # hosted-hello
 
-Minimal hosted extension example for pi-go, built against the v2
+Minimal hosted extension example for go-pi, built against the v2
 extension protocol (`docs/superpowers/specs/2026-04-11-extension-platform-v2-design.md`).
 
 ## What it demonstrates
@@ -3414,12 +3414,13 @@ extension protocol (`docs/superpowers/specs/2026-04-11-extension-platform-v2-des
 Copy this folder into one of the extension discovery locations:
 
 ```
-~/.pi-go/extensions/hosted-hello/
+
+~/.go-pi/extensions/hosted-hello/
 ```
 
 ## Approvals
 
-Hosted extensions require explicit approval in `~/.pi-go/extensions/approvals.json`:
+Hosted extensions require explicit approval in `~/.go-pi/extensions/approvals.json`:
 
 ```json
 {
@@ -3445,7 +3446,7 @@ The manifest starts the extension with:
 go run .
 ```
 
-from this directory. pi-go invokes this automatically when the extension is enabled.
+from this directory. go-pi invokes this automatically when the extension is enabled.
 
 ## Notes
 
@@ -3493,8 +3494,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // TestHostedHello_V2_EndToEnd spins up the manager with a pipe-based

@@ -11,8 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/extension"
+	"github.com/pizzaface/go-pi/internal/llmutil"
 )
 
 // agentMsg wraps messages coming from the agent goroutine via a channel.

@@ -12,9 +12,9 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/lsp"
-	"github.com/dimetron/pi-go/internal/tools"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/lsp"
+	"github.com/pizzaface/go-pi/internal/tools"
 )
 
 // initGitRepo creates a git repo in dir with one committed file.

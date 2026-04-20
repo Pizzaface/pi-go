@@ -41,7 +41,7 @@ type Tracker struct {
 }
 
 // New creates a tracker with the given daily token limit.
-// It loads any existing usage for today from ~/.pi-go/usage.json.
+// It loads any existing usage for today from ~/.go-pi/usage.json.
 func New(maxDailyTokens int64) *Tracker {
 	t := &Tracker{
 		limit: maxDailyTokens,
@@ -49,7 +49,7 @@ func New(maxDailyTokens int64) *Tracker {
 
 	home, err := os.UserHomeDir()
 	if err == nil {
-		t.filePath = filepath.Join(home, ".pi-go", "usage.json")
+		t.filePath = filepath.Join(home, ".go-pi", "usage.json")
 	}
 
 	t.load()

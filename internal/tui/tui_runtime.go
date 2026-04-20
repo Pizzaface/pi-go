@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 func waitForRestart(ch chan struct{}) tea.Cmd {

@@ -11,15 +11,15 @@ import (
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 
-	"github.com/dimetron/pi-go/internal/config"
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/internal/extension/compiled"
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
-	"github.com/dimetron/pi-go/internal/extension/loader"
-	"github.com/dimetron/pi-go/internal/provider"
-	"github.com/dimetron/pi-go/internal/tools"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/config"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/internal/extension/compiled"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/extension/loader"
+	"github.com/pizzaface/go-pi/internal/provider"
+	"github.com/pizzaface/go-pi/internal/tools"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // RuntimeConfig controls extension runtime bootstrap.
@@ -362,13 +362,13 @@ func (r *Runtime) Reload(ctx context.Context) error {
 }
 
 // DefaultApprovalsPath returns the path to the approvals.json file that
-// gates hosted extensions. Defaults to <userHome>/.pi-go/extensions/approvals.json.
+// gates hosted extensions. Defaults to <userHome>/.go-pi/extensions/approvals.json.
 func DefaultApprovalsPath() string {
 	home, err := loader.UserHome()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".pi-go", "extensions", "approvals.json")
+	return filepath.Join(home, ".go-pi", "extensions", "approvals.json")
 }
 
 // ensure the piapi import stays live even when no local code path references it.

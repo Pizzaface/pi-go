@@ -24,7 +24,7 @@ type extractResult struct {
 
 // ExtractedHostPath writes the embedded Node host bundle to a per-version
 // cache directory (idempotent) and returns the path. Version is a stable
-// string tied to the pi-go build so stale copies are harmless.
+// string tied to the go-pi build so stale copies are harmless.
 func ExtractedHostPath(version string) (string, error) {
 	v, _ := extractOnce.LoadOrStore(version, &extractResult{})
 	res := v.(*extractResult)
@@ -56,14 +56,14 @@ func extractHostBundle(version string) (string, error) {
 func cacheBaseDir() (string, error) {
 	if runtime.GOOS == "windows" {
 		if p := os.Getenv("LOCALAPPDATA"); p != "" {
-			return filepath.Join(p, "pi-go", "cache"), nil
+			return filepath.Join(p, "go-pi", "cache"), nil
 		}
 	}
 	home, err := userHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".pi-go", "cache"), nil
+	return filepath.Join(home, ".go-pi", "cache"), nil
 }
 
 func userHomeDir() (string, error) {

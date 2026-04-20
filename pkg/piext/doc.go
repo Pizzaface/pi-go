@@ -1,6 +1,6 @@
-// Package piext is the hosted-Go SDK for pi-go extensions.
+// Package piext is the hosted-Go SDK for go-pi extensions.
 //
-// A hosted-Go extension is a separate Go binary that pi-go spawns over
+// A hosted-Go extension is a separate Go binary that go-pi spawns over
 // stdio and talks to via JSON-RPC v2.1. From the extension author's
 // perspective the shape is identical to a compiled-in extension:
 //

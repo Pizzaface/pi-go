@@ -334,7 +334,7 @@ func LoadInstruction(baseInstruction string) string {
 		return baseInstruction
 	}
 
-	agentsFile := filepath.Join(cwd, ".pi-go", "AGENTS.md")
+	agentsFile := filepath.Join(cwd, ".go-pi", "AGENTS.md")
 	data, err := os.ReadFile(agentsFile)
 	if err != nil {
 		return baseInstruction

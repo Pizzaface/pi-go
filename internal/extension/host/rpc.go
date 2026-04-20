@@ -9,7 +9,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // InboundHandler handles requests coming from the extension.
@@ -19,7 +19,7 @@ type InboundHandler func(method string, params json.RawMessage) (any, error)
 // stdio. Inbound traffic (requests + notifications from the extension) is
 // routed to the supplied handler; outbound Call requests are matched by id.
 type RPCConn struct {
-	writer io.Writer
+	writer  io.Writer
 	writeMu sync.Mutex
 
 	handler InboundHandler

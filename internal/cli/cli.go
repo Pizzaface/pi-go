@@ -15,16 +15,16 @@ import (
 	adkmodel "google.golang.org/adk/model"
 	"google.golang.org/adk/session"
 
-	"github.com/dimetron/pi-go/internal/agent"
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/jsonrpc"
-	"github.com/dimetron/pi-go/internal/llmutil"
-	"github.com/dimetron/pi-go/internal/logger"
-	"github.com/dimetron/pi-go/internal/provider"
-	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/tools"
-	"github.com/dimetron/pi-go/internal/tui"
+	"github.com/pizzaface/go-pi/internal/agent"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension"
+	"github.com/pizzaface/go-pi/internal/jsonrpc"
+	"github.com/pizzaface/go-pi/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/logger"
+	"github.com/pizzaface/go-pi/internal/provider"
+	pisession "github.com/pizzaface/go-pi/internal/session"
+	"github.com/pizzaface/go-pi/internal/tools"
+	"github.com/pizzaface/go-pi/internal/tui"
 )
 
 var (
@@ -75,7 +75,7 @@ func newRootCmd() *cobra.Command {
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	// Load API keys from ~/.pi-go/.env (set by /login command).
+	// Load API keys from ~/.go-pi/.env (set by /login command).
 	loadDotEnv()
 
 	cwd, err := os.Getwd()
@@ -194,7 +194,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		if hErr != nil {
 			return fmt.Errorf("getting home dir: %w", hErr)
 		}
-		sessionsDir := filepath.Join(homeDir, ".pi-go", "sessions")
+		sessionsDir := filepath.Join(homeDir, ".go-pi", "sessions")
 		sessionSvc, sErr := pisession.NewFileService(sessionsDir)
 		if sErr != nil {
 			return fmt.Errorf("creating session service: %w", sErr)
@@ -256,7 +256,7 @@ func runNonInteractive(
 	compactorCB := tools.BuildCompactorCallback(compactorCfg, compactorMetrics)
 
 	cliHome, _ := os.UserHomeDir()
-	cliLogPath := filepath.Join(cliHome, ".pi-go", "logs", "extensions.log")
+	cliLogPath := filepath.Join(cliHome, ".go-pi", "logs", "extensions.log")
 	cliBridge := NewSessionBridge(os.Stderr, cliLogPath, nil)
 
 	runtime, err := extension.BuildRuntime(parentCtx, extension.RuntimeConfig{
@@ -275,7 +275,7 @@ func runNonInteractive(
 	if err != nil {
 		return fmt.Errorf("getting home dir: %w", err)
 	}
-	sessionsDir := filepath.Join(homeDir, ".pi-go", "sessions")
+	sessionsDir := filepath.Join(homeDir, ".go-pi", "sessions")
 	sessionSvc, err := pisession.NewFileService(sessionsDir)
 	if err != nil {
 		return fmt.Errorf("creating session service: %w", err)
@@ -596,14 +596,14 @@ func detectGitRoot(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// loadDotEnv loads environment variables from ~/.pi-go/.env.
+// loadDotEnv loads environment variables from ~/.go-pi/.env.
 // This file is written by the /login command.
 func loadDotEnv() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".pi-go", ".env"))
+	data, err := os.ReadFile(filepath.Join(home, ".go-pi", ".env"))
 	if err != nil {
 		return
 	}

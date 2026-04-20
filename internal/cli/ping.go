@@ -16,10 +16,10 @@ import (
 	llmmodel "google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/llmutil"
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension"
+	"github.com/pizzaface/go-pi/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 func newPingCmd() *cobra.Command {

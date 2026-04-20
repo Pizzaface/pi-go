@@ -12,16 +12,16 @@ import (
 
 	adkmodel "google.golang.org/adk/model"
 
-	"github.com/dimetron/pi-go/internal/agent"
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension"
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/internal/guardrail"
-	"github.com/dimetron/pi-go/internal/logger"
-	"github.com/dimetron/pi-go/internal/provider"
-	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/tools"
-	"github.com/dimetron/pi-go/internal/tui"
+	"github.com/pizzaface/go-pi/internal/agent"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/internal/guardrail"
+	"github.com/pizzaface/go-pi/internal/logger"
+	"github.com/pizzaface/go-pi/internal/provider"
+	pisession "github.com/pizzaface/go-pi/internal/session"
+	"github.com/pizzaface/go-pi/internal/tools"
+	"github.com/pizzaface/go-pi/internal/tui"
 )
 
 // initResources tracks resources created during deferred init for cleanup.
@@ -63,7 +63,7 @@ func runInteractive(
 	// BuildRuntime (extensions may call bridge methods during startup hooks).
 	// AttachProgram is called inside tui.Run once the Program exists.
 	homeDir, _ := os.UserHomeDir()
-	logPath := filepath.Join(homeDir, ".pi-go", "logs", "extensions.log")
+	logPath := filepath.Join(homeDir, ".go-pi", "logs", "extensions.log")
 	bridge := tui.NewSessionBridge(logPath)
 
 	if !noModelConfigured {
@@ -225,7 +225,7 @@ func deferredInit(
 		fail(fmt.Errorf("getting home dir: %w", err))
 		return
 	}
-	sessionsDir := filepath.Join(homeDir, ".pi-go", "sessions")
+	sessionsDir := filepath.Join(homeDir, ".go-pi", "sessions")
 	sessionSvc, err := pisession.NewFileService(sessionsDir)
 	if err != nil {
 		fail(fmt.Errorf("creating session service: %w", err))

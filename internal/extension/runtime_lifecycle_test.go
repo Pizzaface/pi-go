@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestBuildRuntime_ProvidesLifecycle(t *testing.T) {

@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@pi-go/extension-sdk": "file:../../../packages/extension-sdk"
+    "@go-pi/extension-sdk": "file:../../../packages/extension-sdk"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

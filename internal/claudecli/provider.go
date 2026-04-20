@@ -19,7 +19,7 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/llmutil"
 )
 
 // Config holds configuration for the Claude CLI provider.
@@ -79,7 +79,7 @@ type Provider struct {
 // anthropicEnvKeys are environment variables that Claude CLI reads to use an
 // "external" API key instead of its own stored OAuth credentials. We strip
 // them from the subprocess environment at spawn time so a stale key loaded
-// from ~/.pi-go/.env (used by the native anthropic provider) cannot hijack
+// from ~/.go-pi/.env (used by the native anthropic provider) cannot hijack
 // the CLI's own auth flow.
 var anthropicEnvKeys = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
 
@@ -93,7 +93,7 @@ var spawnEnvMu sync.Mutex
 // This lets Claude CLI fall back to its own stored credentials during spawn.
 //
 // Side note: this briefly affects *any* subprocess spawned concurrently by the
-// same pi-go process. That window is only as long as fn() runs, which in
+// same go-pi process. That window is only as long as fn() runs, which in
 // practice is a few hundred milliseconds covering the CLI spawn and first
 // write. The alternative (passing a stale ANTHROPIC_API_KEY through) breaks
 // Claude CLI outright, so this tradeoff is worth it.
@@ -201,7 +201,7 @@ func (p *Provider) GenerateContent(ctx context.Context, req *model.LLMRequest, _
 		// Send the user message. On the very first Send we strip
 		// ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the parent env so
 		// the spawned Claude CLI uses its own stored OAuth credentials
-		// rather than a (possibly-stale) key loaded from ~/.pi-go/.env.
+		// rather than a (possibly-stale) key loaded from ~/.go-pi/.env.
 		sendFn := func() error { return session.Send(ctx, userText) }
 		var sendErr error
 		if firstSend {

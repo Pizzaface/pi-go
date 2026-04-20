@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension"
 )
 
 func TestSlashCommandInventory_DedupesByPrecedenceAndPreservesOrder(t *testing.T) {

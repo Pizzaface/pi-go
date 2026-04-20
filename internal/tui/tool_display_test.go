@@ -131,7 +131,7 @@ func TestRenderToolMessage_WrapsLongHeaderAtWidth(t *testing.T) {
 	msg := message{
 		role:   "tool",
 		tool:   "read",
-		toolIn: "C:/Users/Jordan/Documents/Projects/pi-go/internal/tui/really/long/path/to/file_with_long_name.go",
+		toolIn: "C:/Users/Jordan/Documents/Projects/go-pi/internal/tui/really/long/path/to/file_with_long_name.go",
 	}
 
 	result := stripToolANSI(td.RenderToolMessage(msg))

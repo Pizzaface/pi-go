@@ -119,7 +119,7 @@ else
     fi
 
     # Check for expected content
-    if grep -qi "pi-go\|pi\.go\|project\|architecture\|package" "$PI_MD"; then
+    if grep -qi "go-pi\|pi\.go\|project\|architecture\|package" "$PI_MD"; then
         pass "PI.md contains expected project content"
     else
         error "PI.md does not contain expected project keywords"
@@ -131,7 +131,7 @@ fi
 info "Validating session logs..."
 
 # Find the latest log file
-LOG_DIR="$HOME/.pi-go/log/$(date +%Y-%m-%d)"
+LOG_DIR="$HOME/.go-pi/log/$(date +%Y-%m-%d)"
 if [ ! -d "$LOG_DIR" ]; then
     error "No log directory found at ${LOG_DIR}"
 else

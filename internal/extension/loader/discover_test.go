@@ -12,8 +12,8 @@ func TestDiscover_LayeredOverrides(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	writeExt(t, filepath.Join(home, ".pi-go", "extensions", "ext-a"), `name="ext-a"`+"\n"+`version="0.1"`+"\n"+`runtime="hosted"`+"\n"+`command=["go", "run", "."]`)
-	writeExt(t, filepath.Join(proj, ".pi-go", "extensions", "ext-a"), `name="ext-a"`+"\n"+`version="0.2"`+"\n"+`runtime="hosted"`+"\n"+`command=["go", "run", "."]`)
+	writeExt(t, filepath.Join(home, ".go-pi", "extensions", "ext-a"), `name="ext-a"`+"\n"+`version="0.1"`+"\n"+`runtime="hosted"`+"\n"+`command=["go", "run", "."]`)
+	writeExt(t, filepath.Join(proj, ".go-pi", "extensions", "ext-a"), `name="ext-a"`+"\n"+`version="0.2"`+"\n"+`runtime="hosted"`+"\n"+`command=["go", "run", "."]`)
 
 	got, err := Discover(proj)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestDiscover_HomeOnly(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	writeExt(t, filepath.Join(home, ".pi-go", "extensions", "alpha"), `name="alpha"`+"\n"+`version="1.0"`+"\n"+`runtime="hosted"`+"\n"+`command=["go", "run", "."]`)
+	writeExt(t, filepath.Join(home, ".go-pi", "extensions", "alpha"), `name="alpha"`+"\n"+`version="1.0"`+"\n"+`runtime="hosted"`+"\n"+`command=["go", "run", "."]`)
 
 	got, err := Discover(proj)
 	if err != nil {

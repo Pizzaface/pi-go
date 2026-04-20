@@ -6,8 +6,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // State is the lifecycle state of a registered extension.

@@ -7,7 +7,7 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/llmutil"
+	"github.com/pizzaface/go-pi/internal/llmutil"
 )
 
 // WrapModel wraps an LLM model to track token usage via the guardrail tracker.

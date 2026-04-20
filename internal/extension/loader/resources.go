@@ -50,7 +50,7 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 	var out ResourceDirs
 
 	if home, err := discoverHomeDir(); err == nil {
-		globalRoot := filepath.Join(home, ".pi-go")
+		globalRoot := filepath.Join(home, ".go-pi")
 		out.ExtensionDirs = append(out.ExtensionDirs,
 			packageResourceDirs(globalRoot, "extensions")...,
 		)
@@ -83,7 +83,7 @@ func DiscoverResourceDirs(workDir string) ResourceDirs {
 
 	if workDir != "" {
 		resourceRoot := resolveResourceRoot(workDir)
-		projectRoot := filepath.Join(resourceRoot, ".pi-go")
+		projectRoot := filepath.Join(resourceRoot, ".go-pi")
 		out.ExtensionDirs = append(out.ExtensionDirs, packageResourceDirs(projectRoot, "extensions")...)
 		out.ExtensionDirs = append(out.ExtensionDirs, filepath.Join(projectRoot, "extensions"))
 
@@ -125,7 +125,7 @@ func discoverHomeDir() (string, error) {
 func resolveResourceRoot(workDir string) string {
 	current := filepath.Clean(workDir)
 	for {
-		if pathExists(filepath.Join(current, ".pi-go")) || pathExists(filepath.Join(current, ".git")) {
+		if pathExists(filepath.Join(current, ".go-pi")) || pathExists(filepath.Join(current, ".git")) {
 			return current
 		}
 		parent := filepath.Dir(current)

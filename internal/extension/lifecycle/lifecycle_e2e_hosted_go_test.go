@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestLifecycleE2E_HostedGo(t *testing.T) {
@@ -31,7 +31,7 @@ func TestLifecycleE2E_HostedGo(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

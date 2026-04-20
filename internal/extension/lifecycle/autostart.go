@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // StartApproved launches every hosted extension in StateReady in

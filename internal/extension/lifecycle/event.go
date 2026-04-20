@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // View is the read projection of a single extension. Services snapshot

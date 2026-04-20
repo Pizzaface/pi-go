@@ -42,7 +42,7 @@ type FileService struct {
 }
 
 // NewFileService creates a new file-based session service.
-// baseDir is the directory where sessions are stored (e.g., ~/.pi-go/sessions).
+// baseDir is the directory where sessions are stored (e.g., ~/.go-pi/sessions).
 func NewFileService(baseDir string) (*FileService, error) {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating sessions dir: %w", err)
@@ -515,7 +515,7 @@ func defaultSessionTitle(now time.Time) string {
 func normalizeAppName(name string) string {
 	name = strings.TrimSpace(strings.ToLower(name))
 	switch name {
-	case "pi-go":
+	case "go-pi":
 		return "go-pi"
 	default:
 		return name

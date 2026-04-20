@@ -106,12 +106,12 @@ These surfaces show the active role/model plus loaded provider and model aliases
 
 Provider/model resources can live under:
 
-- `~/.pi-go/packages/*/models/`
-- `~/.pi-go/models/`
-- `.pi-go/packages/*/models/`
-- `.pi-go/models/`
+- `~/.go-pi/packages/*/models/`
+- `~/.go-pi/models/`
+- `.go-pi/packages/*/models/`
+- `.go-pi/models/`
 
 And directly in config via:
 
-- `~/.pi-go/config.json`
-- `.pi-go/config.json`
+- `~/.go-pi/config.json`
+- `.go-pi/config.json`

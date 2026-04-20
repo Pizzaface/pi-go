@@ -17,11 +17,11 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/agent"
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension"
-	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/tools"
+	"github.com/pizzaface/go-pi/internal/agent"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension"
+	pisession "github.com/pizzaface/go-pi/internal/session"
+	"github.com/pizzaface/go-pi/internal/tools"
 )
 
 // cliMockLLM returns a fixed text response.
@@ -273,9 +273,9 @@ func TestRootCmdNoPromptExitsCleanly(t *testing.T) {
 
 // isolateCLIEnv makes a cli test hermetic with respect to extension
 // and resource discovery. The defaults walk upward from the test's
-// cwd looking for .pi-go/ and .git/ markers, so without isolation the
+// cwd looking for .go-pi/ and .git/ markers, so without isolation the
 // test picks up whatever extensions are installed in the repository
-// (e.g. an untracked .pi-go/extensions/hosted-hello directory that
+// (e.g. an untracked .go-pi/extensions/hosted-hello directory that
 // would try to spawn a real `go run .` subprocess). Point every
 // home-dir env var and the cwd at a fresh temp dir so discovery
 // finds nothing.
@@ -305,7 +305,7 @@ func TestCLI_SmolFlag(t *testing.T) {
 
 	// Write a config with smol role into the isolated HOME.
 	home, _ := os.UserHomeDir()
-	cfgDir := filepath.Join(home, ".pi-go")
+	cfgDir := filepath.Join(home, ".go-pi")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestContinueNoSessionError(t *testing.T) {
 func TestContinueResumesLastSession(t *testing.T) {
 	// Create a session on disk, then verify --continue finds it.
 	tmpDir := t.TempDir()
-	sessionsDir := filepath.Join(tmpDir, ".pi-go", "sessions")
+	sessionsDir := filepath.Join(tmpDir, ".go-pi", "sessions")
 	svc, err := pisession.NewFileService(sessionsDir)
 	if err != nil {
 		t.Fatal(err)
@@ -810,9 +810,9 @@ func TestLoadDotEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up a temp .pi-go dir with .env file.
+			// Set up a temp .go-pi dir with .env file.
 			tmpDir := t.TempDir()
-			piGoDir := filepath.Join(tmpDir, ".pi-go")
+			piGoDir := filepath.Join(tmpDir, ".go-pi")
 			if err := os.MkdirAll(piGoDir, 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -1155,7 +1155,7 @@ func TestDetectGitRootSubdirectory(t *testing.T) {
 
 func TestLoadDotEnvQuotedValues(t *testing.T) {
 	tmpDir := t.TempDir()
-	piGoDir := filepath.Join(tmpDir, ".pi-go")
+	piGoDir := filepath.Join(tmpDir, ".go-pi")
 	if err := os.MkdirAll(piGoDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -1177,7 +1177,7 @@ func TestLoadDotEnvQuotedValues(t *testing.T) {
 
 func TestLoadDotEnvMultipleKeys(t *testing.T) {
 	tmpDir := t.TempDir()
-	piGoDir := filepath.Join(tmpDir, ".pi-go")
+	piGoDir := filepath.Join(tmpDir, ".go-pi")
 	if err := os.MkdirAll(piGoDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -1204,7 +1204,7 @@ func TestLoadDotEnvMultipleKeys(t *testing.T) {
 
 func TestLoadDotEnvExistingVarNotOverridden(t *testing.T) {
 	tmpDir := t.TempDir()
-	piGoDir := filepath.Join(tmpDir, ".pi-go")
+	piGoDir := filepath.Join(tmpDir, ".go-pi")
 	if err := os.MkdirAll(piGoDir, 0755); err != nil {
 		t.Fatal(err)
 	}

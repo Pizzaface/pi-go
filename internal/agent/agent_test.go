@@ -14,7 +14,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/tools"
+	"github.com/pizzaface/go-pi/internal/tools"
 )
 
 func testSandbox(t *testing.T, dir string) *tools.Sandbox {
@@ -234,9 +234,9 @@ func TestLoadInstruction(t *testing.T) {
 }
 
 func TestLoadInstructionWithAgentsFile(t *testing.T) {
-	// Create a temp dir with .pi-go/AGENTS.md
+	// Create a temp dir with .go-pi/AGENTS.md
 	dir := t.TempDir()
-	agentsDir := filepath.Join(dir, ".pi-go")
+	agentsDir := filepath.Join(dir, ".go-pi")
 	os.MkdirAll(agentsDir, 0o755)
 	os.WriteFile(filepath.Join(agentsDir, "AGENTS.md"), []byte("# Custom Rules\n- Rule 1"), 0o644)
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/auth"
+	"github.com/pizzaface/go-pi/internal/auth"
 )
 
 // MatchRule describes how a provider claims model names.
@@ -130,7 +130,7 @@ func (r *Registry) AddBuiltins() {
 				APIKeyEnv:      []string{"OPENROUTER_API_KEY"},
 				DefaultBaseURL: "https://openrouter.ai/api/v1",
 				PingEndpoint:   "/api/v1/models",
-				DefaultHeaders: map[string]string{"HTTP-Referer": "https://github.com/dimetron/pi-go"},
+				DefaultHeaders: map[string]string{"HTTP-Referer": "https://github.com/pizzaface/go-pi"},
 				Match:          []MatchRule{{Prefix: "openrouter/", StripPrefix: true}},
 			},
 			{

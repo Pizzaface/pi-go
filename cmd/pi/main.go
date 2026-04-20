@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dimetron/pi-go/internal/cli"
+	"github.com/pizzaface/go-pi/internal/cli"
 )
 
 func main() {

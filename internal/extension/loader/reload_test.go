@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 func TestReload_EmptyCwdReturnsEmpty(t *testing.T) {

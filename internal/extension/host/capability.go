@@ -37,7 +37,7 @@ func (t TrustClass) String() string {
 const StarAll = "*"
 
 type approvalsFile struct {
-	Version    int                         `json:"version"`
+	Version    int                        `json:"version"`
 	Extensions map[string]*approvalsEntry `json:"extensions"`
 }
 

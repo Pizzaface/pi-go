@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"

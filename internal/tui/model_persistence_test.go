@@ -31,7 +31,7 @@ func TestSaveAndLoadHiddenModels(t *testing.T) {
 	saveHiddenModels(hidden)
 
 	// Verify the file was created at the right path.
-	path := filepath.Join(home, ".pi-go", "hidden_models.json")
+	path := filepath.Join(home, ".go-pi", "hidden_models.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("expected hidden_models.json to exist: %v", err)
@@ -57,7 +57,7 @@ func TestSaveHiddenModelsEmptyRemovesFile(t *testing.T) {
 
 	// Create a file first.
 	saveHiddenModels(map[string]bool{"x": true})
-	path := filepath.Join(home, ".pi-go", "hidden_models.json")
+	path := filepath.Join(home, ".go-pi", "hidden_models.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected file to exist after save: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestLoadHiddenModelsMigratesFromConfigJSON(t *testing.T) {
 	home := withTempHome(t)
 
 	// Write legacy format in config.json.
-	dir := filepath.Join(home, ".pi-go")
+	dir := filepath.Join(home, ".go-pi")
 	_ = os.MkdirAll(dir, 0o755)
 	legacy := map[string]any{
 		"theme":        "tokyo-night",
@@ -120,7 +120,7 @@ func TestSaveAndLoadLastSelectedModel(t *testing.T) {
 	saveLastSelectedModel("claude-sonnet-4", "anthropic")
 
 	// Verify it's in config.json.
-	data, err := os.ReadFile(filepath.Join(home, ".pi-go", "config.json"))
+	data, err := os.ReadFile(filepath.Join(home, ".go-pi", "config.json"))
 	if err != nil {
 		t.Fatalf("expected config.json to exist: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestSaveLastSelectedModelPreservesExistingConfig(t *testing.T) {
 	home := withTempHome(t)
 
 	// Write existing config with a theme.
-	dir := filepath.Join(home, ".pi-go")
+	dir := filepath.Join(home, ".go-pi")
 	_ = os.MkdirAll(dir, 0o755)
 	existing := map[string]any{"theme": "gruvbox"}
 	data, _ := json.MarshalIndent(existing, "", "  ")
@@ -184,7 +184,7 @@ func TestSaveAndLoadCollapsedTools(t *testing.T) {
 	home := withTempHome(t)
 	saveCollapsedTools(false)
 
-	data, err := os.ReadFile(filepath.Join(home, ".pi-go", "config.json"))
+	data, err := os.ReadFile(filepath.Join(home, ".go-pi", "config.json"))
 	if err != nil {
 		t.Fatalf("expected config.json to exist: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestSaveAndLoadCollapsedTools(t *testing.T) {
 
 func TestSaveCollapsedToolsPreservesExistingConfig(t *testing.T) {
 	home := withTempHome(t)
-	dir := filepath.Join(home, ".pi-go")
+	dir := filepath.Join(home, ".go-pi")
 	_ = os.MkdirAll(dir, 0o755)
 	existing := map[string]any{"theme": "tokyo-night", "lastModel": "claude-sonnet-4"}
 	data, _ := json.MarshalIndent(existing, "", "  ")

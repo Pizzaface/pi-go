@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 func setTestHome(t *testing.T, home string) {
@@ -33,7 +33,7 @@ func TestBuildProviderRegistry_LoadOrderAndConfigOverride(t *testing.T) {
 	project := t.TempDir()
 	setTestHome(t, home)
 
-	mustWriteFile(t, filepath.Join(home, ".pi-go", "models", "openrouter.json"), `{
+	mustWriteFile(t, filepath.Join(home, ".go-pi", "models", "openrouter.json"), `{
 		"providers": [{
 			"name": "openrouter",
 			"family": "openai",
@@ -42,7 +42,7 @@ func TestBuildProviderRegistry_LoadOrderAndConfigOverride(t *testing.T) {
 		}],
 		"models": [{"name": "router-sonnet", "provider": "openrouter", "target": "global-model"}]
 	}`)
-	mustWriteFile(t, filepath.Join(project, ".pi-go", "models", "openrouter.json"), `{
+	mustWriteFile(t, filepath.Join(project, ".go-pi", "models", "openrouter.json"), `{
 		"providers": [{
 			"name": "openrouter",
 			"family": "openai",

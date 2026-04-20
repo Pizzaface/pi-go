@@ -6,7 +6,8 @@
 
 **Architecture:** Keep `internal/extension.BuildRuntime()` as the top-level assembly boundary. Introduce an extension manager plus capability gateway inside `internal/extension/`, with hosted processes managed under `internal/extension/hostruntime/` and the transport schema in `internal/extension/hostproto/`. TUI integration stays app-owned: extensions emit events/intents, and `internal/tui/` applies them asynchronously via Bubble Tea messages instead of letting extensions mutate UI state directly.
 
-**Tech Stack:** Go, Google ADK Go, Bubble Tea v2, JSON-RPC 2.0 over stdio, JSON-backed manifest loading, JSON-backed extension approvals, JSON session state under `~/.pi-go/sessions/`
+**Tech Stack:** Go, Google ADK Go, Bubble Tea v2, JSON-RPC 2.0 over stdio, JSON-backed manifest loading, JSON-backed
+extension approvals, JSON session state under `~/.go-pi/sessions/`
 
 ---
 
@@ -221,7 +222,7 @@ Expected: FAIL because no approvals/trust checks exist.
 
 - [ ] **Step 3: Implement approval storage and trust resolution**
 
-Use an app-owned approvals file, e.g. `~/.pi-go/extensions/approvals.json`, with fields for:
+Use an app-owned approvals file, e.g. `~/.go-pi/extensions/approvals.json`, with fields for:
 - extension id
 - trust class
 - granted capabilities
@@ -361,7 +362,8 @@ Expected: FAIL because no extension state store exists and `interactive.go` does
 - [ ] **Step 3: Implement app-owned storage**
 
 Store under session directories, e.g.:
-- `~/.pi-go/sessions/<session-id>/state/extensions/<extension-id>.json`
+
+- `~/.go-pi/sessions/<session-id>/state/extensions/<extension-id>.json`
 
 Expose only a small namespaced API (`get`, `set`, `delete`) to manager/extension code.
 

@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/internal/extension/host"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // TestE2E_HostedTS mirrors TestE2E_HostedGo for the TypeScript fixture.
-// It extracts the vendored pi-go-extension-host bundle, points it at
+// It extracts the vendored go-pi-extension-host bundle, points it at
 // the absolute entry path, and asserts the hosted registration reaches
 // StateRunning after the handshake completes. Skips when:
 //   - node is not on PATH,
@@ -36,12 +36,12 @@ func TestE2E_HostedTS(t *testing.T) {
 	if _, err := os.Stat(entry); err != nil {
 		t.Skipf("hosted-hello-ts example missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(exampleDir, "node_modules", "@pi-go", "extension-sdk")); err != nil {
+	if _, err := os.Stat(filepath.Join(exampleDir, "node_modules", "@go-pi", "extension-sdk")); err != nil {
 		t.Skipf("hosted-hello-ts node_modules missing; run npm install in %s", exampleDir)
 	}
 
 	tmp := t.TempDir()
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 {
-  "name": "@pi-go/extension-sdk",
+  "name": "@go-pi/extension-sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for authoring pi-go hosted extensions",
+  "description": "TypeScript SDK for authoring go-pi hosted extensions",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

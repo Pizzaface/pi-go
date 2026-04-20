@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/tui"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/tui"
 )
 
 func setCLIHome(t *testing.T, home string) {

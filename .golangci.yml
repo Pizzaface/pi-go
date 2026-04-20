@@ -12,7 +12,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/dimetron/pi-go
+        - github.com/pizzaface/go-pi
 
 linters:
   default: none

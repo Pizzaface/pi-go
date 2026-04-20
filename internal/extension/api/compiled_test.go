@@ -8,9 +8,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func newTestAPI(t *testing.T) (*compiledAPI, *host.Manager) {

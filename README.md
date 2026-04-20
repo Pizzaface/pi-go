@@ -4,9 +4,10 @@ A minimal coding-agent harness in Go.
 
 go-pi keeps the core small: a Bubble Tea terminal shell, sandboxed tools, file-backed sessions, model/provider resolution, and an extension/resource runtime. It is meant to feel closer to Pi-style session UX than a built-in workflow engine.
 
-> Compatibility note: the repo/module name and on-disk compatibility directories still use `pi-go` / `.pi-go` in a few places. User-facing docs and UX now describe the product as **go-pi**.
+> Compatibility note: the repo/module name and on-disk compatibility directories still use `go-pi` / `.go-pi` in a few
+> places. User-facing docs and UX now describe the product as **go-pi**.
 
-![go-pi TUI](docs/screen/pi-go.png)
+![go-pi TUI](docs/screen/go-pi.png)
 
 ## What go-pi includes
 
@@ -96,10 +97,10 @@ More details: [docs/sessions.md](docs/sessions.md)
 
 go-pi keeps configuration discoverable and file-based.
 
-- global config: `~/.pi-go/config.json`
-- project config: `.pi-go/config.json`
-- API keys: `~/.pi-go/.env`
-- shareable packages: `~/.pi-go/packages/` or `.pi-go/packages/`
+- global config: `~/.go-pi/config.json`
+- project config: `.go-pi/config.json`
+- API keys: `~/.go-pi/.env`
+- shareable packages: `~/.go-pi/packages/` or `.go-pi/packages/`
 - loose resources: `extensions/`, `skills/`, `prompts/`, `themes/`, `models/` (skills also interoperate with
   `.agents/skills/`)
 

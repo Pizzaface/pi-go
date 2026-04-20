@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dimetron/pi-go/internal/audit"
+	"github.com/pizzaface/go-pi/internal/audit"
 )
 
 func newAuditCmd() *cobra.Command {
@@ -172,13 +172,13 @@ func defaultSkillDirs() []string {
 	dirs := []string{}
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		dirs = append(dirs,
-			filepath.Join(homeDir, ".pi-go", "skills"),
+			filepath.Join(homeDir, ".go-pi", "skills"),
 			filepath.Join(homeDir, ".agents", "skills"),
 			filepath.Join(homeDir, ".claude", "skills"),
 		)
 	}
 	dirs = append(dirs,
-		filepath.Join(".pi-go", "skills"),
+		filepath.Join(".go-pi", "skills"),
 		filepath.Join(".agents", "skills"),
 		filepath.Join(".claude", "skills"),
 		filepath.Join(".cursor", "skills"),

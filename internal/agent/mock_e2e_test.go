@@ -13,8 +13,8 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/provider"
-	"github.com/dimetron/pi-go/internal/tools"
+	"github.com/pizzaface/go-pi/internal/provider"
+	"github.com/pizzaface/go-pi/internal/tools"
 )
 
 // Helper to create text content block for response

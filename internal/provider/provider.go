@@ -13,7 +13,7 @@ import (
 
 	"google.golang.org/adk/model"
 
-	"github.com/dimetron/pi-go/internal/claudecli"
+	"github.com/pizzaface/go-pi/internal/claudecli"
 )
 
 // BuildTransport creates an http.Transport with optional TLS skip and extra headers.

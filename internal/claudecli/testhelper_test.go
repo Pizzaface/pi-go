@@ -3,7 +3,7 @@ package claudecli
 import (
 	"google.golang.org/adk/model"
 
-	"github.com/dimetron/pi-go/internal/agent"
+	"github.com/pizzaface/go-pi/internal/agent"
 )
 
 // newTestAgent creates a real ADK agent wired to the given model.LLM provider.

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // Subscriber is one extension's handler for a single event.

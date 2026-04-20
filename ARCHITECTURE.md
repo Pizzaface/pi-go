@@ -50,7 +50,7 @@ User input
 
 ## Session architecture
 
-Sessions are stored on disk under `~/.pi-go/sessions/`.
+Sessions are stored on disk under `~/.go-pi/sessions/`.
 
 Each session directory contains:
 
@@ -152,9 +152,9 @@ Important TUI responsibilities:
 
 Primary user-facing settings live in:
 
-- `~/.pi-go/config.json`
-- `.pi-go/config.json`
-- `~/.pi-go/.env`
+- `~/.go-pi/config.json`
+- `.go-pi/config.json`
+- `~/.go-pi/.env`
 
 The TUI `/settings` command points to these locations and helps users discover how providers, themes, aliases, and packages are loaded.
 

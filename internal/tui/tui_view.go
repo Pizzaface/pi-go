@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 func (m *model) hasBlockingPopup() bool {

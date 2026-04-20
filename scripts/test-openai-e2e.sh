@@ -33,16 +33,16 @@ info "Checking prerequisites..."
 
 # Check OPENAI_API_KEY is set
 if [ -z "${OPENAI_API_KEY:-}" ]; then
-    # Try loading from ~/.pi-go/.env
-    if [ -f "$HOME/.pi-go/.env" ]; then
-        export $(grep -v '^#' "$HOME/.pi-go/.env" | grep OPENAI_API_KEY | xargs)
+    # Try loading from ~/.go-pi/.env
+    if [ -f "$HOME/.go-pi/.env" ]; then
+        export $(grep -v '^#' "$HOME/.go-pi/.env" | grep OPENAI_API_KEY | xargs)
     fi
 fi
 
 if [ -z "${OPENAI_API_KEY:-}" ]; then
     fail "OPENAI_API_KEY is not set"
     echo "  Set it with: export OPENAI_API_KEY=sk-..."
-    echo "  Or add to ~/.pi-go/.env"
+    echo "  Or add to ~/.go-pi/.env"
     exit 1
 fi
 pass "OPENAI_API_KEY is set (${#OPENAI_API_KEY} chars)"
@@ -191,7 +191,7 @@ else
         pass "PI.md exists (${CHAR_COUNT} chars)"
     fi
 
-    if grep -qi "pi-go\|pi\.go\|project\|architecture\|package" "$PI_MD"; then
+    if grep -qi "go-pi\|pi\.go\|project\|architecture\|package" "$PI_MD"; then
         pass "PI.md contains expected project content"
     else
         error "PI.md does not contain expected project keywords"
@@ -202,7 +202,7 @@ fi
 
 info "Validating session logs..."
 
-LOG_DIR="$HOME/.pi-go/log/$(date +%Y-%m-%d)"
+LOG_DIR="$HOME/.go-pi/log/$(date +%Y-%m-%d)"
 if [ ! -d "$LOG_DIR" ]; then
     error "No log directory found at ${LOG_DIR}"
 else

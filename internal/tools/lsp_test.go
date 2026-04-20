@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/lsp"
+	"github.com/pizzaface/go-pi/internal/lsp"
 )
 
 func TestLSPTools_Count(t *testing.T) {

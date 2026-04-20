@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/memory"
+	"github.com/pizzaface/go-pi/internal/memory"
 )
 
 // memMockStore implements memory.Store for tool tests.

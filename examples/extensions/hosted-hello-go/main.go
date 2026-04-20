@@ -5,8 +5,8 @@
 //
 //	go run .
 //
-// The process speaks JSON-RPC 2.0 over stdio per pi-go's hostproto v2.1.
-// pi-go invokes it via the loader/host pipeline once approved.
+// The process speaks JSON-RPC 2.0 over stdio per go-pi's hostproto v2.1.
+// go-pi invokes it via the loader/host pipeline once approved.
 package main
 
 import (
@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
-	"github.com/dimetron/pi-go/pkg/piext"
+	"github.com/pizzaface/go-pi/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piext"
 )
 
 // Metadata is package-level so a future runtime/loader can read it via

@@ -12,7 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dimetron/pi-go/internal/auth"
+	"github.com/pizzaface/go-pi/internal/auth"
 )
 
 // TestMain globally disables real browser opens and process restart for every test in this package.
@@ -293,7 +293,7 @@ func TestHandleLoginCommand_OpenAIDeviceFlow(t *testing.T) {
 
 func TestHandleLoginSave(t *testing.T) {
 	tmpDir := t.TempDir()
-	piDir := filepath.Join(tmpDir, ".pi-go")
+	piDir := filepath.Join(tmpDir, ".go-pi")
 	if err := os.MkdirAll(piDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestHandleLoginSSOResult_SavesOAuthAuthJSON(t *testing.T) {
 
 	m.handleLoginSSOResult(msg)
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".go-pi", "auth.json"))
 	if err != nil {
 		t.Fatalf("expected auth.json to be written: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestHandleLoginSSOResult_EmptyKey(t *testing.T) {
 }
 
 func TestHandleLoginSSOResult_SaveError(t *testing.T) {
-	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.pi-go.
+	// Point HOME at a file so SaveKey fails cross-platform when it tries to create ~/.go-pi.
 	homeFile := filepath.Join(t.TempDir(), "home-file")
 	if err := os.WriteFile(homeFile, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
@@ -1010,7 +1010,7 @@ func TestLoginStartDeviceFlow_OpensVerificationURI(t *testing.T) {
 		EnvVar:        "OPENAI_API_KEY",
 		DeviceURL:     srv.URL,
 		UseDeviceFlow: true,
-		ClientID:      "pi-go-cli",
+		ClientID:      "go-pi-cli",
 		Scopes:        []string{"openai.public"},
 		TokenToKey: func(tok *auth.TokenResponse) string {
 			return tok.AccessToken
@@ -1036,7 +1036,7 @@ func TestLoginStartPKCEFlow_PassesOpenBrowserToAuth(t *testing.T) {
 		EnvVar:   "ANTHROPIC_API_KEY",
 		AuthURL:  "https://console.anthropic.com/oauth/authorize",
 		TokenURL: "https://console.anthropic.com/oauth/token",
-		ClientID: "pi-go-cli",
+		ClientID: "go-pi-cli",
 		Scopes:   []string{"api"},
 		TokenToKey: func(tok *auth.TokenResponse) string {
 			return tok.AccessToken

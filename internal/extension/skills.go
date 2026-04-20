@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dimetron/pi-go/internal/audit"
+	"github.com/pizzaface/go-pi/internal/audit"
 )
 
 // Skill represents a loaded skill from a SKILL.md file.
@@ -76,15 +76,15 @@ func LoadSkillsWithOptions(opts LoadOptions, dirs ...string) ([]Skill, error) {
 			if opts.AuditMode != AuditSkip {
 				scanResult, scanErr := audit.ScanFile(skillFile)
 				if scanErr != nil {
-					fmt.Fprintf(os.Stderr, "pi-go: warning: audit scan failed for %s: %v\n", skillFile, scanErr)
+					fmt.Fprintf(os.Stderr, "go-pi: warning: audit scan failed for %s: %v\n", skillFile, scanErr)
 				} else if scanResult.HasCritical() {
 					if opts.AuditMode == AuditBlock {
 						blocked = append(blocked, skillFile)
-						fmt.Fprintf(os.Stderr, "pi-go: BLOCKED skill %s — critical hidden characters detected\n", entry.Name())
+						fmt.Fprintf(os.Stderr, "go-pi: BLOCKED skill %s — critical hidden characters detected\n", entry.Name())
 						continue
 					}
 					// AuditWarn: log but continue loading.
-					fmt.Fprintf(os.Stderr, "pi-go: WARNING: skill %s has critical hidden characters\n", entry.Name())
+					fmt.Fprintf(os.Stderr, "go-pi: WARNING: skill %s has critical hidden characters\n", entry.Name())
 				}
 			}
 
@@ -108,7 +108,7 @@ func LoadSkillsWithOptions(opts LoadOptions, dirs ...string) ([]Skill, error) {
 	}
 
 	if len(blocked) > 0 {
-		fmt.Fprintf(os.Stderr, "pi-go: %d skill(s) blocked due to security audit. Run 'pi audit' for details.\n", len(blocked))
+		fmt.Fprintf(os.Stderr, "go-pi: %d skill(s) blocked due to security audit. Run 'pi audit' for details.\n", len(blocked))
 	}
 
 	return skills, nil

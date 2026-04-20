@@ -29,8 +29,8 @@ pi package remove <name>
 
 ## Scopes
 
-- **global:** `~/.pi-go/packages/<name>/`
-- **project:** `.pi-go/packages/<name>/`
+- **global:** `~/.go-pi/packages/<name>/`
+- **project:** `.go-pi/packages/<name>/`
 
 Project packages override global packages when resource names collide.
 

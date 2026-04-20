@@ -3,7 +3,7 @@ package loader
 import (
 	"context"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // Reload orchestrates a full re-scan of the extension directories. The

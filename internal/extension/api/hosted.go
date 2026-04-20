@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // HostedAPIHandler serves inbound JSON-RPC calls from a hosted extension.

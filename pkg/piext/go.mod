@@ -1,9 +1,9 @@
-module github.com/dimetron/pi-go/pkg/piext
+module github.com/pizzaface/go-pi/pkg/piext
 
 go 1.22
 
 require (
-	github.com/dimetron/pi-go/pkg/piapi v0.0.0
+	github.com/pizzaface/go-pi/pkg/piapi v0.0.0
 	github.com/invopop/jsonschema v0.13.0
 )
 
@@ -15,4 +15,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/dimetron/pi-go/pkg/piapi => ../piapi
+replace github.com/pizzaface/go-pi/pkg/piapi => ../piapi

@@ -3,8 +3,8 @@ package api
 import (
 	"testing"
 
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestFakeBridgeRecordsCalls(t *testing.T) {

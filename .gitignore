@@ -29,8 +29,8 @@ Thumbs.db
 # GoReleaser
 /dist/
 
-# pi-go specific
-.pi-go/
+# go-pi specific
+.go-pi/
 .worktrees/
 *.sock
 /PI.md

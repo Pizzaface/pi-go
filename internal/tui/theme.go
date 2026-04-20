@@ -266,13 +266,13 @@ func (tm *ThemeManager) ClosestMatches(query string, max int) []string {
 	return matches
 }
 
-// saveThemeToConfig persists the theme name to ~/.pi-go/config.json.
+// saveThemeToConfig persists the theme name to ~/.go-pi/config.json.
 func saveThemeToConfig(name string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
-	configDir := filepath.Join(home, ".pi-go")
+	configDir := filepath.Join(home, ".go-pi")
 	configPath := filepath.Join(configDir, "config.json")
 
 	// Read existing config.

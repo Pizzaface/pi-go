@@ -7,8 +7,8 @@ package hello
 import (
 	"context"
 
-	"github.com/dimetron/pi-go/internal/extension/compiled"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/compiled"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // Metadata describes the compiled-in hello extension.

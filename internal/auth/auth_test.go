@@ -390,7 +390,7 @@ func TestSaveKey(t *testing.T) {
 		t.Fatalf("SaveKey error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", ".env"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".go-pi", ".env"))
 	if err != nil {
 		t.Fatalf("error reading .env: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestSaveAuth(t *testing.T) {
 		t.Fatalf("SaveAuth error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".go-pi", "auth.json"))
 	if err != nil {
 		t.Fatalf("error reading auth.json: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestSaveAuth_MergesExistingProviders(t *testing.T) {
 		t.Fatalf("SaveAuth codex error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".go-pi", "auth.json"))
 	if err != nil {
 		t.Fatalf("error reading auth.json: %v", err)
 	}
@@ -905,7 +905,7 @@ func TestSaveKey_ExistingFile(t *testing.T) {
 	_ = os.Setenv("HOME", tmpDir)
 	defer func() { _ = os.Setenv("HOME", origHome) }()
 
-	piDir := filepath.Join(tmpDir, ".pi-go")
+	piDir := filepath.Join(tmpDir, ".go-pi")
 	_ = os.MkdirAll(piDir, 0700)
 	// Write existing content.
 	_ = os.WriteFile(filepath.Join(piDir, ".env"), []byte("EXISTING=value\n"), 0600)
@@ -1086,7 +1086,7 @@ func TestSaveKey_MkdirAllError(t *testing.T) {
 	// Point HOME to a file (not directory) to make MkdirAll fail.
 	tmpFile := filepath.Join(t.TempDir(), "fakefile")
 	_ = os.WriteFile(tmpFile, []byte("x"), 0600)
-	os.Setenv("HOME", tmpFile) // .pi-go will be tmpFile/.pi-go which can't be created
+	os.Setenv("HOME", tmpFile) // .go-pi will be tmpFile/.go-pi which can't be created
 	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	err := SaveKey("TEST_KEY", "test")
@@ -1104,8 +1104,8 @@ func TestSaveKey_WriteFileError(t *testing.T) {
 	_ = os.Setenv("HOME", tmpDir)
 	defer func() { _ = os.Setenv("HOME", origHome) }()
 
-	// Create .pi-go/.env as a directory to make WriteFile fail.
-	envDir := filepath.Join(tmpDir, ".pi-go", ".env")
+	// Create .go-pi/.env as a directory to make WriteFile fail.
+	envDir := filepath.Join(tmpDir, ".go-pi", ".env")
 	_ = os.MkdirAll(envDir, 0700)
 
 	err := SaveKey("TEST_KEY", "test")

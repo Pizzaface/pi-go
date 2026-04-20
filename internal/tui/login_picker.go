@@ -6,8 +6,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dimetron/pi-go/internal/auth"
-	"github.com/dimetron/pi-go/internal/config"
+	"github.com/pizzaface/go-pi/internal/auth"
+	"github.com/pizzaface/go-pi/internal/config"
 )
 
 // loginPickerEntry is a single row in the /login popup.

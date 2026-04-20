@@ -8,8 +8,8 @@ import (
 	"os"
 	"sync"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 type cliSessionBridge struct {

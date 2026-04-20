@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 func TestLifecycleE2E_HostedTS(t *testing.T) {
@@ -26,13 +26,13 @@ func TestLifecycleE2E_HostedTS(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(example, "src", "index.ts")); err != nil {
 		t.Skipf("hosted-hello-ts example missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(example, "node_modules", "@pi-go", "extension-sdk")); err != nil {
+	if _, err := os.Stat(filepath.Join(example, "node_modules", "@go-pi", "extension-sdk")); err != nil {
 		t.Skipf("run `npm install` in %s first", example)
 	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

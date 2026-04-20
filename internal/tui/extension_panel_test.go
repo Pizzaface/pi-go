@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 )
 
 func TestExtensionPanel_InitiallyHidden(t *testing.T) {
@@ -142,9 +142,9 @@ func (f *fakeLifecycle) Restart(_ context.Context, id string) error {
 	f.restartCalls = append(f.restartCalls, id)
 	return nil
 }
-func (f *fakeLifecycle) StartApproved(context.Context) []error { return nil }
-func (f *fakeLifecycle) StopAll(context.Context) []error       { return nil }
-func (f *fakeLifecycle) Reload(context.Context) error          { f.reloadCalls++; return nil }
+func (f *fakeLifecycle) StartApproved(context.Context) []error      { return nil }
+func (f *fakeLifecycle) StopAll(context.Context) []error            { return nil }
+func (f *fakeLifecycle) Reload(context.Context) error               { f.reloadCalls++; return nil }
 func (f *fakeLifecycle) SetShutdownHook(lifecycle.HookFunc, string) {}
 func (f *fakeLifecycle) Subscribe() (<-chan lifecycle.Event, func()) {
 	ch := make(chan lifecycle.Event)

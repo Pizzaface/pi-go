@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 // HookConfig defines a shell command hook for tool call events.
@@ -28,7 +28,7 @@ type RoleConfig struct {
 // ErrNoDefaultRole is returned when no default role is configured.
 var ErrNoDefaultRole = errors.New("no default model role configured")
 
-// Config holds all pi-go configuration.
+// Config holds all go-pi configuration.
 type Config struct {
 	Roles           map[string]RoleConfig      `json:"roles,omitempty"`
 	DefaultModel    string                     `json:"defaultModel,omitempty"` // deprecated: use roles
@@ -175,20 +175,20 @@ func autoDetectProvider(modelName string) string {
 	return ""
 }
 
-// Load reads config from global (~/.pi-go/config.json) and project (.pi-go/config.json),
+// Load reads config from global (~/.go-pi/config.json) and project (.go-pi/config.json),
 // merging project overrides onto global.
 func Load() (Config, error) {
 	cfg := Defaults()
 
 	home, err := os.UserHomeDir()
 	if err == nil {
-		globalPath := filepath.Join(home, ".pi-go", "config.json")
+		globalPath := filepath.Join(home, ".go-pi", "config.json")
 		if err := loadFile(globalPath, &cfg); err != nil && !os.IsNotExist(err) {
 			return cfg, err
 		}
 	}
 
-	projectPath := filepath.Join(".pi-go", "config.json")
+	projectPath := filepath.Join(".go-pi", "config.json")
 	if err := loadFile(projectPath, &cfg); err != nil && !os.IsNotExist(err) {
 		return cfg, err
 	}

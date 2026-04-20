@@ -4,13 +4,13 @@
 
 go-pi keeps settings file-based and intentionally lightweight.
 
-- **Global config:** `~/.pi-go/config.json`
-- **Project config:** `.pi-go/config.json`
-- **API keys / login output:** `~/.pi-go/.env`
+- **Global config:** `~/.go-pi/config.json`
+- **Project config:** `.go-pi/config.json`
+- **API keys / login output:** `~/.go-pi/.env`
 
 Project config overrides global config.
 
-> Compatibility note: go-pi still uses `.pi-go` directories on disk for compatibility with earlier phases of the reboot.
+> Compatibility note: go-pi still uses `.go-pi` directories on disk for compatibility with earlier phases of the reboot.
 
 ## What belongs in config.json
 
@@ -59,11 +59,11 @@ Inside the TUI:
 Themes can come from:
 
 - built-in themes
-- `~/.pi-go/themes/*.json`
-- `.pi-go/themes/*.json`
+- `~/.go-pi/themes/*.json`
+- `.go-pi/themes/*.json`
 - installed packages that contain `themes/`
 
-The TUI persists a chosen theme back to `~/.pi-go/config.json`.
+The TUI persists a chosen theme back to `~/.go-pi/config.json`.
 
 ## Hooks and optional settings
 

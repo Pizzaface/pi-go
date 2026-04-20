@@ -6,7 +6,7 @@ This document tracks issues found from analyzing session logs and code review, a
 
 ```bash
 # Query to reproduce:
-find ~/.pi-go/sessions -name "events.jsonl" -mtime -30 | \
+find ~/.go-pi/sessions -name "events.jsonl" -mtime -30 | \
   xargs grep -h '"error":"[^"]*"' 2>/dev/null | \
   sed 's/.*"error":"//;s/".*//' | \
   sort | uniq -c | sort -rn
@@ -161,7 +161,7 @@ To track error rates after fixes:
 
 ```bash
 # Check recent errors
-find ~/.pi-go/sessions -name "events.jsonl" -mtime -7 | \
+find ~/.go-pi/sessions -name "events.jsonl" -mtime -7 | \
   xargs grep -h '"error":"[^"]*"' 2>/dev/null | \
   sed 's/.*"error":"//;s/".*//' | \
   sort | uniq -c | sort -rn

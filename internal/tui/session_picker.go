@@ -7,7 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	pisession "github.com/dimetron/pi-go/internal/session"
+	pisession "github.com/pizzaface/go-pi/internal/session"
 )
 
 type sessionPickerState struct {

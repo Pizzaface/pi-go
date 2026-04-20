@@ -5,7 +5,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // Call is a single recorded call on FakeBridge.

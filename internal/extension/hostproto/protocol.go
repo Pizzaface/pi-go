@@ -2,7 +2,7 @@ package hostproto
 
 import "encoding/json"
 
-// ProtocolVersion is the wire contract between pi-go and extensions.
+// ProtocolVersion is the wire contract between go-pi and extensions.
 const ProtocolVersion = "2.1"
 
 // Error codes.

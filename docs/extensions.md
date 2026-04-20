@@ -1,11 +1,11 @@
 # Extensions
 
-Extensions customize pi-go at runtime. An extension is a Go package (or
+Extensions customize go-pi at runtime. An extension is a Go package (or
 TypeScript module, or a separately-compiled Go binary) that registers
 tools, subscribes to lifecycle events, and interacts with the running
 session through a stable API.
 
-pi-go supports three execution modes, each with a different trust tier.
+go-pi supports three execution modes, each with a different trust tier.
 
 | Mode | Tier | How it runs | How it's trusted |
 | --- | --- | --- | --- |
@@ -13,7 +13,7 @@ pi-go supports three execution modes, each with a different trust tier.
 | **Hosted Go** | `third-party` (default) | Launched as a subprocess; speaks JSON-RPC 2.0 over stdio | Requires entry in `approvals.json` |
 | **Hosted TS** | `third-party` (default) | Launched as `node <embedded-host> --entry <file>`; same wire protocol | Requires entry in `approvals.json` |
 
-First-party packages (those signed by the pi-go project and shipped
+First-party packages (those signed by the go-pi project and shipped
 alongside the binary) may be tagged with `trust_class: "first-party"`
 in `approvals.json` to skip per-capability prompts — they still require
 an approvals entry. The full reference lives in
@@ -33,7 +33,7 @@ an approvals entry. The full reference lives in
 2. Install the SDK:
 
    ```bash
-   npm install @pi-go/extension-sdk
+   npm install @go-pi/extension-sdk
    ```
 
 3. `package.json` declares the extension metadata in a top-level `pi` block:
@@ -43,7 +43,7 @@ an approvals entry. The full reference lives in
      "name": "my-ext",
      "version": "0.1.0",
      "type": "module",
-     "dependencies": { "@pi-go/extension-sdk": "^0.1.0" },
+     "dependencies": { "@go-pi/extension-sdk": "^0.1.0" },
      "pi": {
        "entry": "src/index.ts",
        "description": "A friendly extension.",
@@ -58,8 +58,8 @@ an approvals entry. The full reference lives in
 4. `src/index.ts` exports a default `register(pi)` function:
 
    ```ts
-   import type { ExtensionAPI } from "@pi-go/extension-sdk";
-   import { EventNames, Type } from "@pi-go/extension-sdk";
+   import type { ExtensionAPI } from "@go-pi/extension-sdk";
+   import { EventNames, Type } from "@go-pi/extension-sdk";
 
    export default async function register(pi: ExtensionAPI): Promise<void> {
      pi.on(EventNames.SessionStart, () => ({ control: null }));
@@ -78,8 +78,8 @@ an approvals entry. The full reference lives in
    ```
 
 5. Symlink (or copy) the directory into a discovery path and approve it
-   (see **Discovery paths** and **Trust & Approvals** below). pi-go
-   launches the extension via an embedded `pi-go-extension-host` bundle
+   (see **Discovery paths** and **Trust & Approvals** below). go-pi
+   launches the extension via an embedded `go-pi-extension-host` bundle
    running on Node.
 
 The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
@@ -96,7 +96,7 @@ The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
    ```
 
 2. `go.mod` (adjust module path and replace directives to point at your
-   local `pi-go` checkout, or rely on published `pkg/piapi` + `pkg/piext`
+   local `go-pi` checkout, or rely on published `pkg/piapi` + `pkg/piext`
    once released):
 
    ```
@@ -157,7 +157,7 @@ The canonical fixture lives at `examples/extensions/hosted-hello-ts/`.
    ```
 
 5. Symlink (or copy) the directory into a discovery path and approve it.
-   pi-go invokes your `command` from `pi.toml` as the subprocess.
+   go-pi invokes your `command` from `pi.toml` as the subprocess.
 
 The canonical fixture lives at `examples/extensions/hosted-hello-go/`.
 
@@ -165,10 +165,10 @@ The canonical fixture lives at `examples/extensions/hosted-hello-go/`.
 
 Four directories are walked in order; later layers win on name collision:
 
-1. `~/.pi-go/packages/<name>/`
-2. `~/.pi-go/extensions/<name>/`
-3. `<cwd>/.pi-go/packages/<name>/`
-4. `<cwd>/.pi-go/extensions/<name>/`
+1. `~/.go-pi/packages/<name>/`
+2. `~/.go-pi/extensions/<name>/`
+3. `<cwd>/.go-pi/packages/<name>/`
+4. `<cwd>/.go-pi/extensions/<name>/`
 
 Each layer may contain:
 
@@ -182,7 +182,7 @@ themselves from `init()` at program startup by calling
 
 ## settings.json additions
 
-pi-go reads `~/.pi-go/settings.json` (optional) to tune extension behavior:
+go-pi reads `~/.go-pi/settings.json` (optional) to tune extension behavior:
 
 ```json
 {
@@ -199,9 +199,10 @@ forward compatibility.
 
 ## Trust & Approvals
 
-Hosted extensions sit in `StatePending` until they're approved. The recommended flow is to approve them from inside pi-go:
+Hosted extensions sit in `StatePending` until they're approved. The recommended flow is to approve them from inside
+go-pi:
 
-1. Start pi-go. Discovered but un-approved extensions appear as a status-bar toast:
+1. Start go-pi. Discovered but un-approved extensions appear as a status-bar toast:
 
    ```
    2 extensions pending approval — press e to review
@@ -209,9 +210,11 @@ Hosted extensions sit in `StatePending` until they're approved. The recommended 
 
 2. Press `e` (or type `/extensions`) to open the management panel.
 
-3. Select a row with the arrow keys. Press `a` on a pending row to open the approval dialog, toggle capabilities with `space`, and press `enter` to approve. pi-go writes to `~/.pi-go/extensions/approvals.json` on your behalf.
+3. Select a row with the arrow keys. Press `a` on a pending row to open the approval dialog, toggle capabilities with
+   `space`, and press `enter` to approve. go-pi writes to `~/.go-pi/extensions/approvals.json` on your behalf.
 
-4. Approved extensions auto-start on the next pi-go launch. You can also `s` (start), `x` (stop), `r` (restart), or `v` (revoke) from the panel at any time.
+4. Approved extensions auto-start on the next go-pi launch. You can also `s` (start), `x` (stop), `r` (restart), or
+   `v` (revoke) from the panel at any time.
 
 ### approvals.json schema
 
@@ -249,9 +252,9 @@ Semantics:
   UX (batch approval, reduced prompting); the current build treats it
   identically to `third-party`.
 
-Fields the TUI doesn't name are preserved on disk — future pi-go releases may add fields without disturbing your edits.
+Fields the TUI doesn't name are preserved on disk — future go-pi releases may add fields without disturbing your edits.
 
-Changes to `approvals.json` are picked up on the next pi-go start or on
+Changes to `approvals.json` are picked up on the next go-pi start or on
 an explicit extension-reload (`R` in the panel).
 
 ## Session & UI (Spec #5)
@@ -302,7 +305,9 @@ Declaring any `[[hooks]]` entry requires the `hooks.register` capability. `criti
 
 ### Streaming & logs
 
-Partial `ToolResult` updates from `onUpdate(partial)` callbacks reach the TUI tool-display panel and the trace log. Extension log writes via `piext.Log()` — and direct `log.append` calls — stream to the TUI trace panel and `~/.pi-go/logs/extensions.log` (rotated at 10 MB, last 3 retained).
+Partial `ToolResult` updates from `onUpdate(partial)` callbacks reach the TUI tool-display panel and the trace log.
+Extension log writes via `piext.Log()` — and direct `log.append` calls — stream to the TUI trace panel and
+`~/.go-pi/logs/extensions.log` (rotated at 10 MB, last 3 retained).
 
 ### Deprecations
 

@@ -12,7 +12,7 @@
 
 **Assumptions for the implementer:**
 
-- Working directory is the pi-go repo root (`C:/Users/Jordan/Documents/Projects/pi-go` or the worktree equivalent).
+- Working directory is the go-pi repo root (`C:/Users/Jordan/Documents/Projects/go-pi` or the worktree equivalent).
 - Go toolchain, Node 20+, and `rtk` are on PATH. `rtk` is optional — plain `git`/`go`/`npm` work everywhere the plan uses them.
 - Run all commands from repo root unless the task says otherwise.
 - Every task ends with a commit. Use the message exactly; adjust only if tests surface an unanticipated subfile that must be re-added.
@@ -61,7 +61,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // View is the read projection of a single extension. Services snapshot
@@ -464,8 +464,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // newTestService spins up a real Manager + Gate pointed at a temp
@@ -530,7 +530,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // Service is the programmatic surface for extension management. See
@@ -711,8 +711,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+"github.com/pizzaface/go-pi/internal/extension/host"
+"github.com/pizzaface/go-pi/pkg/piapi"
 )
 ```
 
@@ -775,7 +775,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+"github.com/pizzaface/go-pi/internal/extension/host"
 )
 ```
 
@@ -1255,7 +1255,7 @@ func (s *service) defaultStop(ctx context.Context, reg *host.Registration) error
 }
 ```
 
-Add `"github.com/dimetron/pi-go/internal/extension/api"` to imports.
+Add `"github.com/pizzaface/go-pi/internal/extension/api"` to imports.
 
 - [ ] **Step 3: Build + existing tests still PASS**
 
@@ -1706,8 +1706,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestStartApproved_LaunchesEveryReadyHosted(t *testing.T) {
@@ -1794,7 +1794,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // StartApproved launches every hosted extension in StateReady in
@@ -1897,8 +1897,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestBuildCommand_HostedGoUsesMetadataCommand(t *testing.T) {
@@ -2029,10 +2029,10 @@ Append to `service_test.go`:
 ```go
 func TestService_ReloadAddsNewDiscoveries(t *testing.T) {
 	svc, mgr, _ := newTestService(t)
-	// Seed an extension in the workDir's .pi-go/extensions/ so that
+// Seed an extension in the workDir's .go-pi/extensions/ so that
 	// loader.Discover finds it.
 	impl := svc.(*service)
-	dir := filepath.Join(impl.workDir, ".pi-go", "extensions", "new-ext")
+dir := filepath.Join(impl.workDir, ".go-pi", "extensions", "new-ext")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -2119,7 +2119,7 @@ func (s *service) Reload(ctx context.Context) error {
 }
 ```
 
-Add `"github.com/dimetron/pi-go/internal/extension/loader"` to service.go imports.
+Add `"github.com/pizzaface/go-pi/internal/extension/loader"` to service.go imports.
 
 - [ ] **Step 4: Run — expect PASS**
 
@@ -2182,7 +2182,7 @@ Expected: `rt.Lifecycle undefined`.
 Add the import:
 
 ```go
-"github.com/dimetron/pi-go/internal/extension/lifecycle"
+"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 ```
 
 Add the field to `Runtime`:
@@ -2241,8 +2241,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestLifecycleE2E_HostedGo(t *testing.T) {
@@ -2263,7 +2263,7 @@ func TestLifecycleE2E_HostedGo(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -2371,7 +2371,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 func TestLifecycleE2E_HostedTS(t *testing.T) {
@@ -2389,13 +2389,13 @@ func TestLifecycleE2E_HostedTS(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(example, "src", "index.ts")); err != nil {
 		t.Skipf("hosted-hello-ts example missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(example, "node_modules", "@pi-go", "extension-sdk")); err != nil {
+	if _, err := os.Stat(filepath.Join(example, "node_modules", "@go-pi", "extension-sdk")); err != nil {
 		t.Skipf("run `npm install` in %s first", example)
 	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -2631,7 +2631,10 @@ func countPending(views []lifecycle.View) int {
 }
 ```
 
-Add imports `"github.com/dimetron/pi-go/internal/extension/host"` and `"github.com/dimetron/pi-go/internal/extension/lifecycle"` to the toast file (not the model file if unnecessary). If importing `lifecycle` from `tui` causes a cycle — it shouldn't, but if it does, move `countPending` into the lifecycle package.
+Add imports `"github.com/pizzaface/go-pi/internal/extension/host"` and
+`"github.com/pizzaface/go-pi/internal/extension/lifecycle"` to the toast file (not the model file if unnecessary). If
+importing `lifecycle` from `tui` causes a cycle — it shouldn't, but if it does, move `countPending` into the lifecycle
+package.
 
 - [ ] **Step 3: Render the toast in the status view**
 
@@ -2713,7 +2716,7 @@ Expected: undefined.
 package tui
 
 import (
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 )
 
 // extensionPanelState holds the /extensions overlay. Populated from
@@ -2842,7 +2845,8 @@ func TestExtensionPanel_DetailPaneShowsRequestedCapabilitiesOnPending(t *testing
 }
 ```
 
-Add `"strings"`, `"github.com/dimetron/pi-go/internal/extension/host"`, `"github.com/dimetron/pi-go/internal/extension/lifecycle"` to the test imports.
+Add `"strings"`, `"github.com/pizzaface/go-pi/internal/extension/host"`,
+`"github.com/pizzaface/go-pi/internal/extension/lifecycle"` to the test imports.
 
 - [ ] **Step 2: Run — expect FAIL**
 
@@ -2859,7 +2863,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/dimetron/pi-go/internal/extension/host"
+"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 func (s *extensionPanelState) MoveSelection(delta int) {
@@ -3751,9 +3755,10 @@ Find the section titled `## Trust & Approvals` in `docs/extensions.md`. Keep the
 ```markdown
 ## Trust & Approvals
 
-Hosted extensions sit in `StatePending` until they're approved. The recommended flow is to approve them from inside pi-go:
+Hosted extensions sit in `StatePending` until they're approved. The recommended flow is to approve them from inside
+go-pi:
 
-1. Start pi-go. Discovered but un-approved extensions appear as a status-bar toast:
+1. Start go-pi. Discovered but un-approved extensions appear as a status-bar toast:
 
    ```
    2 extensions pending approval — press e to review
@@ -3761,9 +3766,9 @@ Hosted extensions sit in `StatePending` until they're approved. The recommended 
 
 2. Press `e` (or type `/extensions`) to open the management panel.
 
-3. Select a row with the arrow keys. Press `a` on a pending row to open the approval dialog, toggle capabilities with `space`, and press `enter` to approve. pi-go writes to `~/.pi-go/extensions/approvals.json` on your behalf.
+3. Select a row with the arrow keys. Press `a` on a pending row to open the approval dialog, toggle capabilities with `space`, and press `enter` to approve. go-pi writes to `~/.go-pi/extensions/approvals.json` on your behalf.
 
-4. Approved extensions auto-start on the next pi-go launch. You can also `s` (start), `x` (stop), `r` (restart), or `v` (revoke) from the panel at any time.
+4. Approved extensions auto-start on the next go-pi launch. You can also `s` (start), `x` (stop), `r` (restart), or `v` (revoke) from the panel at any time.
 
 ### approvals.json schema
 
@@ -3787,7 +3792,7 @@ If you prefer to edit the file directly (or a dotfile-management flow needs it),
 }
 ```
 
-Fields the TUI doesn't name are preserved on disk — future pi-go releases may add fields without disturbing your edits.
+Fields the TUI doesn't name are preserved on disk — future go-pi releases may add fields without disturbing your edits.
 ```
 
 - [ ] **Step 2: Verify file + commit**
@@ -3809,7 +3814,8 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 - [ ] `rtk go test ./... -count=1` → everything green except pre-existing internal/cli failures (`TestPackageCommandLifecycle`, the bubbletea `TestRootCmdMissingAPIKey` hang).
 - [ ] `rtk go build ./...` → clean.
 - [ ] `rtk go vet ./...` → clean.
-- [ ] Manual smoke: run pi-go against a repo with `examples/extensions/hosted-hello-go` symlinked into `.pi-go/extensions/`. Verify toast → panel → dialog approve → `s` starts → status reaches `running`.
+- [ ] Manual smoke: run go-pi against a repo with `examples/extensions/hosted-hello-go` symlinked into
+  `.go-pi/extensions/`. Verify toast → panel → dialog approve → `s` starts → status reaches `running`.
 
 ---
 

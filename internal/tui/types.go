@@ -7,15 +7,15 @@ import (
 
 	llmmodel "google.golang.org/adk/model"
 
-	"github.com/dimetron/pi-go/internal/agent"
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension"
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
-	"github.com/dimetron/pi-go/internal/logger"
-	"github.com/dimetron/pi-go/internal/provider"
-	pisession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/agent"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/logger"
+	"github.com/pizzaface/go-pi/internal/provider"
+	pisession "github.com/pizzaface/go-pi/internal/session"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // ExtensionEntryMsg appends an extension-authored entry to the

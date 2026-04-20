@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // UserHome returns the user's home directory in a cross-platform way.
@@ -32,10 +32,10 @@ func Discover(cwd string) ([]Candidate, error) {
 		return nil, fmt.Errorf("loader: resolve user home: %w", err)
 	}
 	layers := []string{
-		filepath.Join(home, ".pi-go", "packages"),
-		filepath.Join(home, ".pi-go", "extensions"),
-		filepath.Join(cwd, ".pi-go", "packages"),
-		filepath.Join(cwd, ".pi-go", "extensions"),
+		filepath.Join(home, ".go-pi", "packages"),
+		filepath.Join(home, ".go-pi", "extensions"),
+		filepath.Join(cwd, ".go-pi", "packages"),
+		filepath.Join(cwd, ".go-pi", "extensions"),
 	}
 	byName := map[string]Candidate{}
 	for _, layer := range layers {

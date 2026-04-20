@@ -1,4 +1,4 @@
-// Package jsonrpc implements a Unix socket JSON-RPC server for pi-go.
+// Package jsonrpc implements a Unix socket JSON-RPC server for go-pi.
 // It accepts JSON-RPC requests and streams JSONL events back to clients,
 // enabling editor/IDE integration.
 package jsonrpc
@@ -13,7 +13,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/dimetron/pi-go/internal/agent"
+	"github.com/pizzaface/go-pi/internal/agent"
 )
 
 // Request is a JSON-RPC request from the client.
@@ -98,7 +98,7 @@ func (s *Server) Run(ctx context.Context) error {
 	defer func() { _ = s.listener.Close() }()
 	defer func() { _ = os.Remove(s.socketPath) }()
 
-	fmt.Fprintf(os.Stderr, "pi-go: RPC server listening on %s\n", s.socketPath)
+	fmt.Fprintf(os.Stderr, "go-pi: RPC server listening on %s\n", s.socketPath)
 
 	// Handle graceful shutdown.
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)

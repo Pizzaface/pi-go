@@ -11,7 +11,7 @@ builds:
       - CGO_ENABLED=0
     ldflags:
       - -s -w
-      - -X github.com/dimetron/pi-go/internal/cli.Version={{.Version}}
+      - -X github.com/pizzaface/go-pi/internal/cli.Version={{.Version}}
     goos:
       - linux
       - darwin
@@ -48,7 +48,7 @@ changelog:
 release:
   github:
     owner: dimetron
-    name: pi-go
+    name: go-pi
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"

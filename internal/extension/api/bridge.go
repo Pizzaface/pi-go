@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // SessionBridge is the seam between extension API implementations
@@ -37,23 +37,23 @@ type SessionBridge interface {
 // return zero values.
 type NoopBridge struct{}
 
-func (NoopBridge) AppendEntry(string, string, any) error                           { return nil }
+func (NoopBridge) AppendEntry(string, string, any) error                                  { return nil }
 func (NoopBridge) SendCustomMessage(string, piapi.CustomMessage, piapi.SendOptions) error { return nil }
 func (NoopBridge) SendUserMessage(string, piapi.UserMessage, piapi.SendOptions) error     { return nil }
-func (NoopBridge) SetSessionTitle(string) error                                    { return nil }
-func (NoopBridge) GetSessionTitle() string                                         { return "" }
-func (NoopBridge) SetEntryLabel(string, string) error                              { return nil }
-func (NoopBridge) WaitForIdle(context.Context) error                               { return nil }
+func (NoopBridge) SetSessionTitle(string) error                                           { return nil }
+func (NoopBridge) GetSessionTitle() string                                                { return "" }
+func (NoopBridge) SetEntryLabel(string, string) error                                     { return nil }
+func (NoopBridge) WaitForIdle(context.Context) error                                      { return nil }
 func (NoopBridge) NewSession(piapi.NewSessionOptions) (piapi.NewSessionResult, error) {
 	return piapi.NewSessionResult{}, nil
 }
-func (NoopBridge) Fork(string) (piapi.ForkResult, error)             { return piapi.ForkResult{}, nil }
+func (NoopBridge) Fork(string) (piapi.ForkResult, error) { return piapi.ForkResult{}, nil }
 func (NoopBridge) NavigateBranch(string) (piapi.NavigateResult, error) {
 	return piapi.NavigateResult{}, nil
 }
 func (NoopBridge) SwitchSession(string) (piapi.SwitchResult, error) {
 	return piapi.SwitchResult{}, nil
 }
-func (NoopBridge) Reload(context.Context) error                               { return nil }
-func (NoopBridge) EmitToolUpdate(string, piapi.ToolResult) error              { return nil }
+func (NoopBridge) Reload(context.Context) error                                    { return nil }
+func (NoopBridge) EmitToolUpdate(string, piapi.ToolResult) error                   { return nil }
 func (NoopBridge) AppendExtensionLog(string, string, string, map[string]any) error { return nil }

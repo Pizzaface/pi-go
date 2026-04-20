@@ -1,6 +1,6 @@
 ---
 name: extensions-core-sdk-rpc
-description: Core SDK + RPC schema that brings pi-mono's ExtensionAPI shape to pi-go
+description: Core SDK + RPC schema that brings pi-mono's ExtensionAPI shape to go-pi
 status: draft
 created: 2026-04-14T18:40:03Z
 updated: 2026-04-14T18:59:22Z
@@ -8,7 +8,9 @@ updated: 2026-04-14T18:59:22Z
 
 # Extensions: Core SDK + RPC Schema (Spec #1)
 
-Foundation spec for reshaping pi-go's extension system around the pi-mono `ExtensionAPI` shape (see `packages/coding-agent/docs/extensions.md` in `badlogic/pi-mono`). This is spec #1 of a six-spec sequence; the other five are deferred to their own spec → plan → implementation cycles.
+Foundation spec for reshaping go-pi's extension system around the pi-mono `ExtensionAPI` shape (see
+`packages/coding-agent/docs/extensions.md` in `badlogic/pi-mono`). This is spec #1 of a six-spec sequence; the other
+five are deferred to their own spec → plan → implementation cycles.
 
 ## Sub-project Roadmap
 
@@ -29,7 +31,7 @@ Foundation spec for reshaping pi-go's extension system around the pi-mono `Exten
 - Metadata: `piapi.Metadata` Go struct + `pi.toml` (hosted Go) + `package.json` `"pi"` block (hosted TS).
 - Loader & discovery: four-layer last-write-wins with `settings.json` overrides.
 - Tiered trust: compiled-in trusted by construction; hosted keeps capability gates + `approvals.json`.
-- Reference Node host binary (`@pi-go/extension-host`) + npm SDK package (`@pi-go/extension-sdk`).
+- Reference Node host binary (`@go-pi/extension-host`) + npm SDK package (`@go-pi/extension-sdk`).
 - Proof-of-life: one registration (`registerTool`) and one event (`session_start`) wired end-to-end.
 - Two demo extensions: `hosted-hello-go` and `hosted-hello-ts`.
 
@@ -56,7 +58,7 @@ Three delivery modes across two transports:
 **Shared `piapi.API` interface across all three:**
 - Compiled-in: direct Go struct implementing `piapi.API`. Zero serialization.
 - Hosted Go: `pkg/piext` provides an RPC-backed implementation of the same interface. The user writes `func Register(pi piapi.API) error` in their Go binary and it works identically to a compiled-in one, except calls go over JSON-RPC.
-- Hosted TS: `@pi-go/extension-sdk` is the TS mirror — same shape, different language.
+- Hosted TS: `@go-pi/extension-sdk` is the TS mirror — same shape, different language.
 
 **Entrypoint consistency:**
 ```go
@@ -76,7 +78,9 @@ export default function (pi: ExtensionAPI) {
 ```
 
 **Mode determination:**
-- Compiled-in: the extension package is imported into the pi-go binary and registered in `compiled.Compiled` at build time. No metadata file on disk.
+
+- Compiled-in: the extension package is imported into the go-pi binary and registered in `compiled.Compiled` at build
+  time. No metadata file on disk.
 - Hosted Go: `pi.toml` declares `runtime = "hosted"` and `command = ["go", "run", "."]` (or a pre-built binary path).
 - Hosted TS: `package.json` with a `"pi"` block. Node host spawns it.
 
@@ -198,7 +202,7 @@ type SessionStartEvent struct {
 
 Cancel/transform/block shapes land in spec #3 with the events that need them.
 
-### TS mirror (`@pi-go/extension-sdk`)
+### TS mirror (`@go-pi/extension-sdk`)
 
 ```ts
 export interface ExtensionAPI {
@@ -245,7 +249,7 @@ export interface ExtensionAPI {
 // internal/extensions/hello/hello.go
 package hello
 
-import "github.com/dimetron/pi-go/pkg/piapi"
+import "github.com/pizzaface/go-pi/pkg/piapi"
 
 var Metadata = piapi.Metadata{
     Name: "hello", Version: "0.1.0",
@@ -280,8 +284,8 @@ Compiled-in metadata is trusted as-is.
 package main
 
 import (
-    "github.com/dimetron/pi-go/pkg/piapi"
-    "github.com/dimetron/pi-go/pkg/piext"
+	"github.com/pizzaface/go-pi/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piext"
 )
 
 var Metadata = piapi.Metadata{ /* ... */ }
@@ -310,8 +314,8 @@ requested_capabilities = ["tools.register", "events.session_start", "events.tool
 
 ```ts
 // src/index.ts
-import type { ExtensionAPI } from "@pi-go/extension-sdk";
-import { Type } from "@pi-go/extension-sdk";
+import type {ExtensionAPI} from "@go-pi/extension-sdk";
+import {Type} from "@go-pi/extension-sdk";
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
@@ -330,7 +334,9 @@ export default function (pi: ExtensionAPI) {
 {
   "name": "hello",
   "version": "0.1.0",
-  "dependencies": { "@pi-go/extension-sdk": "^0.1.0" },
+  "dependencies": {
+    "@go-pi/extension-sdk": "^0.1.0"
+  },
   "pi": {
     "entry": "./src/index.ts",
     "description": "TS hello",
@@ -339,7 +345,8 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-Single-file TS (`~/.pi-go/extensions/hello.ts`) is supported; metadata is inferred (name from filename, no declared capabilities means none requested).
+Single-file TS (`~/.go-pi/extensions/hello.ts`) is supported; metadata is inferred (name from filename, no declared
+capabilities means none requested).
 
 ### `piapi.Metadata`
 
@@ -354,7 +361,11 @@ type Metadata struct {
 }
 ```
 
-**System prompt injection timing.** `Metadata.Prompt` is appended to the system prompt under a `# Extension: <name>` heading, matching the current pi-go runtime behavior. Injection is **per-active-extension, per-turn**: the `context` event (spec #3) assembles the system prompt at the start of every LLM turn, re-reading each registered extension's current `Metadata.Prompt`. Extensions can mutate their prompt at runtime by returning a modified `Metadata` from a future `updateMetadata` RPC (not in spec #1); spec #1 treats `Prompt` as static after `Register()` returns.
+**System prompt injection timing.** `Metadata.Prompt` is appended to the system prompt under a `# Extension: <name>`
+heading, matching the current go-pi runtime behavior. Injection is **per-active-extension, per-turn**: the `context`
+event (spec #3) assembles the system prompt at the start of every LLM turn, re-reading each registered extension's
+current `Metadata.Prompt`. Extensions can mutate their prompt at runtime by returning a modified `Metadata` from a
+future `updateMetadata` RPC (not in spec #1); spec #1 treats `Prompt` as static after `Register()` returns.
 
 ### Discovery → registration flow
 
@@ -503,10 +514,10 @@ When the LLM calls an extension-registered tool, the host issues an `extension_e
 
 ### Discovery roots (last-write-wins)
 
-1. `~/.pi-go/packages/*/extensions/*`
-2. `~/.pi-go/extensions/*`
-3. `.pi-go/packages/*/extensions/*`
-4. `.pi-go/extensions/*`
+1. `~/.go-pi/packages/*/extensions/*`
+2. `~/.go-pi/extensions/*`
+3. `.go-pi/packages/*/extensions/*`
+4. `.go-pi/extensions/*`
 5. `settings.json` → `extensions: [...]` (highest precedence)
 
 ### Candidate shapes
@@ -542,23 +553,27 @@ Spec #1 implements `file:` packages and absolute `extensions` paths. `npm:` / `g
 
 ### Ad-hoc CLI flag
 
-Spec #2 adds `pi-go -e <path>` (or `--extension`) to register a single extension file for the duration of one invocation — equivalent to adding it to `settings.json.extensions` for that process only. Useful for quick-testing an in-development extension without copying files into discovery roots. Not implemented in spec #1; called out here so the loader interface accommodates it without refactor.
+Spec #2 adds `go-pi -e <path>` (or `--extension`) to register a single extension file for the duration of one
+invocation — equivalent to adding it to `settings.json.extensions` for that process only. Useful for quick-testing an
+in-development extension without copying files into discovery roots. Not implemented in spec #1; called out here so the
+loader interface accommodates it without refactor.
 
 ### Node host & TS loading
 
-`@pi-go/extension-host` (npm) is a Node binary (`pi-go-extension-host`):
+`@go-pi/extension-host` (npm) is a Node binary (`go-pi-extension-host`):
 - Uses `jiti` for on-the-fly `.ts` compilation.
 - Resolves `node_modules/` from the extension directory outward.
 - Launched per hosted-ts extension: `node <host> --entry <path>`.
 
 ### npm package resolution
 
-For `package.json`-bearing extensions the host assumes `node_modules/` is present. pi-go does **not** run `npm install` automatically. Missing `node_modules/` flips the extension to `errored` with a clear message.
+For `package.json`-bearing extensions the host assumes `node_modules/` is present. go-pi does **not** run `npm install`
+automatically. Missing `node_modules/` flips the extension to `errored` with a clear message.
 
 ### Vendored host for single-file extensions
 
 - Build-time `go:embed packages/extension-host/dist/**` pulls an esbuild bundle into the binary.
-- First run extracts to `~/.pi-go/cache/extension-host/<version>/host.js` and spawns with `node`.
+- First run extracts to `~/.go-pi/cache/extension-host/<version>/host.js` and spawns with `node`.
 - Requires `node` on PATH. Missing `node` → single-file TS rejected with clear message.
 
 **Build ordering.** The Go build depends on the bundled host existing at `packages/extension-host/dist/`. Build pipeline is: (1) `npm install` + `npm run build` in `packages/extension-host/` produces `dist/host.js`; (2) `go build` embeds it. CI enforces this order; the Go build fails loudly if `dist/` is missing so developers notice immediately. Local development uses a `make build` (or equivalent) that runs both steps.
@@ -659,9 +674,9 @@ Live-reads `approvals.json` with file-watching so changes take effect without re
 
 ## 8. Node Host + SDK Packaging
 
-### `@pi-go/extension-sdk`
+### `@go-pi/extension-sdk`
 
-**Location:** `packages/extension-sdk/` in pi-go repo.
+**Location:** `packages/extension-sdk/` in go-pi repo.
 
 **Exports:**
 ```ts
@@ -676,13 +691,13 @@ export { NotImplementedError, CapabilityDeniedError } from "./errors";
 
 `@sinclair/typebox` is a peerDependency so extensions get the same version the host uses. Most exports are types; runtime code is transport + error classes + Type re-export.
 
-### `@pi-go/extension-host`
+### `@go-pi/extension-host`
 
 **Location:** `packages/extension-host/`.
 
 **CLI:**
 ```
-pi-go-extension-host --entry <path-to-extension.ts>
+go-pi-extension-host --entry <path-to-extension.ts>
                      [--name <override>]
                      [--cwd <dir>]
                      [--log-level debug|info|warn|error]
@@ -730,7 +745,7 @@ Host-side code imports `pkg/piapi` via root `go.mod` `replace` for local dev.
 
 - Protocol version `2.1` is the wire contract.
 - SDK major versions bump only on breaking `ExtensionAPI` changes.
-- pi-go records `min_protocol_version` / `max_protocol_version`. Mismatched extensions refuse to handshake.
+- go-pi records `min_protocol_version` / `max_protocol_version`. Mismatched extensions refuse to handshake.
 
 ## 9. Proof of Life
 
@@ -764,7 +779,8 @@ See §4 for source.
 
 1. **Compiled-in:** in-tree extension registers `greet`; `BuildRuntime` surfaces tool in `Runtime.Tools`; `session_start` fires on startup; tool invocation returns expected content.
 2. **Hosted Go:** `go run .` spawn; v2.1 handshake; capabilities granted when approved; tool registration surfaces; `session_start` fires; tool invocation returns content.
-3. **Hosted TS:** `pi-go-extension-host --entry ...` spawn (vendored or local host); same assertions as hosted Go. Skipped on CI runners without `node`.
+3. **Hosted TS:** `go-pi-extension-host --entry ...` spawn (vendored or local host); same assertions as hosted Go.
+   Skipped on CI runners without `node`.
 4. **Capability denial:** empty `approvals.json`; handshake succeeds with empty `granted_services`; tool registration returns `CapabilityDenied`; extension enters `errored`.
 5. **Tiered trust:** compiled-in passes without `approvals.json`; hosted fails with `pending_approval` without approval entry.
 6. **Protocol downgrade:** host 2.1, extension 2.0-only → handshake fails with `HandshakeFailed` (no 2.0 compat in spec #1).
@@ -848,8 +864,8 @@ pkg/
 └── piext/                   # hosted-Go SDK (separate go.mod)
 
 packages/
-├── extension-sdk/           # @pi-go/extension-sdk (npm)
-└── extension-host/          # @pi-go/extension-host (npm binary)
+├── extension-sdk/           # @go-pi/extension-sdk (npm)
+└── extension-host/          # @go-pi/extension-host (npm binary)
 
 internal/extension/
 ├── api/                     # host-side piapi.API implementations

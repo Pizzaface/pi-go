@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestRun_Handshake(t *testing.T) {

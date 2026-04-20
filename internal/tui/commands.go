@@ -13,11 +13,11 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/dimetron/pi-go/internal/agent"
-	"github.com/dimetron/pi-go/internal/config"
-	"github.com/dimetron/pi-go/internal/extension"
-	"github.com/dimetron/pi-go/internal/provider"
-	pisession "github.com/dimetron/pi-go/internal/session"
+	"github.com/pizzaface/go-pi/internal/agent"
+	"github.com/pizzaface/go-pi/internal/config"
+	"github.com/pizzaface/go-pi/internal/extension"
+	"github.com/pizzaface/go-pi/internal/provider"
+	pisession "github.com/pizzaface/go-pi/internal/session"
 )
 
 func (m *model) handleSlashCommand(input string) (tea.Model, tea.Cmd) {
@@ -476,8 +476,8 @@ func (m *model) handleSettingsCommand() {
 
 func (m *model) formatSettingsInfo() string {
 	home, _ := os.UserHomeDir()
-	globalConfig := filepath.Join(home, ".pi-go", "config.json")
-	projectConfig := filepath.Join(m.cfg.WorkDir, ".pi-go", "config.json")
+	globalConfig := filepath.Join(home, ".go-pi", "config.json")
+	projectConfig := filepath.Join(m.cfg.WorkDir, ".go-pi", "config.json")
 	keys := config.APIKeys()
 	var b strings.Builder
 	b.WriteString("**Settings**\n\n")
@@ -491,7 +491,7 @@ func (m *model) formatSettingsInfo() string {
 	fmt.Fprintf(&b, "- **Role**: `%s`\n", defaultString(m.cfg.ActiveRole, "default"))
 	fmt.Fprintf(&b, "- **Provider / model**: `%s / %s`\n", m.cfg.ProviderName, m.cfg.ModelName)
 	if len(keys) == 0 {
-		b.WriteString("- **API keys**: none detected via environment or `~/.pi-go/.env`\n")
+		b.WriteString("- **API keys**: none detected via environment or `~/.go-pi/.env`\n")
 	} else {
 		providers := make([]string, 0, len(keys))
 		for name := range keys {
@@ -765,7 +765,7 @@ func effortDescription(level provider.EffortLevel) string {
 	}
 }
 
-// saveEffortLevel persists the effort level to ~/.pi-go/config.json.
+// saveEffortLevel persists the effort level to ~/.go-pi/config.json.
 func saveEffortLevel(level provider.EffortLevel) {
 	dir := piGoDir()
 	if dir == "" {

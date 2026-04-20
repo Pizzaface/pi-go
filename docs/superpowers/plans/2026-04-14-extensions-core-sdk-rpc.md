@@ -4,7 +4,11 @@
 
 **Goal:** Replace the existing declarative-manifest extension system with a pi-mono-style `ExtensionAPI` surface — a shared Go interface implemented by compiled-in, hosted-Go, and hosted-TS extensions over JSON-RPC v2.1 with bidirectional event dispatch.
 
-**Architecture:** Two separate Go modules (`pkg/piapi` for public types, `pkg/piext` for the hosted-Go SDK). Two npm packages (`@pi-go/extension-sdk` for TS types + transport, `@pi-go/extension-host` for the Node runner binary). Host-side internals split into `internal/extension/{api,compiled,loader,host}`. Tiered trust: compiled-in bypasses the capability gate, hosted goes through `approvals.json` (v2 schema). Greenfield — old `internal/extension/` files are deleted wholesale.
+**Architecture:** Two separate Go modules (`pkg/piapi` for public types, `pkg/piext` for the hosted-Go SDK). Two npm
+packages (`@go-pi/extension-sdk` for TS types + transport, `@go-pi/extension-host` for the Node runner binary).
+Host-side internals split into `internal/extension/{api,compiled,loader,host}`. Tiered trust: compiled-in bypasses the
+capability gate, hosted goes through `approvals.json` (v2 schema). Greenfield — old `internal/extension/` files are
+deleted wholesale.
 
 **Tech Stack:** Go 1.22+, TypeScript 5+, Node.js 20+, jiti (TS on-the-fly loading), esbuild (host bundling), invopop/jsonschema (Go schema generation), TypeBox (TS schema), JSON-RPC 2.0 stdio framing.
 
@@ -105,8 +109,8 @@
 
 1. Tasks 1-8 — `pkg/piapi` module, no external deps.
 2. Tasks 9-14 — `pkg/piext` module, depends on `pkg/piapi`.
-3. Tasks 15-20 — `@pi-go/extension-sdk`, no Go deps.
-4. Tasks 21-25 — `@pi-go/extension-host`, depends on extension-sdk.
+3. Tasks 15-20 — `@go-pi/extension-sdk`, no Go deps.
+4. Tasks 21-25 — `@go-pi/extension-host`, depends on extension-sdk.
 5. Tasks 26-30 — `internal/extension/hostproto` + `loader`, depends on `pkg/piapi`.
 6. Tasks 31-35 — `internal/extension/host` (capability, rpc, dispatch, manager, embed), depends on previous.
 7. Tasks 36-37 — `internal/extension/api` (compiled, hosted) + `internal/extension/compiled`.
@@ -132,7 +136,7 @@ Each task ends in a commit; the tree is green at every task boundary.
 
 Create `pkg/piapi/go.mod`:
 ```
-module github.com/dimetron/pi-go/pkg/piapi
+module github.com/pizzaface/go-pi/pkg/piapi
 
 go 1.22
 ```
@@ -141,7 +145,7 @@ go 1.22
 
 Create `pkg/piapi/doc.go`:
 ```go
-// Package piapi defines the public types used by pi-go extensions.
+// Package piapi defines the public types used by go-pi extensions.
 //
 // This package is imported by:
 //   - host-side code in internal/extension to wire implementations,
@@ -150,7 +154,7 @@ Create `pkg/piapi/doc.go`:
 //
 // It declares no implementations and has no dependencies beyond the
 // standard library, so external consumers can depend on it without
-// pulling in the full pi-go host.
+// pulling in the full go-pi host.
 package piapi
 ```
 
@@ -171,9 +175,9 @@ use (
 
 Edit `go.mod` to add at the bottom:
 ```
-require github.com/dimetron/pi-go/pkg/piapi v0.0.0
+require github.com/pizzaface/go-pi/pkg/piapi v0.0.0
 
-replace github.com/dimetron/pi-go/pkg/piapi => ./pkg/piapi
+replace github.com/pizzaface/go-pi/pkg/piapi => ./pkg/piapi
 ```
 
 - [ ] **Step 5: Verify build**
@@ -1021,22 +1025,22 @@ Skip this commit if no tests were added.
 
 Create `pkg/piext/go.mod`:
 ```
-module github.com/dimetron/pi-go/pkg/piext
+module github.com/pizzaface/go-pi/pkg/piext
 
 go 1.22
 
-require github.com/dimetron/pi-go/pkg/piapi v0.0.0
+require github.com/pizzaface/go-pi/pkg/piapi v0.0.0
 
-replace github.com/dimetron/pi-go/pkg/piapi => ../piapi
+replace github.com/pizzaface/go-pi/pkg/piapi => ../piapi
 ```
 
 - [ ] **Step 2: Create the piext package doc**
 
 Create `pkg/piext/doc.go`:
 ```go
-// Package piext is the hosted-Go SDK for pi-go extensions.
+// Package piext is the hosted-Go SDK for go-pi extensions.
 //
-// A hosted-Go extension is a separate Go binary that pi-go spawns over
+// A hosted-Go extension is a separate Go binary that go-pi spawns over
 // stdio and talks to via JSON-RPC v2.1. From the extension author's
 // perspective the shape is identical to a compiled-in extension:
 //
@@ -1056,9 +1060,9 @@ package piext
 
 Edit `go.mod` at repo root to add:
 ```
-require github.com/dimetron/pi-go/pkg/piext v0.0.0
+require github.com/pizzaface/go-pi/pkg/piext v0.0.0
 
-replace github.com/dimetron/pi-go/pkg/piext => ./pkg/piext
+replace github.com/pizzaface/go-pi/pkg/piext => ./pkg/piext
 ```
 
 Verify `go.work` already includes `./pkg/piext` (added in Task 1).
@@ -1402,7 +1406,7 @@ import (
     "testing"
     "time"
 
-    "github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestRun_Handshake(t *testing.T) {
@@ -1477,7 +1481,7 @@ import (
     "os"
     "time"
 
-    "github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 const protocolVersion = "2.1"
@@ -1605,7 +1609,7 @@ If test fails due to undefined `newRPCAPI`, stub it temporarily:
 // pkg/piext/rpc_api_stub.go  (delete in Task 12)
 package piext
 
-import "github.com/dimetron/pi-go/pkg/piapi"
+import "github.com/pizzaface/go-pi/pkg/piapi"
 
 func newRPCAPI(t *Transport, m piapi.Metadata, granted []GrantedService) piapi.API {
     return nil
@@ -1642,7 +1646,7 @@ import (
     "strings"
     "testing"
 
-    "github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestRPCAPI_RegisterTool_SendsHostCall(t *testing.T) {
@@ -1712,7 +1716,7 @@ import (
     "os/exec"
     "sync"
 
-    "github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 type rpcAPI struct {
@@ -2097,7 +2101,7 @@ rtk git commit -m "test(piext): coverage pass"
 
 ---
 
-## Task 15: Scaffold `@pi-go/extension-sdk`
+## Task 15: Scaffold `@go-pi/extension-sdk`
 
 **Files:**
 - Create: `packages/extension-sdk/package.json`
@@ -2110,9 +2114,9 @@ rtk git commit -m "test(piext): coverage pass"
 Create `packages/extension-sdk/package.json`:
 ```json
 {
-  "name": "@pi-go/extension-sdk",
+  "name": "@go-pi/extension-sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for authoring pi-go hosted extensions",
+  "description": "TypeScript SDK for authoring go-pi hosted extensions",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -2188,7 +2192,7 @@ Expected: builds a minimal `dist/index.js`.
 
 ```bash
 rtk git add packages/extension-sdk/package.json packages/extension-sdk/tsconfig.json packages/extension-sdk/src/index.ts packages/extension-sdk/.gitignore
-rtk git commit -m "feat(sdk): scaffold @pi-go/extension-sdk"
+rtk git commit -m "feat(sdk): scaffold @go-pi/extension-sdk"
 ```
 
 ---
@@ -2332,7 +2336,7 @@ export class NotImplementedError extends Error {
   readonly method: string;
   readonly spec: string;
   constructor(method: string, spec: string) {
-    super(`@pi-go/extension-sdk: ${method} not implemented (deferred to spec ${spec})`);
+      super(`@go-pi/extension-sdk: ${method} not implemented (deferred to spec ${spec})`);
     this.name = "NotImplementedError";
     this.method = method;
     this.spec = spec;
@@ -2343,7 +2347,7 @@ export class CapabilityDeniedError extends Error {
   readonly capability: string;
   readonly reason?: string;
   constructor(capability: string, reason?: string) {
-    super(`@pi-go/extension-sdk: capability denied: ${capability}${reason ? ` (${reason})` : ""}`);
+      super(`@go-pi/extension-sdk: capability denied: ${capability}${reason ? ` (${reason})` : ""}`);
     this.name = "CapabilityDeniedError";
     this.capability = capability;
     this.reason = reason;
@@ -2970,7 +2974,7 @@ rtk git commit -m "test(sdk): full test pass"
 
 ---
 
-## Task 21: Scaffold `@pi-go/extension-host`
+## Task 21: Scaffold `@go-pi/extension-host`
 
 **Files:**
 - Create: `packages/extension-host/package.json`
@@ -2983,12 +2987,12 @@ rtk git commit -m "test(sdk): full test pass"
 Create `packages/extension-host/package.json`:
 ```json
 {
-  "name": "@pi-go/extension-host",
+  "name": "@go-pi/extension-host",
   "version": "0.1.0",
-  "description": "Node runtime for pi-go hosted TypeScript extensions",
+  "description": "Node runtime for go-pi hosted TypeScript extensions",
   "type": "module",
   "bin": {
-    "pi-go-extension-host": "./dist/cli.js"
+    "go-pi-extension-host": "./dist/cli.js"
   },
   "main": "./dist/cli.js",
   "files": ["dist"],
@@ -2999,7 +3003,7 @@ Create `packages/extension-host/package.json`:
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@pi-go/extension-sdk": "file:../extension-sdk",
+    "@go-pi/extension-sdk": "file:../extension-sdk",
     "@sinclair/typebox": "^0.34.0",
     "jiti": "^2.4.0"
   },
@@ -3038,7 +3042,7 @@ Create `packages/extension-host/src/cli.ts`:
 ```typescript
 #!/usr/bin/env node
 // Populated in Task 22.
-console.error("@pi-go/extension-host not yet implemented");
+console.error("@go-pi/extension-host not yet implemented");
 process.exit(1);
 ```
 
@@ -3058,7 +3062,7 @@ Run: `cd packages/extension-host && npm install && npm run build`
 
 ```bash
 rtk git add packages/extension-host/package.json packages/extension-host/tsconfig.json packages/extension-host/src/cli.ts packages/extension-host/.gitignore
-rtk git commit -m "feat(host): scaffold @pi-go/extension-host"
+rtk git commit -m "feat(host): scaffold @go-pi/extension-host"
 ```
 
 ---
@@ -3099,7 +3103,7 @@ Create `packages/extension-host/src/runtime.ts`:
 import {
   connectStdio, createExtensionAPI, Transport,
   type GrantedService, type Metadata,
-} from "@pi-go/extension-sdk";
+} from "@go-pi/extension-sdk";
 import { loadExtension } from "./loader.js";
 
 export interface RuntimeOptions {
@@ -3193,7 +3197,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.entry) {
-  process.stderr.write("pi-go-extension-host: --entry is required\n");
+    process.stderr.write("go-pi-extension-host: --entry is required\n");
   process.exit(2);
 }
 
@@ -3206,7 +3210,7 @@ function deriveName(entry: string): string {
 }
 
 runExtensionHost({ entry: args.entry, name, cwd }).catch((err) => {
-  process.stderr.write(`pi-go-extension-host: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`go-pi-extension-host: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });
 ```
@@ -3293,7 +3297,7 @@ Expected: exits with code 2 and "--entry is required" on stderr.
 
 ```bash
 rtk git add packages/extension-host/build.mjs
-rtk git commit -m "build(host): esbuild bundle for embedding into pi-go binary"
+rtk git commit -m "build(host): esbuild bundle for embedding into go-pi binary"
 ```
 
 ---
@@ -3313,7 +3317,7 @@ package hostproto
 
 import "encoding/json"
 
-// ProtocolVersion is the wire contract between pi-go and extensions.
+// ProtocolVersion is the wire contract between go-pi and extensions.
 const ProtocolVersion = "2.1"
 
 // Error codes.
@@ -3543,7 +3547,7 @@ import (
     "path/filepath"
     "strings"
 
-    "github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // Mode identifies how a candidate is executed.
@@ -3637,7 +3641,9 @@ rtk git commit -m "feat(loader): Mode detection for single-file TS, package.json
 
 - [ ] Add dep: `go get github.com/BurntSushi/toml@latest`
 - [ ] Write `metadata.go` with `parsePiToml`, `parsePackageJSON`, `parseMetadataFromFile` returning `(piapi.Metadata, []string, error)`. `pi.toml` fields: name, version, description, prompt, runtime, command, requested_capabilities. `package.json` reads the "pi" block (entry, description, prompt, requested_capabilities).
-- [ ] Write `discover.go` with `Discover(cwd) ([]Candidate, error)` that walks `~/.pi-go/packages`, `~/.pi-go/extensions`, `.pi-go/packages`, `.pi-go/extensions` in order, dedups by name (last wins), sorts output. Export helper `UserHome()` for reuse — handles Windows `USERPROFILE`.
+- [ ] Write `discover.go` with `Discover(cwd) ([]Candidate, error)` that walks `~/.go-pi/packages`,
+  `~/.go-pi/extensions`, `.go-pi/packages`, `.go-pi/extensions` in order, dedups by name (last wins), sorts output.
+  Export helper `UserHome()` for reuse — handles Windows `USERPROFILE`.
 - [ ] Test: `TestDiscover_LayeredOverrides` writes ext-a v0.1 to home and v0.2 to project, asserts project wins. `TestDiscover_HomeOnly` asserts home extensions are discovered when project has none.
 - [ ] Run: `go test ./internal/extension/loader/...` → PASS.
 - [ ] Commit: `feat(loader): four-layer Discover with metadata parsing`
@@ -3726,7 +3732,9 @@ rtk git commit -m "feat(loader): Mode detection for single-file TS, package.json
 
 **Files:** `internal/extension/host/embed.go`, `embed_test.go`, `embedded/host.bundle.js` (copied from Task 23 output).
 
-- [ ] `//go:embed embedded/host.bundle.js` + `var embeddedHost []byte`. `ExtractedHostPath(version) (string, error)` uses `sync.Once` to extract to `~/.pi-go/cache/extension-host/<version>/host.bundle.js`. Windows uses `%LOCALAPPDATA%/pi-go/cache/...`.
+- [ ] `//go:embed embedded/host.bundle.js` + `var embeddedHost []byte`. `ExtractedHostPath(version) (string, error)`
+  uses `sync.Once` to extract to `~/.go-pi/cache/extension-host/<version>/host.bundle.js`. Windows uses
+  `%LOCALAPPDATA%/go-pi/cache/...`.
 - [ ] Before Go build, copy: `cp packages/extension-host/dist/host.bundle.js internal/extension/host/embedded/`. Document this build step in the repo README or makefile.
 - [ ] Test with temp HOME, verify extracted file exists.
 - [ ] Commit: `feat(host): go:embed vendored Node host bundle with lazy extraction`
@@ -3816,7 +3824,8 @@ Remove via `git rm`:
 
 **Files:** `examples/extensions/hosted-hello-ts/{package.json,tsconfig.json,src/index.ts,README.md}`.
 
-- [ ] `package.json` with name, version, `type:"module"`, dependency on `@pi-go/extension-sdk` via `file:../../../packages/extension-sdk`, and a `pi` block containing entry, description, requested_capabilities.
+- [ ] `package.json` with name, version, `type:"module"`, dependency on `@go-pi/extension-sdk` via
+  `file:../../../packages/extension-sdk`, and a `pi` block containing entry, description, requested_capabilities.
 - [ ] `src/index.ts`: `export default function(pi: ExtensionAPI)` subscribes to `session_start` (logs via `console.log`) and registers `greet` tool with `Type.Object({ name: Type.String({ description: "Name to greet" }) })`. Execute returns the greeting.
 - [ ] Run `npm install` once in the extension directory to vendor deps.
 - [ ] Commit: `feat(examples): hosted-hello-ts E2E fixture`
@@ -3828,7 +3837,9 @@ Remove via `git rm`:
 **Files:** `internal/extensions/hello/hello.go`, `internal/extension/e2e_compiled_test.go`.
 
 - [ ] `hello.go`: `Metadata` var with name `hello`, version `0.1`. `Register(pi piapi.API) error` subscribes to `session_start` (returns no-op EventResult) and registers `greet` tool returning a single text content part `"hi"`. Package `init()` appends the entry to `compiled.Compiled`.
-- [ ] `e2e_compiled_test.go`: blank-import the hello package via `_ "github.com/dimetron/pi-go/internal/extensions/hello"`. `TestE2E_CompiledIn` calls `BuildRuntime(ctx, RuntimeConfig{WorkDir: t.TempDir()})` and asserts that `rt.Tools` contains a tool named `greet`.
+- [ ] `e2e_compiled_test.go`: blank-import the hello package via
+  `_ "github.com/pizzaface/go-pi/internal/extensions/hello"`. `TestE2E_CompiledIn` calls
+  `BuildRuntime(ctx, RuntimeConfig{WorkDir: t.TempDir()})` and asserts that `rt.Tools` contains a tool named `greet`.
 - [ ] Commit: `test(e2e): compiled-in hello extension registers tool via BuildRuntime`
 
 ---
@@ -3838,7 +3849,11 @@ Remove via `git rm`:
 **Files:** `internal/extension/e2e_hosted_go_test.go`, `internal/extension/testdata/approvals_granted_hello.json`.
 
 - [ ] Approvals v2 with `hosted-hello-go` approved, granted `tools.register`, `events.session_start`, `events.tool_execute`.
-- [ ] `TestE2E_HostedGo`: build temp HOME, symlink `examples/extensions/hosted-hello-go` into `<tmp>/.pi-go/extensions/hosted-hello-go` (skip on symlink failure — Windows without admin). Copy approvals into `<tmp>/.pi-go/extensions/approvals.json`. Set `HOME` and `USERPROFILE` env. Call `BuildRuntime(cwd=tmp)`. Assert `hosted-hello-go` registration is present. Call `host.LaunchHosted(ctx, reg, manager, []string{"go", "run", "."})`. Sleep 500ms for handshake. `manager.Shutdown(ctx)`. Assert state transitions went pending → ready → running.
+- [ ] `TestE2E_HostedGo`: build temp HOME, symlink `examples/extensions/hosted-hello-go` into
+  `<tmp>/.go-pi/extensions/hosted-hello-go` (skip on symlink failure — Windows without admin). Copy approvals into
+  `<tmp>/.go-pi/extensions/approvals.json`. Set `HOME` and `USERPROFILE` env. Call `BuildRuntime(cwd=tmp)`. Assert
+  `hosted-hello-go` registration is present. Call `host.LaunchHosted(ctx, reg, manager, []string{"go", "run", "."})`.
+  Sleep 500ms for handshake. `manager.Shutdown(ctx)`. Assert state transitions went pending → ready → running.
 - [ ] Commit: `test(e2e): hosted-go discovery, launch, handshake`
 
 ---
@@ -3848,7 +3863,7 @@ Remove via `git rm`:
 **Files:** `internal/extension/e2e_hosted_ts_test.go`.
 
 - [ ] Skip the test when `exec.LookPath("node")` fails. Same setup as Task 43 but for `hosted-hello-ts`. After discovery, call `host.ExtractedHostPath("test")` to extract the vendored bundle, then `LaunchHosted(ctx, reg, manager, []string{"node", hostPath, "--entry", abs(entry.ts), "--name", "hosted-hello-ts"})`. Sleep 1s to allow Node startup + handshake.
-- [ ] Commit: `test(e2e): hosted-ts via pi-go-extension-host with node`
+- [ ] Commit: `test(e2e): hosted-ts via go-pi-extension-host with node`
 
 ---
 
@@ -3857,7 +3872,8 @@ Remove via `git rm`:
 **Files:** `internal/extension/e2e_trust_test.go`, `internal/extension/testdata/approvals_empty.json`.
 
 - [ ] `TestE2E_CompiledInBypassesGate`: no `approvals.json` file present; compiled-in hello must still reach `StateReady`.
-- [ ] `TestE2E_HostedWithoutApprovalPending`: symlink `hosted-hello-go` into `.pi-go/extensions/` with no `approvals.json`; assert state is `StatePending`.
+- [ ] `TestE2E_HostedWithoutApprovalPending`: symlink `hosted-hello-go` into `.go-pi/extensions/` with no
+  `approvals.json`; assert state is `StatePending`.
 - [ ] `TestE2E_ProtocolDowngrade` (unit-level): directly invoke the inbound handshake handler with `{"protocol_version":"2.0"}` params; assert the host replies `HandshakeFailed` (preferred) or responds with `"2.1"` and the extension is expected to hang up. Add an explicit protocol mismatch check in the handshake handler to return `ErrCodeHandshakeFailed`.
 - [ ] Commit: `test(e2e): tiered trust + protocol version scenarios`
 

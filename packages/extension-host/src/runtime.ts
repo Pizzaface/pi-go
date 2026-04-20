@@ -1,8 +1,11 @@
 import {
-  connectStdio, createExtensionAPI,
-  type GrantedService, type Metadata, type Transport,
-} from "@pi-go/extension-sdk";
-import { loadExtension } from "./loader.js";
+  connectStdio,
+  createExtensionAPI,
+  type GrantedService,
+  type Metadata,
+  type Transport,
+} from "@go-pi/extension-sdk";
+import {loadExtension} from "./loader.js";
 
 export interface RuntimeOptions {
   entry: string;

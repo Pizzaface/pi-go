@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension"
 )
 
 // CompletionType identifies what kind of completion to perform.

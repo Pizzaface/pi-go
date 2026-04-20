@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	_ "github.com/dimetron/pi-go/internal/extensions/hello"
+	_ "github.com/pizzaface/go-pi/internal/extensions/hello"
 )
 
 // TestE2E_CompiledIn exercises the compiled-in registration path end-to-

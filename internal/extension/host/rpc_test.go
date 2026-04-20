@@ -49,7 +49,9 @@ func TestRPCConn_Call(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	var out struct{ OK bool `json:"ok"` }
+	var out struct {
+		OK bool `json:"ok"`
+	}
 	if err := conn.Call(ctx, "test.method", map[string]int{"x": 1}, &out); err != nil {
 		t.Fatal(err)
 	}

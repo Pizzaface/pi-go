@@ -12,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 // modelPickerEntry is a single row in the model picker.
@@ -482,16 +482,16 @@ func (m *model) renderModelPicker() string {
 	return style.Render(b.String())
 }
 
-// piGoDir returns the ~/.pi-go directory path, or "" on error.
+// piGoDir returns the ~/.go-pi directory path, or "" on error.
 func piGoDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".pi-go")
+	return filepath.Join(home, ".go-pi")
 }
 
-// loadHiddenModels reads the hidden model IDs from ~/.pi-go/hidden_models.json.
+// loadHiddenModels reads the hidden model IDs from ~/.go-pi/hidden_models.json.
 // On first run, migrates from the legacy "hiddenModels" key in config.json.
 func loadHiddenModels() map[string]bool {
 	dir := piGoDir()
@@ -552,7 +552,7 @@ func parseHiddenModelsJSON(data []byte) map[string]bool {
 	return out
 }
 
-// saveHiddenModels writes hidden model IDs to ~/.pi-go/hidden_models.json.
+// saveHiddenModels writes hidden model IDs to ~/.go-pi/hidden_models.json.
 func saveHiddenModels(hidden map[string]bool) {
 	dir := piGoDir()
 	if dir == "" {
@@ -587,7 +587,7 @@ type LastModelSelection struct {
 	Provider string `json:"lastProvider"`
 }
 
-// LoadLastModel reads the last-selected model from ~/.pi-go/config.json.
+// LoadLastModel reads the last-selected model from ~/.go-pi/config.json.
 func LoadLastModel() (modelID, providerName string) {
 	dir := piGoDir()
 	if dir == "" {
@@ -606,7 +606,7 @@ func LoadLastModel() (modelID, providerName string) {
 	return m, p
 }
 
-// saveLastSelectedModel persists the last-selected model to ~/.pi-go/config.json.
+// saveLastSelectedModel persists the last-selected model to ~/.go-pi/config.json.
 func saveLastSelectedModel(modelID, providerName string) {
 	dir := piGoDir()
 	if dir == "" {

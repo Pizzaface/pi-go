@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 )
 
 // InboundRouter routes inbound JSON-RPC methods other than the handshake to

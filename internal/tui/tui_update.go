@@ -7,8 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dimetron/pi-go/internal/agent"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/agent"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // spinnerTickMsg drives the Agent active spinner animation.

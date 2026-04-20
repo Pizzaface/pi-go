@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/internal/extension/host"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 // TestE2E_HostedGo exercises discovery → gate approval → BuildRuntime
@@ -31,7 +31,7 @@ func TestE2E_HostedGo(t *testing.T) {
 	}
 
 	tmp := t.TempDir()
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

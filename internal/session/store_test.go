@@ -65,7 +65,7 @@ func TestAppendEventSetsSessionTitle(t *testing.T) {
 func TestListMetaMatchesLegacyAppName(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
-	resp, err := svc.Create(ctx, &session.CreateRequest{AppName: "pi-go", UserID: "test-user"})
+	resp, err := svc.Create(ctx, &session.CreateRequest{AppName: "go-pi", UserID: "test-user"})
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}

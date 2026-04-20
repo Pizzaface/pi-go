@@ -20,7 +20,7 @@ import (
 //  2. Open browser → auth URL with PKCE challenge, scopes, audience
 //  3. User authenticates → redirect to localhost callback with code
 //  4. Exchange code + verifier for token
-//  5. Extract API key → save to ~/.pi-go/.env
+//  5. Extract API key → save to ~/.go-pi/.env
 func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 	var capturedAuthParams url.Values
 
@@ -42,7 +42,7 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 		if r.FormValue("code_verifier") == "" {
 			t.Error("missing code_verifier in token exchange")
 		}
-		if r.FormValue("client_id") != "pi-go-cli" {
+		if r.FormValue("client_id") != "go-pi-cli" {
 			t.Errorf("wrong client_id: %q", r.FormValue("client_id"))
 		}
 		if r.FormValue("redirect_uri") == "" {
@@ -80,7 +80,7 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 		EnvVar:   "OPENAI_API_KEY",
 		AuthURL:  authSrv.URL + "/authorize",
 		TokenURL: tokenSrv.URL + "/oauth/token",
-		ClientID: "pi-go-cli",
+		ClientID: "go-pi-cli",
 		Scopes:   []string{"openid", "profile", "email", "offline_access"},
 		ExtraParams: map[string]string{
 			"audience": "https://api.openai.com/v1",
@@ -131,8 +131,8 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 	if capturedAuthParams.Get("response_type") != "code" {
 		t.Error("expected response_type=code")
 	}
-	if capturedAuthParams.Get("client_id") != "pi-go-cli" {
-		t.Errorf("expected client_id=pi-go-cli, got %q", capturedAuthParams.Get("client_id"))
+	if capturedAuthParams.Get("client_id") != "go-pi-cli" {
+		t.Errorf("expected client_id=go-pi-cli, got %q", capturedAuthParams.Get("client_id"))
 	}
 	if capturedAuthParams.Get("code_challenge") == "" {
 		t.Error("missing PKCE code_challenge")
@@ -180,7 +180,7 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 		t.Fatalf("SaveAuth() error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", ".env"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".go-pi", ".env"))
 	if err != nil {
 		t.Fatalf("error reading .env: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestCodexLoginE2E_BrowserPKCE(t *testing.T) {
 		t.Errorf("expected key in .env, got: %s", data)
 	}
 
-	authData, err := os.ReadFile(filepath.Join(tmpDir, ".pi-go", "auth.json"))
+	authData, err := os.ReadFile(filepath.Join(tmpDir, ".go-pi", "auth.json"))
 	if err != nil {
 		t.Fatalf("error reading auth.json: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestCodexLoginE2E_BrowserPKCE_OAuthError(t *testing.T) {
 		EnvVar:   "OPENAI_API_KEY",
 		AuthURL:  authSrv.URL,
 		TokenURL: "http://unused",
-		ClientID: "pi-go-cli",
+		ClientID: "go-pi-cli",
 		Scopes:   []string{"openid"},
 		TokenToKey: func(tok *TokenResponse) string {
 			return tok.AccessToken
@@ -286,7 +286,7 @@ func TestCodexLoginE2E_BrowserPKCE_TokenExchangeFails(t *testing.T) {
 		EnvVar:   "OPENAI_API_KEY",
 		AuthURL:  authSrv.URL,
 		TokenURL: tokenSrv.URL,
-		ClientID: "pi-go-cli",
+		ClientID: "go-pi-cli",
 		Scopes:   []string{"openid"},
 		TokenToKey: func(tok *TokenResponse) string {
 			return tok.AccessToken
@@ -334,7 +334,7 @@ func TestCodexLoginE2E_BrowserPKCE_Timeout(t *testing.T) {
 		EnvVar:   "OPENAI_API_KEY",
 		AuthURL:  "http://127.0.0.1:1/authorize", // unreachable
 		TokenURL: "http://127.0.0.1:1/token",
-		ClientID: "pi-go-cli",
+		ClientID: "go-pi-cli",
 		Scopes:   []string{"openid"},
 		TokenToKey: func(tok *TokenResponse) string {
 			return tok.AccessToken
@@ -385,7 +385,7 @@ func TestCodexLoginE2E_403HTML(t *testing.T) {
 	prov := Provider{
 		Name:      "codex",
 		DeviceURL: srv.URL + "/device/code",
-		ClientID:  "pi-go-cli",
+		ClientID:  "go-pi-cli",
 		Scopes:    []string{"openai.public"},
 		ExtraParams: map[string]string{
 			"audience": "https://api.openai.com/v1",

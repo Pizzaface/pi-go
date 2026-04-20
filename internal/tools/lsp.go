@@ -9,7 +9,7 @@ import (
 
 	"google.golang.org/adk/tool"
 
-	"github.com/dimetron/pi-go/internal/lsp"
+	"github.com/pizzaface/go-pi/internal/lsp"
 )
 
 // lspFileAliases maps common LLM parameter name mistakes to canonical names.

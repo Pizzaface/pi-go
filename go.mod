@@ -1,4 +1,4 @@
-module github.com/dimetron/pi-go
+module github.com/pizzaface/go-pi
 
 go 1.26.1
 
@@ -106,10 +106,10 @@ require (
 	rsc.io/ordered v1.1.1 // indirect
 )
 
-require github.com/dimetron/pi-go/pkg/piapi v0.0.0
+require github.com/pizzaface/go-pi/pkg/piapi v0.0.0
 
-replace github.com/dimetron/pi-go/pkg/piapi => ./pkg/piapi
+replace github.com/pizzaface/go-pi/pkg/piapi => ./pkg/piapi
 
-require github.com/dimetron/pi-go/pkg/piext v0.0.0
+require github.com/pizzaface/go-pi/pkg/piext v0.0.0
 
-replace github.com/dimetron/pi-go/pkg/piext => ./pkg/piext
+replace github.com/pizzaface/go-pi/pkg/piext => ./pkg/piext

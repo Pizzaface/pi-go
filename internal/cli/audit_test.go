@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/audit"
+	"github.com/pizzaface/go-pi/internal/audit"
 )
 
 func TestNewAuditCmd(t *testing.T) {

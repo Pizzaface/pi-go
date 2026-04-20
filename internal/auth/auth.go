@@ -67,7 +67,7 @@ type Result struct {
 	Err      error
 }
 
-// StoredAuth is the persisted OAuth credential shape used by ~/.pi-go/auth.json.
+// StoredAuth is the persisted OAuth credential shape used by ~/.go-pi/auth.json.
 type StoredAuth struct {
 	Type      string `json:"type"`
 	Access    string `json:"access,omitempty"`
@@ -85,7 +85,7 @@ func Providers() []Provider {
 			EnvVar:   "ANTHROPIC_API_KEY",
 			AuthURL:  "https://console.anthropic.com/oauth/authorize",
 			TokenURL: "https://console.anthropic.com/oauth/token",
-			ClientID: "pi-go-cli",
+			ClientID: "go-pi-cli",
 			Scopes:   []string{"api"},
 			TokenToKey: func(tok *TokenResponse) string {
 				if tok.APIKey != "" {
@@ -101,7 +101,7 @@ func Providers() []Provider {
 			AuthURL:       "https://auth.openai.com/authorize",
 			TokenURL:      "https://auth.openai.com/oauth/token",
 			DeviceURL:     "https://auth.openai.com/device/code",
-			ClientID:      "pi-go-cli",
+			ClientID:      "go-pi-cli",
 			Scopes:        []string{"openai.public"},
 			UseDeviceFlow: true,
 			ExtraParams:   map[string]string{"audience": "https://api.openai.com/v1"},
@@ -141,7 +141,7 @@ func Providers() []Provider {
 			EnvVar:   "GOOGLE_API_KEY",
 			AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
 			TokenURL: "https://oauth2.googleapis.com/token",
-			ClientID: "pi-go-cli",
+			ClientID: "go-pi-cli",
 			Scopes:   []string{"https://www.googleapis.com/auth/generative-language"},
 			TokenToKey: func(tok *TokenResponse) string {
 				if tok.APIKey != "" {
@@ -548,14 +548,14 @@ func resolveHomeDir() (string, error) {
 	return os.UserHomeDir()
 }
 
-// SaveKey saves an API key to ~/.pi-go/.env.
+// SaveKey saves an API key to ~/.go-pi/.env.
 func SaveKey(envVar, apiKey string) error {
 	home, err := resolveHomeDir()
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
-	envPath := filepath.Join(home, ".pi-go", ".env")
+	envPath := filepath.Join(home, ".go-pi", ".env")
 
 	existing := ""
 	if data, err := os.ReadFile(envPath); err == nil {
@@ -576,13 +576,13 @@ func SaveKey(envVar, apiKey string) error {
 	return nil
 }
 
-// LoadAuth reads OAuth credentials from ~/.pi-go/auth.json.
+// LoadAuth reads OAuth credentials from ~/.go-pi/auth.json.
 func LoadAuth() (map[string]StoredAuth, error) {
 	home, err := resolveHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	path := filepath.Join(home, ".pi-go", "auth.json")
+	path := filepath.Join(home, ".go-pi", "auth.json")
 	stored := map[string]StoredAuth{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -600,7 +600,7 @@ func LoadAuth() (map[string]StoredAuth, error) {
 	return stored, nil
 }
 
-// SaveAuth persists OAuth credentials to ~/.pi-go/auth.json.
+// SaveAuth persists OAuth credentials to ~/.go-pi/auth.json.
 func SaveAuth(provider string, auth *StoredAuth) error {
 	if auth == nil {
 		return nil
@@ -609,7 +609,7 @@ func SaveAuth(provider string, auth *StoredAuth) error {
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	path := filepath.Join(home, ".pi-go", "auth.json")
+	path := filepath.Join(home, ".go-pi", "auth.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("creating directory: %w", err)
 	}

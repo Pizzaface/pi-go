@@ -28,7 +28,7 @@ This spec extends [`2026-04-05-rich-tui-extension-platform-design.md`](./2026-04
 - Runtime service discovery beyond the handshake catalog. No "list available services" RPC at arbitrary points.
 - Cross-session state sharing. State remains scoped to `(session_id, extension_id)`.
 - New sandboxing or isolation boundaries beyond what v1 already provides.
-- Turning plan-mode / todos / session-name into built-in pi-go features. They exist only as examples.
+- Turning plan-mode / todos / session-name into built-in go-pi features. They exist only as examples.
 - Web-style hover cards or graphical icons. Terminal-only rendering.
 - Parser support for nested sigils (`[[foo:[[bar]]]]` stays invalid).
 - A migration tool for third-party 1.x extensions (none in the wild).
@@ -211,7 +211,7 @@ CapabilitySigilsAction    Capability = "sigils.action"
 ```
 ┌──────────────┐          handshake           ┌──────────────┐
 │  Extension   │ ───────────────────────────▶ │     Host     │
-│  (stdio)     │ ◀─── granted/denied + catalog│  (pi-go TUI) │
+│  (stdio)     │ ◀─── granted/denied + catalog│  (go-pi TUI) │
 │              │                              │              │
 │              │     host_call (ext → host)   │              │
 │              │ ───────────────────────────▶ │   service    │
@@ -333,7 +333,7 @@ type SigilDef struct {
 }
 ```
 
-Built-in types, shipped by pi-go and registered at startup by a compiled-in extension:
+Built-in types, shipped by go-pi and registered at startup by a compiled-in extension:
 
 | Type | Label | Glyph | Color |
 |---|---|---|---|

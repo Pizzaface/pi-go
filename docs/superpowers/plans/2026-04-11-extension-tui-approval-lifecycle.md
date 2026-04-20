@@ -855,7 +855,8 @@ git commit -m "feat(extension): partial-failure tolerant hosted start + startOne
 
 ## Task 5: `Permissions.Upsert` + `Permissions.Delete` with atomic write
 
-**Why:** The TUI panel and lifecycle API need to add and remove approval records from `approvals.json` safely while pi-go is running.
+**Why:** The TUI panel and lifecycle API need to add and remove approval records from `approvals.json` safely while
+go-pi is running.
 
 **Files:**
 - Modify: `internal/extension/permissions.go`
@@ -1798,7 +1799,7 @@ func TestHostedHelloE2E_PendingApprovalDoesNotHang(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
 
-	extDir := filepath.Join(root, ".pi-go", "extensions", "hosted-hello")
+extDir := filepath.Join(root, ".go-pi", "extensions", "hosted-hello")
 	if err := os.MkdirAll(extDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1853,7 +1854,9 @@ func TestHostedHelloE2E_PendingApprovalDoesNotHang(t *testing.T) {
 }
 ```
 
-Required imports (check `hosted_hello_e2e_test.go` head): `context`, `os`, `path/filepath`, `testing`, `time`, `github.com/dimetron/pi-go/internal/config`, `github.com/dimetron/pi-go/internal/tools`. Use existing helpers `setTestHome`.
+Required imports (check `hosted_hello_e2e_test.go` head): `context`, `os`, `path/filepath`, `testing`, `time`,
+`github.com/pizzaface/go-pi/internal/config`, `github.com/pizzaface/go-pi/internal/tools`. Use existing helpers
+`setTestHome`.
 
 - [ ] **Step 2: Run the regression test — verify pass**
 
@@ -1880,7 +1883,8 @@ git commit -m "test(extension): regression — pending approval does not hang Bu
 
 ## Task 11: Wire `ApprovalsPath` through `BuildRuntime`
 
-**Why:** Without this, `GrantApproval` / `RevokeApproval` can't persist to `~/.pi-go/extensions/approvals.json`. Small but required.
+**Why:** Without this, `GrantApproval` / `RevokeApproval` can't persist to `~/.go-pi/extensions/approvals.json`. Small
+but required.
 
 **Files:**
 - Modify: `internal/extension/runtime.go`
@@ -2113,7 +2117,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension"
 )
 
 // extensionsPanelState holds the TUI state for the /extensions panel.
@@ -2328,7 +2332,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension"
+	"github.com/pizzaface/go-pi/internal/extension"
 )
 
 func TestExtensionsPanel_BuildsGroupedRows(t *testing.T) {
@@ -2606,7 +2610,7 @@ func (m *model) openApprovalDialog(info extension.ExtensionInfo, action extensio
 }
 ```
 
-Add `"github.com/dimetron/pi-go/internal/extension"` to the imports if not already there.
+Add `"github.com/pizzaface/go-pi/internal/extension"` to the imports if not already there.
 
 - [ ] **Step 5: Add Cmd helpers in `extensions_panel.go`**
 
@@ -2881,19 +2885,19 @@ git commit -m "feat(tui): /extensions slash command + subcommands"
 - [ ] **Step 1: Delete the existing approval to trigger pending state**
 
 ```bash
-rm ~/.pi-go/extensions/approvals.json
+rm ~/.go-pi/extensions/approvals.json
 ```
 
-- [ ] **Step 2: Build pi-go**
+- [ ] **Step 2: Build go-pi**
 
 ```bash
-rtk go build -o /tmp/pi-go ./cmd/go-pi
+rtk go build -o /tmp/go-pi ./cmd/go-pi
 ```
 
-- [ ] **Step 3: Run pi-go interactively**
+- [ ] **Step 3: Run go-pi interactively**
 
 ```bash
-/tmp/pi-go
+/tmp/go-pi
 ```
 
 **Expected:** TUI loads within ~1s, no "loading: tools..." hang. Status line shows `ext: 1!`.
@@ -2912,17 +2916,18 @@ Expected: panel refreshes, `hosted-hello` moves to `Running` section. Status lin
 
 - [ ] **Step 7: Press `s` to stop, then `r` to restart, then `x` to revoke**
 
-Each should transition the extension through the corresponding states without hanging. Revoke should return it to `Pending` and remove it from `~/.pi-go/extensions/approvals.json`.
+Each should transition the extension through the corresponding states without hanging. Revoke should return it to
+`Pending` and remove it from `~/.go-pi/extensions/approvals.json`.
 
 - [ ] **Step 8: Verify `approvals.json` round-trips**
 
 ```bash
-cat ~/.pi-go/extensions/approvals.json
+cat ~/.go-pi/extensions/approvals.json
 ```
 
 After a fresh approval the file should contain `hosted-hello` with the granted capabilities.
 
-- [ ] **Step 9: Close pi-go (`/quit`) and note any console errors.**
+- [ ] **Step 9: Close go-pi (`/quit`) and note any console errors.**
 
 - [ ] **Step 10: Run the entire test suite one last time**
 

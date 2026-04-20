@@ -1,5 +1,5 @@
-// Package logger provides session logging for pi-go.
-// Logs are written to ~/.pi-go/log/yyyy-mm-dd/session-HH-MM-SS.log
+// Package logger provides session logging for go-pi.
+// Logs are written to ~/.go-pi/log/yyyy-mm-dd/session-HH-MM-SS.log
 package logger
 
 import (
@@ -32,7 +32,7 @@ type Entry struct {
 }
 
 // New creates a new session logger.
-// Log file is created at ~/.pi-go/log/yyyy-mm-dd/session-HH-MM-SS.log
+// Log file is created at ~/.go-pi/log/yyyy-mm-dd/session-HH-MM-SS.log
 func New() (*Logger, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -42,7 +42,7 @@ func New() (*Logger, error) {
 	now := time.Now()
 	dateDir := now.Format("2006-01-02")
 	fileName := fmt.Sprintf("session-%s.log", now.Format("15-04-05"))
-	logDir := filepath.Join(home, ".pi-go", "log", dateDir)
+	logDir := filepath.Join(home, ".go-pi", "log", dateDir)
 
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating log dir: %w", err)

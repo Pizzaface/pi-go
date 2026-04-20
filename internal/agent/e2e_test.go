@@ -15,8 +15,8 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	piSession "github.com/dimetron/pi-go/internal/session"
-	"github.com/dimetron/pi-go/internal/tools"
+	piSession "github.com/pizzaface/go-pi/internal/session"
+	"github.com/pizzaface/go-pi/internal/tools"
 )
 
 // scenarioLLM simulates a multi-step conversation with predefined responses

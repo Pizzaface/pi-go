@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/provider"
+	"github.com/pizzaface/go-pi/internal/provider"
 )
 
 func TestBuildPickerEntries(t *testing.T) {

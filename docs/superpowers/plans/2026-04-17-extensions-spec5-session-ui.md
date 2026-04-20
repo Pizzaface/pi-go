@@ -55,7 +55,7 @@ func TestSpec5ErrorsMatchSentinels(t *testing.T) {
 - [ ] **Step 2: Verify the test fails**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./pkg/piapi/ -run TestSpec5Errors
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./pkg/piapi/ -run TestSpec5Errors
 ```
 
 Expected: FAIL with `undefined: ErrInvalidKind` (and friends).
@@ -161,7 +161,7 @@ type SwitchResult struct {
 - [ ] **Step 5: Run test to verify it passes**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./pkg/piapi/ -run TestSpec5Errors
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./pkg/piapi/ -run TestSpec5Errors
 ```
 
 Expected: PASS.
@@ -169,7 +169,7 @@ Expected: PASS.
 - [ ] **Step 6: Run full piapi tests + build to confirm no regression**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./pkg/piapi/... && go build ./...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./pkg/piapi/... && go build ./...
 ```
 
 Expected: PASS on both.
@@ -177,7 +177,7 @@ Expected: PASS on both.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add pkg/piapi/errors.go pkg/piapi/context.go pkg/piapi/errors_spec5_test.go && rtk git commit -m "feat(piapi): add spec #5 error sentinels and result-type ID fields"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add pkg/piapi/errors.go pkg/piapi/context.go pkg/piapi/errors_spec5_test.go && rtk git commit -m "feat(piapi): add spec #5 error sentinels and result-type ID fields"
 ```
 
 ---
@@ -241,7 +241,7 @@ func TestLogParamsRoundtrip(t *testing.T) {
 - [ ] **Step 2: Verify the tests fail**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./internal/extension/hostproto/ -run "TestSpec5Methods|TestLogParamsRoundtrip"
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./internal/extension/hostproto/ -run "TestSpec5Methods|TestLogParamsRoundtrip"
 ```
 
 Expected: FAIL with `undefined: ServiceSession` etc.
@@ -371,7 +371,7 @@ type LogParams struct {
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./internal/extension/hostproto/
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./internal/extension/hostproto/
 ```
 
 Expected: PASS.
@@ -379,7 +379,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add internal/extension/hostproto/protocol.go internal/extension/hostproto/protocol_test.go && rtk git commit -m "feat(hostproto): add spec #5 services, methods, and payload types"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add internal/extension/hostproto/protocol.go internal/extension/hostproto/protocol_test.go && rtk git commit -m "feat(hostproto): add spec #5 services, methods, and payload types"
 ```
 
 ---
@@ -401,7 +401,7 @@ package api
 import (
 	"context"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // SessionBridge is the seam between extension API implementations
@@ -469,7 +469,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // Call is a single recorded call on FakeBridge.
@@ -557,8 +557,8 @@ package api
 import (
 	"testing"
 
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestFakeBridgeRecordsCalls(t *testing.T) {
@@ -593,7 +593,7 @@ func TestNoopBridgeCompiles(t *testing.T) {
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./internal/extension/api/...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./internal/extension/api/...
 ```
 
 Expected: PASS.
@@ -601,7 +601,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add internal/extension/api/bridge.go internal/extension/api/bridge_test.go internal/extension/api/testing/fakebridge.go && rtk git commit -m "feat(extension/api): SessionBridge interface + FakeBridge test helper"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add internal/extension/api/bridge.go internal/extension/api/bridge_test.go internal/extension/api/testing/fakebridge.go && rtk git commit -m "feat(extension/api): SessionBridge interface + FakeBridge test helper"
 ```
 
 ---
@@ -790,12 +790,13 @@ func TestCompiled_SendMessageRejectsSteer(t *testing.T) {
 }
 ```
 
-Ensure imports include: `"errors"`, `"reflect"`, `testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"`.
+Ensure imports include: `"errors"`, `"reflect"`,
+`testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"`.
 
 - [ ] **Step 6: Update every other caller of NewCompiled in the test suite**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -l "NewCompiled(" --include="*.go" .
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -l "NewCompiled(" --include="*.go" .
 ```
 
 For every match outside `compiled.go`/`bridge.go`/`runtime.go`/`hosted.go` (which are already updated), append `, NoopBridge{}` (or `, nil`) as the third argument.
@@ -803,7 +804,7 @@ For every match outside `compiled.go`/`bridge.go`/`runtime.go`/`hosted.go` (whic
 - [ ] **Step 7: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/extension/... ./pkg/piapi/...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/extension/... ./pkg/piapi/...
 ```
 
 Expected: PASS.
@@ -811,7 +812,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git add internal/extension/api/compiled_test.go && rtk git commit -m "feat(extension/api): route compiled API spec #5 methods through SessionBridge"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git add internal/extension/api/compiled_test.go && rtk git commit -m "feat(extension/api): route compiled API spec #5 methods through SessionBridge"
 ```
 
 ---
@@ -1046,7 +1047,7 @@ func (h *HostedAPIHandler) handleLogAppend(payload json.RawMessage) (any, error)
 - [ ] **Step 4: Update every caller of NewHostedHandler**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -l "NewHostedHandler(" --include="*.go" .
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -l "NewHostedHandler(" --include="*.go" .
 ```
 
 For each match, pass `NoopBridge{}` (or the appropriate real bridge where the caller has one) as the third argument.
@@ -1062,10 +1063,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestHosted_SessionServiceRoutesToBridge(t *testing.T) {
@@ -1112,7 +1113,7 @@ Note: if `host.NewPermissiveGate` doesn't exist, use the existing `host.NewGate(
 - [ ] **Step 6: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/extension/...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/extension/...
 ```
 
 Expected: PASS.
@@ -1120,7 +1121,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git add internal/extension/api/hosted_spec5_test.go && rtk git commit -m "feat(extension/api): route hosted session/control/stream/log services through SessionBridge"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git add internal/extension/api/hosted_spec5_test.go && rtk git commit -m "feat(extension/api): route hosted session/control/stream/log services through SessionBridge"
 ```
 
 ---
@@ -1223,7 +1224,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // hostCallCapture spins up a goroutine that reads one JSON-RPC request
@@ -1313,7 +1314,7 @@ func TestRPCAPI_NotImplementedStubs(t *testing.T) {
 - [ ] **Step 4: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./pkg/piext/...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./pkg/piext/...
 ```
 
 Expected: PASS.
@@ -1321,7 +1322,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git add pkg/piext/rpc_api_spec5_test.go && rtk git commit -m "feat(piext): real hosted-side implementations for spec #5 messaging methods"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git add pkg/piext/rpc_api_spec5_test.go && rtk git commit -m "feat(piext): real hosted-side implementations for spec #5 messaging methods"
 ```
 
 ---
@@ -1335,7 +1336,7 @@ cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git add pkg
 - [ ] **Step 1: Locate the existing Log() implementation**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -n "func Log()" pkg/piext/
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -n "func Log()" pkg/piext/
 ```
 
 Read the file(s) shown; the current implementation returns `os.Stderr`. Determine the file and function layout.
@@ -1453,7 +1454,7 @@ func TestTransportLogWriterEmitsNotify(t *testing.T) {
 - [ ] **Step 6: Test + build**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./pkg/piext/... && go build ./...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./pkg/piext/... && go build ./...
 ```
 
 Expected: PASS.
@@ -1461,7 +1462,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(piext): Log() funnels through log.append when transport is active"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(piext): Log() funnels through log.append when transport is active"
 ```
 
 ---
@@ -1514,7 +1515,7 @@ type ExtensionSetLabelMsg struct {
 }
 ```
 
-Ensure imports include `"github.com/dimetron/pi-go/pkg/piapi"`.
+Ensure imports include `"github.com/pizzaface/go-pi/pkg/piapi"`.
 
 - [ ] **Step 2: Create the TUI session bridge (messaging half)**
 
@@ -1530,8 +1531,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // tuiSessionBridge implements api.SessionBridge for an interactive TUI.
@@ -1618,7 +1619,7 @@ var _ api.SessionBridge = (*tuiSessionBridge)(nil)
 Search for where session titles are written today:
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -n "SetTitle\|Title string" internal/agent/
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -n "SetTitle\|Title string" internal/agent/
 ```
 
 If no `SetTitle` exists, add one to `internal/agent/agent.go`:
@@ -1739,7 +1740,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestTUISessionBridge_AppendEntryDispatches(t *testing.T) {
@@ -1829,7 +1830,7 @@ func newCapturingProgram(t *testing.T) (programSender, func() []tea.Msg) {
 - [ ] **Step 6: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/tui/... -run "SessionBridge" -short
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/tui/... -run "SessionBridge" -short
 ```
 
 Expected: PASS.
@@ -1837,7 +1838,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(tui): tuiSessionBridge messaging + tea-message dispatch"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(tui): tuiSessionBridge messaging + tea-message dispatch"
 ```
 
 ---
@@ -2117,7 +2118,7 @@ Add `"context"` and `"time"` imports.
 - [ ] **Step 5: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/tui/... -run "SessionBridge" -short
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/tui/... -run "SessionBridge" -short
 ```
 
 Expected: PASS.
@@ -2125,7 +2126,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(tui): tuiSessionBridge session-control (fork, navigate, switch, new, wait-idle, reload)"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(tui): tuiSessionBridge session-control (fork, navigate, switch, new, wait-idle, reload)"
 ```
 
 ---
@@ -2248,7 +2249,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestExtensionToolStreamMsgUpdatesRow(t *testing.T) {
@@ -2281,7 +2282,7 @@ func TestExtensionToolStreamMsgUpdatesRow(t *testing.T) {
 - [ ] **Step 5: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/tui/... -run "ToolStream" -short
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/tui/... -run "ToolStream" -short
 ```
 
 Expected: PASS.
@@ -2289,7 +2290,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(tui): streaming tool-update rows in ToolDisplayModel"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(tui): streaming tool-update rows in ToolDisplayModel"
 ```
 
 ---
@@ -2541,7 +2542,7 @@ func TestExtensionLogFile_TruncatesDeepFields(t *testing.T) {
 - [ ] **Step 5: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/tui/... -run "ExtensionLog" -short
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/tui/... -run "ExtensionLog" -short
 ```
 
 Expected: PASS (rotation test may take a few seconds).
@@ -2549,7 +2550,7 @@ Expected: PASS (rotation test may take a few seconds).
 - [ ] **Step 6: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(tui): extension log sink with size-based rotation"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(tui): extension log sink with size-based rotation"
 ```
 
 ---
@@ -2575,12 +2576,12 @@ import (
 	"os"
 	"sync"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // cliSessionBridge is the non-interactive implementation of
-// api.SessionBridge used when pi-go runs in CLI mode (piped input,
+// api.SessionBridge used when go-pi runs in CLI mode (piped input,
 // scripted flows). Messaging ops emit to stderr; session-control ops
 // return ErrSessionControlUnsupportedInCLI.
 type cliSessionBridge struct {
@@ -2706,7 +2707,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestCLISessionBridge_ForkReturnsUnsupported(t *testing.T) {
@@ -2746,7 +2747,7 @@ func TestCLISessionBridge_ReloadCallsReloadFn(t *testing.T) {
 - [ ] **Step 3: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/cli/...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/cli/...
 ```
 
 Expected: PASS.
@@ -2754,7 +2755,7 @@ Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add internal/cli/session_bridge.go internal/cli/session_bridge_test.go && rtk git commit -m "feat(cli): headless cliSessionBridge"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add internal/cli/session_bridge.go internal/cli/session_bridge_test.go && rtk git commit -m "feat(cli): headless cliSessionBridge"
 ```
 
 ---
@@ -2769,7 +2770,7 @@ cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add internal/cli/session_
 - [ ] **Step 1: Locate the metadata struct and its TOML parser**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -n "requested_capabilities\|type Metadata" internal/extension/loader/
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -n "requested_capabilities\|type Metadata" internal/extension/loader/
 ```
 
 Note the files for Steps 2-3.
@@ -2902,7 +2903,7 @@ command = "x"
 - [ ] **Step 5: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/extension/loader/
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/extension/loader/
 ```
 
 Expected: PASS.
@@ -2910,7 +2911,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(extension/loader): parse [[hooks]] blocks with validation"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(extension/loader): parse [[hooks]] blocks with validation"
 ```
 
 ---
@@ -3133,10 +3134,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func TestRunLifecycleHooks_FiresInOrder(t *testing.T) {
@@ -3218,7 +3219,7 @@ func TestRunLifecycleHooks_BeforeTurnAppendsEntry(t *testing.T) {
 - [ ] **Step 6: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/extension/ -run "RunLifecycleHooks"
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/extension/ -run "RunLifecycleHooks"
 ```
 
 Expected: PASS.
@@ -3226,7 +3227,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(extension): real RunLifecycleHooks with aggregation from pi.toml [[hooks]]"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(extension): real RunLifecycleHooks with aggregation from pi.toml [[hooks]]"
 ```
 
 ---
@@ -3274,7 +3275,7 @@ Same pattern in `handleResumeCommand` (reason `"resume"`) and `handleForkCommand
 
 Add `m.cfg.Runtime *extension.Runtime` to the TUI config struct if not already present; wire it in Task 16.
 
-Import `"github.com/dimetron/pi-go/internal/extension"` and use the exported constant.
+Import `"github.com/pizzaface/go-pi/internal/extension"` and use the exported constant.
 
 - [ ] **Step 3: Fire before_turn / after_turn in the agent loop**
 
@@ -3397,7 +3398,7 @@ func TestRunLifecycleHooks_SessionStartReceivesReason(t *testing.T) {
 - [ ] **Step 6: Build + test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/extension/... ./internal/tui/...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/extension/... ./internal/tui/...
 ```
 
 Expected: PASS.
@@ -3405,7 +3406,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat(extension): fire lifecycle hooks at startup/session_start/before-after-turn/shutdown"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat(extension): fire lifecycle hooks at startup/session_start/before-after-turn/shutdown"
 ```
 
 ---
@@ -3422,7 +3423,7 @@ cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit 
 Find where `extension.BuildRuntime` is called for the TUI (likely `internal/tui/tui.go` or `cmd/server/main.go`). Before the call:
 
 ```go
-logPath := filepath.Join(userHome, ".pi-go", "logs", "extensions.log")
+logPath := filepath.Join(userHome, ".go-pi", "logs", "extensions.log")
 bridge := newTUISessionBridge(program, logPath)
 cfg := extension.RuntimeConfig{
 	...existing fields...,
@@ -3438,7 +3439,7 @@ Store `bridge` on the model for later reference (e.g., `m.cfg.Bridge = bridge`),
 In CLI entrypoint (`internal/cli/cli.go` or `interactive.go`), before `BuildRuntime`:
 
 ```go
-logPath := filepath.Join(userHome, ".pi-go", "logs", "extensions.log")
+logPath := filepath.Join(userHome, ".go-pi", "logs", "extensions.log")
 bridge := NewSessionBridge(os.Stderr, logPath, nil)
 cfg := extension.RuntimeConfig{
 	...existing fields...,
@@ -3460,7 +3461,7 @@ handler := extapi.NewHostedHandler(rt.Manager, reg, rt.Bridge)
 - [ ] **Step 4: Run the E2E suite to verify end-to-end wiring**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./... && go test ./internal/extension/... ./internal/cli/... ./internal/tui/... -short
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./... && go test ./internal/extension/... ./internal/cli/... ./internal/tui/... -short
 ```
 
 Expected: PASS.
@@ -3468,7 +3469,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "feat: wire SessionBridge (TUI and CLI) through BuildRuntime and HostedHandler"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "feat: wire SessionBridge (TUI and CLI) through BuildRuntime and HostedHandler"
 ```
 
 ---
@@ -3521,9 +3522,9 @@ import (
 	"testing"
 	"time"
 
-	extapi "github.com/dimetron/pi-go/internal/extension/api"
-	testbridge "github.com/dimetron/pi-go/internal/extension/api/testing"
-	"github.com/dimetron/pi-go/internal/extension/host"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
+	testbridge "github.com/pizzaface/go-pi/internal/extension/api/testing"
+	"github.com/pizzaface/go-pi/internal/extension/host"
 )
 
 func TestE2E_HostedGo_Spec5RoundTrip(t *testing.T) {
@@ -3540,7 +3541,7 @@ func TestE2E_HostedGo_Spec5RoundTrip(t *testing.T) {
 	}
 
 	tmp := t.TempDir()
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	_ = os.MkdirAll(extsDir, 0755)
 	target := filepath.Join(extsDir, "hosted-hello-go")
 	if err := os.Symlink(exampleDir, target); err != nil {
@@ -3605,7 +3606,7 @@ func TestE2E_HostedGo_Spec5RoundTrip(t *testing.T) {
 - [ ] **Step 3: Run the E2E test**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./internal/extension/ -run TestE2E_HostedGo_Spec5 -count=1 -v -timeout 60s
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./internal/extension/ -run TestE2E_HostedGo_Spec5 -count=1 -v -timeout 60s
 ```
 
 Expected: PASS.
@@ -3613,7 +3614,7 @@ Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add -u && rtk git commit -m "test(extensions): E2E spec #5 round trip through hosted-hello-go"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add -u && rtk git commit -m "test(extensions): E2E spec #5 round trip through hosted-hello-go"
 ```
 
 ---
@@ -3676,7 +3677,9 @@ Declaring any `[[hooks]]` entry requires the `hooks.register` capability. `criti
 
 ### Streaming & logs
 
-Partial `ToolResult` updates from `onUpdate(partial)` callbacks reach the TUI tool-display panel and the trace log. Extension log writes via `piext.Log()` — and direct `log.append` calls — stream to the TUI trace panel and `~/.pi-go/logs/extensions.log` (rotated at 10 MB, last 3 retained).
+Partial `ToolResult` updates from `onUpdate(partial)` callbacks reach the TUI tool-display panel and the trace log.
+Extension log writes via `piext.Log()` — and direct `log.append` calls — stream to the TUI trace panel and
+`~/.go-pi/logs/extensions.log` (rotated at 10 MB, last 3 retained).
 
 ### Deprecations
 
@@ -3686,7 +3689,7 @@ Direct invocation of the legacy JSON-RPC method names `pi.extension/tool_update`
 - [ ] **Step 2: Commit**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add docs/extensions.md && rtk git commit -m "docs(extensions): spec #5 session/UI, lifecycle hooks, deprecations"
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk git add docs/extensions.md && rtk git commit -m "docs(extensions): spec #5 session/UI, lifecycle hooks, deprecations"
 ```
 
 ---
@@ -3698,7 +3701,7 @@ cd C:/Users/Jordan/Documents/Projects/pi-go && rtk git add docs/extensions.md &&
 - [ ] **Step 1: Verify full build**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go build ./...
+cd C:/Users/Jordan/Documents/Projects/go-pi && go build ./...
 ```
 
 Expected: exit 0.
@@ -3706,7 +3709,7 @@ Expected: exit 0.
 - [ ] **Step 2: Run full test suite**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./... -short -timeout 120s
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./... -short -timeout 120s
 ```
 
 Expected: PASS.
@@ -3714,7 +3717,7 @@ Expected: PASS.
 - [ ] **Step 3: Run E2E tests**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && go test ./internal/extension/ -run TestE2E -count=1 -timeout 180s
+cd C:/Users/Jordan/Documents/Projects/go-pi && go test ./internal/extension/ -run TestE2E -count=1 -timeout 180s
 ```
 
 Expected: PASS (TS test may skip if Node absent).
@@ -3722,7 +3725,7 @@ Expected: PASS (TS test may skip if Node absent).
 - [ ] **Step 4: Grep for remaining spec #5 stubs**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -n 'Spec: "#5"' .
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -n 'Spec: "#5"' .
 ```
 
 Expected: zero matches. Any match is a missed stub — resolve before finalizing.
@@ -3730,7 +3733,7 @@ Expected: zero matches. Any match is a missed stub — resolve before finalizing
 - [ ] **Step 5: Grep for stub comments removed**
 
 ```bash
-cd C:/Users/Jordan/Documents/Projects/pi-go && rtk grep -n "spec #5 stub" .
+cd C:/Users/Jordan/Documents/Projects/go-pi && rtk grep -n "spec #5 stub" .
 ```
 
 Expected: no Go source matches (docs may still reference spec #5 positively).

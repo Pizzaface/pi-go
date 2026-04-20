@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 func newTestAPI(granted []GrantedService) (*rpcAPI, *Transport) {

@@ -396,7 +396,8 @@ Separate state into two categories.
 ### Durable state
 
 Durable extension state should live in session storage under a dedicated namespace, for example:
-- `~/.pi-go/sessions/<session-id>/state/extensions/<extension-id>.json`
+
+- `~/.go-pi/sessions/<session-id>/state/extensions/<extension-id>.json`
 
 If branch-specific state is needed, the stored value should include branch-keyed data rather than inventing a second storage layout immediately.
 
@@ -450,7 +451,8 @@ Extensions may request capabilities such as:
 Basic permission grants must exist in the first implementation slice, not later.
 
 Store extension approval state in an app-owned file, for example:
-- `~/.pi-go/extensions/approvals.json`
+
+- `~/.go-pi/extensions/approvals.json`
 
 This file records, by extension id and version/range as needed:
 - trust class

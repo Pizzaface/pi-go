@@ -63,7 +63,7 @@ Hosted extensions run over stdio JSON-RPC and are permission-gated through appro
 
 Hosted extensions are not implicitly trusted.
 
-- Approval source: `~/.pi-go/extensions/approvals.json`
+- Approval source: `~/.go-pi/extensions/approvals.json`
 - Trust class + capability grants are checked before registration/use
 - Intercept-style behavior (`tools.intercept`) is denied by default for hosted third-party extensions
 

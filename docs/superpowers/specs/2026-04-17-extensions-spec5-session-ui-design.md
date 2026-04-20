@@ -251,7 +251,8 @@ type LogParams struct {
 `bridge.AppendExtensionLog(extID, level, message, fields)`:
 
 1. Appends to `TraceLog` as trace kind `extension-log`, colored by level.
-2. Writes a JSONL line `{ts, ext, level, message, fields}` to `~/.pi-go/logs/extensions.log`. File opened lazily; rotated at 10 MB (keep last 3 files).
+2. Writes a JSONL line `{ts, ext, level, message, fields}` to `~/.go-pi/logs/extensions.log`. File opened lazily;
+   rotated at 10 MB (keep last 3 files).
 
 Sanitization:
 
@@ -278,7 +279,8 @@ All are value types implementing `error`; callers can `errors.Is` them against e
 
 ## Deviations from the source design shape
 
-1. `Fork(entryID)` uses `entryID` as a session ID, not an in-session entry ID. pi-go has no per-entry IDs surfaced to extensions.
+1. `Fork(entryID)` uses `entryID` as a session ID, not an in-session entry ID. go-pi has no per-entry IDs surfaced to
+   extensions.
 2. `NavigateTree(targetID)` switches session branches. Same reason.
 3. `SwitchSession(sessionPath)` interprets the path as a session ID with a tolerated `sessions/` prefix.
 4. `NewSessionResult` / `ForkResult` / `NavigateResult` / `SwitchResult` each gain additive ID fields. No breaking change to existing consumers (none exist in production).

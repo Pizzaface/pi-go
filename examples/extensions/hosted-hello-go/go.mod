@@ -1,10 +1,10 @@
-module github.com/dimetron/pi-go/examples/extensions/hosted-hello-go
+module github.com/pizzaface/go-pi/examples/extensions/hosted-hello-go
 
 go 1.22
 
 require (
-	github.com/dimetron/pi-go/pkg/piapi v0.0.0
-	github.com/dimetron/pi-go/pkg/piext v0.0.0
+	github.com/pizzaface/go-pi/pkg/piapi v0.0.0
+	github.com/pizzaface/go-pi/pkg/piext v0.0.0
 )
 
 require (
@@ -17,6 +17,6 @@ require (
 )
 
 replace (
-	github.com/dimetron/pi-go/pkg/piapi => ../../../pkg/piapi
-	github.com/dimetron/pi-go/pkg/piext => ../../../pkg/piext
+	github.com/pizzaface/go-pi/pkg/piapi => ../../../pkg/piapi
+	github.com/pizzaface/go-pi/pkg/piext => ../../../pkg/piext
 )

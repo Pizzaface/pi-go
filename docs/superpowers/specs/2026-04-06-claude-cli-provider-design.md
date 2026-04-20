@@ -206,7 +206,7 @@ Note: `findClaudeBinary()` checks `$CLAUDE_CLI_PATH` env var, then
 
 ### Configuration
 
-In `~/.pi-go/config.json`:
+In `~/.go-pi/config.json`:
 
 ```json
 {

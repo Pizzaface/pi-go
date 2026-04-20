@@ -11,8 +11,8 @@ func TestDiscoverResourceDirs_IncludesPackagesAndProjectOverrides(t *testing.T) 
 	project := t.TempDir()
 	setTestHome(t, home)
 
-	globalPkg := filepath.Join(home, ".pi-go", "packages", "alpha")
-	projectPkg := filepath.Join(project, ".pi-go", "packages", "beta")
+	globalPkg := filepath.Join(home, ".go-pi", "packages", "alpha")
+	projectPkg := filepath.Join(project, ".go-pi", "packages", "beta")
 	mustMkdirAll(t, filepath.Join(globalPkg, "extensions"))
 	mustMkdirAll(t, filepath.Join(globalPkg, "skills"))
 	mustMkdirAll(t, filepath.Join(globalPkg, "prompts"))
@@ -26,17 +26,17 @@ func TestDiscoverResourceDirs_IncludesPackagesAndProjectOverrides(t *testing.T) 
 
 	dirs := DiscoverResourceDirs(project)
 
-	assertContainsPath(t, dirs.ExtensionDirs, filepath.Join(home, ".pi-go", "packages", "alpha", "extensions"))
-	assertContainsPath(t, dirs.ExtensionDirs, filepath.Join(project, ".pi-go", "packages", "beta", "extensions"))
+	assertContainsPath(t, dirs.ExtensionDirs, filepath.Join(home, ".go-pi", "packages", "alpha", "extensions"))
+	assertContainsPath(t, dirs.ExtensionDirs, filepath.Join(project, ".go-pi", "packages", "beta", "extensions"))
 	assertContainsPath(t, dirs.SkillDirs, filepath.Join(home, ".agents", "skills"))
 	assertContainsPath(t, dirs.SkillDirs, filepath.Join(project, ".agents", "skills"))
 	assertContainsPath(t, dirs.SkillDirs, filepath.Join(project, ".claude", "skills"))
-	assertContainsPath(t, dirs.PromptDirs, filepath.Join(project, ".pi-go", "prompts"))
-	assertContainsPath(t, dirs.ThemeDirs, filepath.Join(home, ".pi-go", "themes"))
-	assertContainsPath(t, dirs.ModelDirs, filepath.Join(project, ".pi-go", "models"))
+	assertContainsPath(t, dirs.PromptDirs, filepath.Join(project, ".go-pi", "prompts"))
+	assertContainsPath(t, dirs.ThemeDirs, filepath.Join(home, ".go-pi", "themes"))
+	assertContainsPath(t, dirs.ModelDirs, filepath.Join(project, ".go-pi", "models"))
 
-	globalLoose := indexOf(dirs.ExtensionDirs, filepath.Join(home, ".pi-go", "extensions"))
-	projectLoose := indexOf(dirs.ExtensionDirs, filepath.Join(project, ".pi-go", "extensions"))
+	globalLoose := indexOf(dirs.ExtensionDirs, filepath.Join(home, ".go-pi", "extensions"))
+	projectLoose := indexOf(dirs.ExtensionDirs, filepath.Join(project, ".go-pi", "extensions"))
 	if globalLoose == -1 || projectLoose == -1 || globalLoose >= projectLoose {
 		t.Fatalf("expected project extension dir after global for override order, got %v", dirs.ExtensionDirs)
 	}
@@ -48,10 +48,10 @@ func TestDiscoverResourceDirs_UsesProjectRootFromNestedDir(t *testing.T) {
 	nested := filepath.Join(project, "sub", "dir")
 	setTestHome(t, home)
 	mustMkdirAll(t, nested)
-	mustMkdirAll(t, filepath.Join(project, ".pi-go", "models"))
+	mustMkdirAll(t, filepath.Join(project, ".go-pi", "models"))
 
 	dirs := DiscoverResourceDirs(nested)
-	assertContainsPath(t, dirs.ModelDirs, filepath.Join(project, ".pi-go", "models"))
+	assertContainsPath(t, dirs.ModelDirs, filepath.Join(project, ".go-pi", "models"))
 }
 
 func TestLoadPromptTemplates_ProjectOverridesGlobal(t *testing.T) {

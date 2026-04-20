@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/lifecycle"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 )
 
 // extensionPanelState holds the /extensions overlay. Populated from

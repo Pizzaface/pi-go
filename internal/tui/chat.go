@@ -71,15 +71,15 @@ type agentLineRange struct {
 
 // ChatModel manages the conversation message display, scrolling, and markdown rendering.
 type ChatModel struct {
-	Messages         []message
-	Scroll           int // scroll offset from bottom
-	Streaming        string
-	Thinking         string
-	Renderer         *glamour.TermRenderer
-	TraceLog         []traceEntry
-	Width            int
-	ToolDisplay      ToolDisplayModel
-	RenderTimeout    time.Duration
+	Messages      []message
+	Scroll        int // scroll offset from bottom
+	Streaming     string
+	Thinking      string
+	Renderer      *glamour.TermRenderer
+	TraceLog      []traceEntry
+	Width         int
+	ToolDisplay   ToolDisplayModel
+	RenderTimeout time.Duration
 	// AgentLineRanges tracks rendered line ranges for Agent tool accordions.
 	// Populated by RenderMessages(), consumed by mouse click handler.
 	AgentLineRanges []agentLineRange

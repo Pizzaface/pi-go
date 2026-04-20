@@ -11,7 +11,7 @@ Each session stores:
 - branch state (`branches.json`)
 - per-branch event logs (`branches/<name>/events.jsonl`)
 
-Sessions live under `~/.pi-go/sessions/`.
+Sessions live under `~/.go-pi/sessions/`.
 
 ## TUI commands
 

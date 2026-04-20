@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // newTestService spins up a real Manager + Gate pointed at a temp
@@ -323,7 +323,7 @@ func TestService_RestartStopsThenStarts(t *testing.T) {
 func TestService_ReloadAddsNewDiscoveries(t *testing.T) {
 	svc, mgr, _ := newTestService(t)
 	impl := svc.(*service)
-	dir := filepath.Join(impl.workDir, ".pi-go", "extensions", "new-ext")
+	dir := filepath.Join(impl.workDir, ".go-pi", "extensions", "new-ext")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}

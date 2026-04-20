@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/hostproto"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // TestE2E_CompiledInBypassesGate asserts that a compiled-in extension
@@ -48,7 +48,7 @@ func TestE2E_HostedWithoutApprovalPending(t *testing.T) {
 	}
 
 	tmp := t.TempDir()
-	extsDir := filepath.Join(tmp, ".pi-go", "extensions")
+	extsDir := filepath.Join(tmp, ".go-pi", "extensions")
 	if err := os.MkdirAll(extsDir, 0755); err != nil {
 		t.Fatal(err)
 	}

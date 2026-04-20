@@ -8,19 +8,20 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/dimetron/pi-go/pkg/piapi"
+
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 type piTOML struct {
-	Name                 string       `toml:"name"`
-	Version              string       `toml:"version"`
-	Description          string       `toml:"description"`
-	Prompt               string       `toml:"prompt"`
-	Runtime              string       `toml:"runtime"`
-	Command              []string     `toml:"command"`
-	Entry                string       `toml:"entry"`
-	RequestedCapabilities []string    `toml:"requested_capabilities"`
-	Hooks                []HookConfig `toml:"hooks"`
+	Name                  string       `toml:"name"`
+	Version               string       `toml:"version"`
+	Description           string       `toml:"description"`
+	Prompt                string       `toml:"prompt"`
+	Runtime               string       `toml:"runtime"`
+	Command               []string     `toml:"command"`
+	Entry                 string       `toml:"entry"`
+	RequestedCapabilities []string     `toml:"requested_capabilities"`
+	Hooks                 []HookConfig `toml:"hooks"`
 }
 
 // HookConfig is a type alias for piapi.HookConfig so that existing loader
@@ -28,9 +29,9 @@ type piTOML struct {
 type HookConfig = piapi.HookConfig
 
 type packageJSONPi struct {
-	Entry                string   `json:"entry"`
-	Description          string   `json:"description"`
-	Prompt               string   `json:"prompt"`
+	Entry                 string   `json:"entry"`
+	Description           string   `json:"description"`
+	Prompt                string   `json:"prompt"`
 	RequestedCapabilities []string `json:"requested_capabilities"`
 }
 

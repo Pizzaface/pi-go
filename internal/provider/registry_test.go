@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dimetron/pi-go/internal/auth"
+	"github.com/pizzaface/go-pi/internal/auth"
 )
 
 func TestRegistryBuiltinOpenAIBaseURLHasV1(t *testing.T) {

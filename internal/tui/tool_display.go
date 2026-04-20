@@ -14,7 +14,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 // spinnerFrames are the braille-dot frames for the Agent active spinner.

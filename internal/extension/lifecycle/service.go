@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/internal/extension/host"
-	"github.com/dimetron/pi-go/internal/extension/loader"
+	"github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/loader"
 )
 
 // Service is the programmatic surface for extension management. See

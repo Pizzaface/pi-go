@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/adk/tool"
 
-	"github.com/dimetron/pi-go/internal/memory"
+	"github.com/pizzaface/go-pi/internal/memory"
 )
 
 // MemSearchInput defines parameters for the mem-search tool.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runExtensionHost } from "./runtime.js";
+import {runExtensionHost} from "./runtime.js";
 
 interface ParsedArgs {
   entry?: string;
@@ -20,7 +20,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.entry) {
-  process.stderr.write("pi-go-extension-host: --entry is required\n");
+  process.stderr.write("go-pi-extension-host: --entry is required\n");
   process.exit(2);
 }
 
@@ -33,6 +33,6 @@ function deriveName(entry: string): string {
 }
 
 runExtensionHost({ entry: args.entry, name, cwd }).catch((err) => {
-  process.stderr.write(`pi-go-extension-host: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`go-pi-extension-host: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

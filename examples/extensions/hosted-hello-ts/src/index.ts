@@ -1,5 +1,5 @@
-import type { ExtensionAPI, SessionStartEvent } from "@pi-go/extension-sdk";
-import { EventNames, Type } from "@pi-go/extension-sdk";
+import type {ExtensionAPI, SessionStartEvent} from "@go-pi/extension-sdk";
+import {EventNames, Type} from "@go-pi/extension-sdk";
 
 export default async function register(pi: ExtensionAPI): Promise<void> {
   pi.on(EventNames.SessionStart, (evt: unknown) => {

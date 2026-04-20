@@ -21,13 +21,13 @@ type HistoryEntry struct {
 	Mentions []string `json:"mentions,omitempty"`
 }
 
-// historyDir returns the path to ~/.pi-go/.
+// historyDir returns the path to ~/.go-pi/.
 func historyDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".pi-go")
+	return filepath.Join(home, ".go-pi")
 }
 
 // historyPathJSON returns the path to the JSONL history file.

@@ -9,8 +9,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dimetron/pi-go/internal/extension/api"
-	"github.com/dimetron/pi-go/pkg/piapi"
+	"github.com/pizzaface/go-pi/internal/extension/api"
+	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
 var errBridgeNotReady = errors.New("tui session bridge not attached to a running program")

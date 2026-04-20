@@ -1,7 +1,7 @@
 package extension
 
 import (
-	"github.com/dimetron/pi-go/internal/extension/loader"
+	"github.com/pizzaface/go-pi/internal/extension/loader"
 )
 
 // SlashCommand is re-exported from the loader package so legacy TUI
