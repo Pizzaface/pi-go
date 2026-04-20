@@ -18,6 +18,13 @@ const (
 	ErrCodeToolNameCollision  = -32099
 )
 
+// Error codes (v2.2).
+const (
+	ErrCodeDialogCancelled      = -32094
+	ErrCodeSigilPrefixCollision = -32095
+	ErrCodeCommandNameCollision = -32096
+)
+
 // Method names.
 const (
 	MethodHandshake      = "pi.extension/handshake"
@@ -145,6 +152,38 @@ const (
 	MethodExtReady        = "ready"
 )
 
+// Method names for v2.2 services.
+const (
+	// state
+	MethodStateGet    = "get"
+	MethodStateSet    = "set"
+	MethodStatePatch  = "patch"
+	MethodStateDelete = "delete"
+
+	// commands
+	MethodCommandsRegister   = "register"
+	MethodCommandsUnregister = "unregister"
+	MethodCommandsList       = "list"
+
+	// ui
+	MethodUIStatus      = "status"
+	MethodUIClearStatus = "clear_status"
+	MethodUIWidget      = "widget"
+	MethodUIClearWidget = "clear_widget"
+	MethodUINotify      = "notify"
+	MethodUIDialog      = "dialog"
+
+	// sigils
+	MethodSigilsRegister   = "register"
+	MethodSigilsUnregister = "unregister"
+	MethodSigilsList       = "list"
+
+	// session metadata (added to existing session service)
+	MethodSessionGetMetadata = "get_metadata"
+	MethodSessionSetName     = "set_name"
+	MethodSessionSetTags     = "set_tags"
+)
+
 // Payload shapes for the new services.
 
 type SessionAppendEntryParams struct {
@@ -228,4 +267,184 @@ type LogParams struct {
 	Message string         `json:"message"`
 	Fields  map[string]any `json:"fields,omitempty"`
 	Ts      string         `json:"ts,omitempty"`
+}
+
+// Payload structs for v2.2 services.
+
+// state
+
+type StateGetResult struct {
+	Value  json.RawMessage `json:"value,omitempty"`
+	Exists bool            `json:"exists"`
+}
+
+type StateSetParams struct {
+	Value json.RawMessage `json:"value"`
+}
+
+type StatePatchParams struct {
+	Patch json.RawMessage `json:"patch"`
+}
+
+// commands
+
+type CommandsRegisterParams struct {
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+	ArgHint     string `json:"arg_hint,omitempty"`
+}
+
+type CommandsUnregisterParams struct {
+	Name string `json:"name"`
+}
+
+type CommandEntry struct {
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+	ArgHint     string `json:"arg_hint,omitempty"`
+	Owner       string `json:"owner"`
+	Source      string `json:"source"` // "manifest" | "runtime"
+}
+
+type CommandsListResult struct {
+	Commands []CommandEntry `json:"commands"`
+}
+
+type CommandsInvokeEvent struct {
+	Name    string `json:"name"`
+	Args    string `json:"args"`
+	EntryID string `json:"entry_id,omitempty"`
+}
+
+type CommandsInvokeResult struct {
+	Handled bool   `json:"handled"`
+	Message string `json:"message,omitempty"`
+	Silent  bool   `json:"silent,omitempty"`
+}
+
+// ui
+
+type UIStatusParams struct {
+	Text  string `json:"text"`
+	Style string `json:"style,omitempty"`
+}
+
+type Position struct {
+	Mode    string `json:"mode,omitempty"`   // static|relative|absolute|sticky|fixed
+	Anchor  string `json:"anchor,omitempty"` // top|bottom|left|right
+	OffsetX int    `json:"offset_x,omitempty"`
+	OffsetY int    `json:"offset_y,omitempty"`
+	Z       int    `json:"z,omitempty"`
+}
+
+type UIWidgetParams struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title,omitempty"`
+	Lines    []string `json:"lines"`
+	Style    string   `json:"style,omitempty"`
+	Position Position `json:"position"`
+}
+
+type UIClearWidgetParams struct {
+	ID string `json:"id"`
+}
+
+type UINotifyParams struct {
+	Level     string `json:"level"`
+	Text      string `json:"text"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"`
+}
+
+type UIDialogField struct {
+	Name    string   `json:"name"`
+	Kind    string   `json:"kind"` // text|password|choice|bool
+	Label   string   `json:"label,omitempty"`
+	Default string   `json:"default,omitempty"`
+	Choices []string `json:"choices,omitempty"`
+}
+
+type UIDialogButton struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Style string `json:"style,omitempty"`
+}
+
+type UIDialogParams struct {
+	Title   string           `json:"title"`
+	Fields  []UIDialogField  `json:"fields,omitempty"`
+	Buttons []UIDialogButton `json:"buttons"`
+}
+
+type UIDialogResult struct {
+	DialogID string `json:"dialog_id"`
+}
+
+type UIDialogResolvedEvent struct {
+	DialogID  string         `json:"dialog_id"`
+	Values    map[string]any `json:"values,omitempty"`
+	Cancelled bool           `json:"cancelled"`
+	ButtonID  string         `json:"button_id,omitempty"`
+}
+
+// sigils
+
+type SigilsRegisterParams struct {
+	Prefixes []string `json:"prefixes"`
+}
+
+type SigilsUnregisterParams struct {
+	Prefixes []string `json:"prefixes"`
+}
+
+type SigilPrefixEntry struct {
+	Prefix string `json:"prefix"`
+	Owner  string `json:"owner"`
+}
+
+type SigilsListResult struct {
+	Prefixes []SigilPrefixEntry `json:"prefixes"`
+}
+
+type SigilResolveEvent struct {
+	Prefix  string `json:"prefix"`
+	ID      string `json:"id"`
+	Context string `json:"context,omitempty"`
+}
+
+type SigilResolveResult struct {
+	Display string         `json:"display"`
+	Style   string         `json:"style,omitempty"`
+	Hover   string         `json:"hover,omitempty"`
+	Actions []string       `json:"actions,omitempty"`
+	Meta    map[string]any `json:"meta,omitempty"`
+}
+
+type SigilActionEvent struct {
+	Prefix string `json:"prefix"`
+	ID     string `json:"id"`
+	Action string `json:"action"`
+}
+
+type SigilActionResult struct {
+	Handled bool `json:"handled"`
+}
+
+// session metadata
+
+type SessionGetMetadataResult struct {
+	Name      string   `json:"name,omitempty"`
+	Title     string   `json:"title,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	CreatedAt string   `json:"created_at,omitempty"` // RFC3339
+	UpdatedAt string   `json:"updated_at,omitempty"`
+}
+
+type SessionSetNameParams struct {
+	Name string `json:"name"`
+}
+
+type SessionSetTagsParams struct {
+	Tags []string `json:"tags"`
 }

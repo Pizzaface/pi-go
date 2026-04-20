@@ -22,7 +22,7 @@ func TestHandshakeRequest_RoundTrip(t *testing.T) {
 	if err := json.Unmarshal(b, &round); err != nil {
 		t.Fatal(err)
 	}
-	if round.ProtocolVersion != "2.1" {
+	if round.ProtocolVersion != "2.2" {
 		t.Fatalf("protocol_version lost in round trip: %q", round.ProtocolVersion)
 	}
 	if len(round.RequestedServices) != 1 {
