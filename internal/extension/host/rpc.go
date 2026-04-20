@@ -34,6 +34,27 @@ type RPCConn struct {
 
 	closeCbsMu sync.Mutex
 	closeCbs   []func()
+
+	// fakeCaller, when non-nil, redirects Call to an in-process stand-in.
+	// Exposed for tests; not for production use.
+	fakeCaller RPCCaller
+}
+
+// RPCCaller is the minimum surface an adapter uses: the same shape as
+// (*RPCConn).Call. Exposed as an interface so tests can inject a fake.
+type RPCCaller interface {
+	Call(ctx context.Context, method string, params any, result any) error
+}
+
+// NewRPCConnFromCaller wraps an RPCCaller in an RPCConn-compatible shell so
+// tests can pretend an extension is connected without running a subprocess.
+// Exposed for tests; not for production use.
+func NewRPCConnFromCaller(c RPCCaller) *RPCConn {
+	return &RPCConn{
+		pending:    map[int64]chan rpcResult{},
+		doneCh:     make(chan struct{}),
+		fakeCaller: c,
+	}
 }
 
 // OnClose registers a callback fired when the connection is closed. If the
@@ -92,6 +113,9 @@ func NewRPCConn(r io.Reader, w io.Writer, handler InboundHandler) *RPCConn {
 // Call sends a request and waits for the matching response. The result is
 // unmarshalled into the value pointed to by result (may be nil).
 func (c *RPCConn) Call(ctx context.Context, method string, params any, result any) error {
+	if c.fakeCaller != nil {
+		return c.fakeCaller.Call(ctx, method, params, result)
+	}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()

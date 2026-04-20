@@ -35,10 +35,3 @@ func (t *HostedToolset) Tools(_ agent.ReadonlyContext) ([]tool.Tool, error) {
 	return out, nil
 }
 
-// NewHostedToolAdapter: STUB — real implementation arrives in Task 5.
-// Returns (nil, nil) so Tools() filters it out; tests of the registry
-// mechanics still exercise snapshot semantics without depending on the
-// adapter. Task 5 removes this stub.
-func NewHostedToolAdapter(_ HostedToolEntry) (tool.Tool, error) {
-	return nil, nil
-}

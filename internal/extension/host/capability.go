@@ -117,6 +117,26 @@ func (g *Gate) Allowed(id, capability string, trust TrustClass) (bool, string) {
 	return false, fmt.Sprintf("capability %s not granted to %s", capability, id)
 }
 
+// NewGateInMemory builds a Gate from an inline approvals map without touching
+// disk. The grants map is keyed by extension id, then by service name, with
+// the value a list of method names; each (service, method) pair becomes a
+// "service.method" capability. Trust is currently unused by Allowed but is
+// accepted for symmetry with the on-disk gate and future extension metadata.
+// Exposed for tests; not for production use.
+func NewGateInMemory(grants map[string]map[string][]string, _ TrustClass) *Gate {
+	g := &Gate{data: approvalsFile{Extensions: map[string]*approvalsEntry{}}}
+	for id, svcs := range grants {
+		caps := []string{}
+		for s, methods := range svcs {
+			for _, m := range methods {
+				caps = append(caps, s+"."+m)
+			}
+		}
+		g.data.Extensions[id] = &approvalsEntry{Approved: true, GrantedCapabilities: caps}
+	}
+	return g
+}
+
 // Grants returns the sorted list of capabilities granted to the extension.
 // For TrustCompiledIn it returns the single-element sentinel {StarAll}.
 func (g *Gate) Grants(id string, trust TrustClass) []string {
