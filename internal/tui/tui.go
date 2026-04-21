@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/glamour"
 
 	"github.com/pizzaface/go-pi/internal/extension"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
 	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 	"github.com/pizzaface/go-pi/internal/provider"
 
@@ -52,6 +53,13 @@ type model struct {
 	// Session bridge used by extensions for session-control calls.
 	// Set during model construction; nil until wired by BuildRuntime (Task 16).
 	bridge *tuiSessionBridge
+
+	// Extension UI surface state (Task 18). Kept in maps keyed by extID so
+	// per-extension cleanup on close is trivial.
+	extensionStatuses       map[string]ExtensionStatusMsg
+	extensionWidgets        map[string]map[string]extapi.ExtensionWidget
+	extensionNotifications  []ExtensionNotifyMsg
+	pendingExtensionDialogs []ExtensionDialogMsg
 
 	// Agent state.
 	running bool

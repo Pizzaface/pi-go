@@ -240,15 +240,89 @@ func (b *tuiSessionBridge) AppendExtensionLog(extID, level, message string, fiel
 	return b.logFile.Write(extID, level, message, fields, ts)
 }
 
-// TODO: Task 18 — real implementation.
-func (b *tuiSessionBridge) SetExtensionStatus(string, string, string) error     { return nil }
-func (b *tuiSessionBridge) ClearExtensionStatus(string) error                   { return nil }
-func (b *tuiSessionBridge) SetExtensionWidget(string, api.ExtensionWidget) error { return nil }
-func (b *tuiSessionBridge) ClearExtensionWidget(string, string) error           { return nil }
-func (b *tuiSessionBridge) EnqueueNotify(string, string, string, int) error     { return nil }
-func (b *tuiSessionBridge) ShowDialog(string, api.DialogSpec) (string, error)   { return "", nil }
-func (b *tuiSessionBridge) GetSessionMetadata() api.SessionMetadata             { return api.SessionMetadata{} }
-func (b *tuiSessionBridge) SetSessionName(string) error                         { return nil }
-func (b *tuiSessionBridge) SetSessionTags([]string) error                       { return nil }
+func (b *tuiSessionBridge) SetExtensionStatus(extID, text, style string) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	(*p).Send(ExtensionStatusMsg{ExtID: extID, Text: text, Style: style})
+	return nil
+}
+
+func (b *tuiSessionBridge) ClearExtensionStatus(extID string) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	(*p).Send(ExtensionStatusMsg{ExtID: extID, Clear: true})
+	return nil
+}
+
+func (b *tuiSessionBridge) SetExtensionWidget(extID string, w api.ExtensionWidget) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	(*p).Send(ExtensionWidgetMsg{ExtID: extID, Widget: w})
+	return nil
+}
+
+func (b *tuiSessionBridge) ClearExtensionWidget(extID, widgetID string) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	(*p).Send(ExtensionWidgetMsg{ExtID: extID, ClearID: widgetID})
+	return nil
+}
+
+func (b *tuiSessionBridge) EnqueueNotify(extID, level, text string, timeoutMs int) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	(*p).Send(ExtensionNotifyMsg{ExtID: extID, Level: level, Text: text, TimeoutMs: timeoutMs})
+	return nil
+}
+
+func (b *tuiSessionBridge) ShowDialog(extID string, spec api.DialogSpec) (string, error) {
+	p := b.prog.Load()
+	if p == nil {
+		return "", errBridgeNotReady
+	}
+	(*p).Send(ExtensionDialogMsg{ExtID: extID, Spec: spec})
+	// Dialog ID is allocated by the UIService in the host; the bridge just renders.
+	return "", nil
+}
+
+func (b *tuiSessionBridge) GetSessionMetadata() api.SessionMetadata {
+	p := b.prog.Load()
+	if p == nil {
+		return api.SessionMetadata{}
+	}
+	done := make(chan api.SessionMetadata, 1)
+	(*p).Send(ExtensionGetMetadataReq{Done: done})
+	return <-done
+}
+
+func (b *tuiSessionBridge) SetSessionName(name string) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	done := make(chan error, 1)
+	(*p).Send(ExtensionSetNameReq{Name: name, Done: done})
+	return <-done
+}
+
+func (b *tuiSessionBridge) SetSessionTags(tags []string) error {
+	p := b.prog.Load()
+	if p == nil {
+		return errBridgeNotReady
+	}
+	done := make(chan error, 1)
+	(*p).Send(ExtensionSetTagsReq{Tags: tags, Done: done})
+	return <-done
+}
 
 var _ api.SessionBridge = (*tuiSessionBridge)(nil)

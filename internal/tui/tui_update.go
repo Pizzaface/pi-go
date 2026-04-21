@@ -8,8 +8,43 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/pizzaface/go-pi/internal/agent"
+	extapi "github.com/pizzaface/go-pi/internal/extension/api"
 	"github.com/pizzaface/go-pi/pkg/piapi"
 )
+
+// sessionMetadataSnapshot reads Meta for the current session via
+// SessionService and formats it as an extapi.SessionMetadata. Returns zero
+// value if the service is not yet wired.
+func (m *model) sessionMetadataSnapshot() extapi.SessionMetadata {
+	if m.cfg.SessionService == nil || m.cfg.SessionID == "" {
+		return extapi.SessionMetadata{}
+	}
+	meta, err := m.cfg.SessionService.GetMetadata(m.cfg.SessionID, agent.AppName, agent.DefaultUserID)
+	if err != nil {
+		return extapi.SessionMetadata{}
+	}
+	return extapi.SessionMetadata{
+		Name:      meta.Name,
+		Title:     meta.Title,
+		Tags:      meta.Tags,
+		CreatedAt: meta.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: meta.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func (m *model) setSessionName(name string) error {
+	if m.cfg.SessionService == nil || m.cfg.SessionID == "" {
+		return fmt.Errorf("session service not configured")
+	}
+	return m.cfg.SessionService.SetName(m.cfg.SessionID, agent.AppName, agent.DefaultUserID, name)
+}
+
+func (m *model) setSessionTags(tags []string) error {
+	if m.cfg.SessionService == nil || m.cfg.SessionID == "" {
+		return fmt.Errorf("session service not configured")
+	}
+	return m.cfg.SessionService.SetTags(m.cfg.SessionID, agent.AppName, agent.DefaultUserID, tags)
+}
 
 // spinnerTickMsg drives the Agent active spinner animation.
 type spinnerTickMsg time.Time
@@ -147,6 +182,55 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ExtensionReloadReq:
 		msg.Done <- m.reloadExtensions()
+		return m, nil
+
+	case ExtensionStatusMsg:
+		if m.extensionStatuses == nil {
+			m.extensionStatuses = map[string]ExtensionStatusMsg{}
+		}
+		if msg.Clear {
+			delete(m.extensionStatuses, msg.ExtID)
+		} else {
+			m.extensionStatuses[msg.ExtID] = msg
+		}
+		return m, nil
+
+	case ExtensionWidgetMsg:
+		if m.extensionWidgets == nil {
+			m.extensionWidgets = map[string]map[string]extapi.ExtensionWidget{}
+		}
+		if msg.ClearID != "" {
+			if bucket := m.extensionWidgets[msg.ExtID]; bucket != nil {
+				delete(bucket, msg.ClearID)
+			}
+		} else {
+			bucket := m.extensionWidgets[msg.ExtID]
+			if bucket == nil {
+				bucket = map[string]extapi.ExtensionWidget{}
+				m.extensionWidgets[msg.ExtID] = bucket
+			}
+			bucket[msg.Widget.ID] = msg.Widget
+		}
+		return m, nil
+
+	case ExtensionNotifyMsg:
+		m.extensionNotifications = append(m.extensionNotifications, msg)
+		return m, nil
+
+	case ExtensionDialogMsg:
+		m.pendingExtensionDialogs = append(m.pendingExtensionDialogs, msg)
+		return m, nil
+
+	case ExtensionGetMetadataReq:
+		msg.Done <- m.sessionMetadataSnapshot()
+		return m, nil
+
+	case ExtensionSetNameReq:
+		msg.Done <- m.setSessionName(msg.Name)
+		return m, nil
+
+	case ExtensionSetTagsReq:
+		msg.Done <- m.setSessionTags(msg.Tags)
 		return m, nil
 
 	case ExtensionLogMsg:

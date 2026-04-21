@@ -242,3 +242,44 @@ type ExtensionSwitchReply struct {
 type ExtensionReloadReq struct {
 	Done chan error
 }
+
+// Extension UI messages dispatched through the tea program as fire-and-forget.
+
+type ExtensionStatusMsg struct {
+	ExtID string
+	Text  string
+	Style string
+	Clear bool
+}
+
+type ExtensionWidgetMsg struct {
+	ExtID   string
+	ClearID string // if non-empty: clear the widget with this ID
+	Widget  extapi.ExtensionWidget
+}
+
+type ExtensionNotifyMsg struct {
+	ExtID     string
+	Level     string
+	Text      string
+	TimeoutMs int
+}
+
+type ExtensionDialogMsg struct {
+	ExtID string
+	Spec  extapi.DialogSpec
+}
+
+// Extension session-metadata request/reply messages.
+
+type ExtensionGetMetadataReq struct {
+	Done chan extapi.SessionMetadata
+}
+type ExtensionSetNameReq struct {
+	Name string
+	Done chan error
+}
+type ExtensionSetTagsReq struct {
+	Tags []string
+	Done chan error
+}
