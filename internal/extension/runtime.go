@@ -34,6 +34,10 @@ type RuntimeConfig struct {
 	// Bridge is the session/UI bridge for spec #5 operations. Nil means
 	// the NoopBridge is used (messaging + session control become no-ops).
 	Bridge extapi.SessionBridge
+	// SessionsDir + SessionID root the per-session StateStore. When either
+	// is empty, the state service is wired to a no-op store.
+	SessionsDir string
+	SessionID   string
 }
 
 // Runtime is the assembled extension runtime output consumed by CLI/TUI startup.
@@ -64,6 +68,30 @@ type Runtime struct {
 	// Readiness tracks handshake completion of hosted extensions registered
 	// at runtime build time. WaitForHostedReady blocks on it.
 	Readiness *extapi.Readiness
+	// CommandRegistry carries both manifest-seeded and runtime-registered
+	// commands. Safe to share across all extensions.
+	CommandRegistry *extapi.CommandRegistry
+	// SigilRegistry tracks prefix ownership.
+	SigilRegistry *extapi.SigilRegistry
+	// UIService holds per-extension UI state (status, widgets, dialogs).
+	UIService *extapi.UIService
+	// StateStore is the per-session extension state root. Nil when no
+	// sessions dir / session ID are configured.
+	StateStore *StateStore
+}
+
+// WireHostedHandler applies all runtime-scoped services to a freshly
+// constructed HostedAPIHandler. Call from the hosted launch path before
+// RPC dispatch begins.
+func (r *Runtime) WireHostedHandler(h *extapi.HostedAPIHandler) {
+	h.SetRegistry(r.HostedToolRegistry)
+	h.SetReadiness(r.Readiness)
+	h.SetCommandRegistry(r.CommandRegistry)
+	h.SetSigilRegistry(r.SigilRegistry)
+	h.SetUIService(r.UIService)
+	if r.StateStore != nil {
+		h.SetStateStore(r.StateStore.HostedView())
+	}
 }
 
 // HookConfig is one aggregated lifecycle hook, copied from a
@@ -126,6 +154,10 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 
 	registry := extapi.NewHostedToolRegistry()
 	readiness := extapi.NewReadiness()
+	commandRegistry := extapi.NewCommandRegistry()
+	sigilRegistry := extapi.NewSigilRegistry()
+	uiService := extapi.NewUIService()
+	stateStore := NewStateStore(cfg.SessionsDir, cfg.SessionID)
 	toolsets := []tool.Toolset{extapi.NewHostedToolset(registry)}
 
 	instruction := strings.TrimSpace(cfg.BaseInstruction)
@@ -192,6 +224,9 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		manager.OnClose(extID, func() {
 			registry.RemoveExt(extID)
 			readiness.MarkErrored(extID, errors.New("connection closed"))
+			commandRegistry.RemoveAllByOwner(extID)
+			sigilRegistry.RemoveAllByOwner(extID)
+			uiService.RemoveAllByOwner(extID)
 		})
 		registrations = append(registrations, reg)
 	}
@@ -216,6 +251,20 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	var slashCommands []loader.SlashCommand
 	for _, tpl := range promptTemplates {
 		slashCommands = append(slashCommands, tpl.SlashCommand())
+	}
+
+	// Seed the shared command registry with manifest-declared slash commands
+	// from every extension so runtime `commands.register` calls share the
+	// global namespace and collision rule.
+	for _, reg := range registrations {
+		for _, c := range reg.Metadata.Commands {
+			_ = commandRegistry.Add(reg.ID, extapi.CommandSpec{
+				Name:        c.Name,
+				Label:       c.Label,
+				Description: c.Description,
+				ArgHint:     c.ArgHint,
+			}, "manifest")
+		}
 	}
 
 	// Aggregate lifecycle hooks from all registrations.
@@ -252,6 +301,10 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		Bridge:             cfg.Bridge,
 		HostedToolRegistry: registry,
 		Readiness:          readiness,
+		CommandRegistry:    commandRegistry,
+		SigilRegistry:      sigilRegistry,
+		UIService:          uiService,
+		StateStore:         stateStore,
 	}
 	rt.Lifecycle = lifecycle.New(manager, gate, approvalsPath, cfg.WorkDir, cfg.Bridge)
 	rt.Lifecycle.SetShutdownHook(rt.RunLifecycleHooks, "")

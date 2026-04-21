@@ -16,8 +16,18 @@ type Metadata struct {
 	Prompt                string
 	RequestedCapabilities []string
 	Entry                 string
-	Command               []string     // hosted-go launch command from pi.toml
-	Hooks                 []HookConfig // validated lifecycle hooks from pi.toml
+	Command               []string       // hosted-go launch command from pi.toml
+	Hooks                 []HookConfig   // validated lifecycle hooks from pi.toml
+	Commands              []SlashCommand // manifest-declared slash commands
+}
+
+// SlashCommand is a manifest-declared slash command contributed by an
+// extension, seeded into the shared CommandRegistry at startup.
+type SlashCommand struct {
+	Name        string
+	Label       string
+	Description string
+	ArgHint     string
 }
 
 // Validate returns a non-nil error if the metadata is incomplete or
