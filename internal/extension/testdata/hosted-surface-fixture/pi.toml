@@ -1,0 +1,27 @@
+name = "hosted-surface-fixture"
+version = "0.1.0"
+description = "Exercises state/commands/ui/sigils/session-metadata services for e2e coverage."
+runtime = "hosted"
+command = ["go", "run", "."]
+requested_capabilities = [
+    "state.get",
+    "state.set",
+    "state.patch",
+    "state.delete",
+    "commands.register",
+    "commands.unregister",
+    "commands.list",
+    "ui.status",
+    "ui.clear_status",
+    "ui.widget",
+    "ui.clear_widget",
+    "ui.notify",
+    "ui.dialog",
+    "sigils.register",
+    "sigils.unregister",
+    "sigils.list",
+    "session.get_metadata",
+    "session.set_name",
+    "session.set_tags",
+    "events.session_start",
+]

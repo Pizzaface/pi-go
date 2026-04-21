@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "extensions": {
+    "hosted-surface-fixture": {
+      "trust_class": "third-party",
+      "first_party": false,
+      "approved": true,
+      "approved_at": "2026-04-20T00:00:00Z",
+      "granted_capabilities": [
+        "state.get",
+        "state.set",
+        "state.patch",
+        "state.delete",
+        "commands.register",
+        "commands.unregister",
+        "commands.list",
+        "ui.status",
+        "ui.clear_status",
+        "ui.widget",
+        "ui.clear_widget",
+        "ui.notify",
+        "ui.dialog",
+        "sigils.register",
+        "sigils.unregister",
+        "sigils.list",
+        "session.get_metadata",
+        "session.set_name",
+        "session.set_tags",
+        "events.session_start"
+      ]
+    }
+  }
+}
