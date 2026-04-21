@@ -26,6 +26,8 @@ type Meta struct {
 	AppName   string    `json:"appName"`
 	UserID    string    `json:"userID"`
 	Title     string    `json:"title,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
 	WorkDir   string    `json:"workDir,omitempty"`
 	Model     string    `json:"model,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -347,6 +349,52 @@ func (s *FileService) SetTitle(sessionID, appName, userID, title string) error {
 	sess.meta.UpdatedAt = time.Now()
 	sessionDir := filepath.Join(s.baseDir, sessionID)
 	return writeMeta(sessionDir, &sess.meta)
+}
+
+// SetName updates the stable short name for a session. Distinct from Title.
+func (s *FileService) SetName(sessionID, appName, userID, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, err := s.loadSession(sessionID, appName, userID)
+	if err != nil {
+		return err
+	}
+	sess.meta.Name = name
+	sess.meta.UpdatedAt = time.Now()
+	return writeMeta(filepath.Join(s.baseDir, sessionID), &sess.meta)
+}
+
+// SetTags replaces the tag slice, deduping while preserving first-seen order.
+func (s *FileService) SetTags(sessionID, appName, userID string, tags []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, err := s.loadSession(sessionID, appName, userID)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(tags))
+	deduped := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		deduped = append(deduped, t)
+	}
+	sess.meta.Tags = deduped
+	sess.meta.UpdatedAt = time.Now()
+	return writeMeta(filepath.Join(s.baseDir, sessionID), &sess.meta)
+}
+
+// GetMetadata returns the full metadata snapshot for a session.
+func (s *FileService) GetMetadata(sessionID, appName, userID string) (Meta, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, err := s.loadSession(sessionID, appName, userID)
+	if err != nil {
+		return Meta{}, err
+	}
+	return sess.meta, nil
 }
 
 // LastSessionID returns the most recently updated session ID, or "" if none.
