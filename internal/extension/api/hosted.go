@@ -25,6 +25,7 @@ type HostedAPIHandler struct {
 	state     StateStoreIface
 	commands  *CommandRegistry
 	ui        *UIService
+	sigils    *SigilRegistry
 
 	mu    sync.Mutex
 	tools map[string]hostedTool
@@ -62,6 +63,10 @@ func (h *HostedAPIHandler) SetCommandRegistry(c *CommandRegistry) { h.commands =
 // SetUIService wires the shared UIService so ui.* calls update in-memory state
 // and forward to the bridge.
 func (h *HostedAPIHandler) SetUIService(u *UIService) { h.ui = u }
+
+// SetSigilRegistry wires the shared SigilRegistry so sigils.* calls update
+// the global prefix namespace.
+func (h *HostedAPIHandler) SetSigilRegistry(s *SigilRegistry) { h.sigils = s }
 
 type hostedTool struct {
 	Name        string          `json:"name"`
@@ -160,6 +165,8 @@ func (h *HostedAPIHandler) handleHostCall(params json.RawMessage) (any, error) {
 		return h.handleCommands(p.Method, p.Payload)
 	case hostproto.ServiceUI:
 		return h.handleUI(p.Method, p.Payload)
+	case hostproto.ServiceSigils:
+		return h.handleSigils(p.Method, p.Payload)
 	}
 	return nil, fmt.Errorf("service %s.%s not implemented", p.Service, p.Method)
 }
@@ -538,6 +545,40 @@ func convertDialogButtons(in []hostproto.UIDialogButton) []DialogButton {
 		out[i] = DialogButton{ID: b.ID, Label: b.Label, Style: b.Style}
 	}
 	return out
+}
+
+func (h *HostedAPIHandler) handleSigils(method string, payload json.RawMessage) (any, error) {
+	if h.sigils == nil {
+		return nil, fmt.Errorf("sigils service not wired")
+	}
+	switch method {
+	case hostproto.MethodSigilsRegister:
+		var p hostproto.SigilsRegisterParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		if err := h.sigils.Add(h.reg.ID, p.Prefixes); err != nil {
+			return nil, err
+		}
+		return map[string]any{"registered": p.Prefixes}, nil
+	case hostproto.MethodSigilsUnregister:
+		var p hostproto.SigilsUnregisterParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		if err := h.sigils.Remove(h.reg.ID, p.Prefixes); err != nil {
+			return nil, err
+		}
+		return map[string]any{"unregistered": p.Prefixes}, nil
+	case hostproto.MethodSigilsList:
+		all := h.sigils.List()
+		out := make([]hostproto.SigilPrefixEntry, 0, len(all))
+		for _, e := range all {
+			out = append(out, hostproto.SigilPrefixEntry{Prefix: e.Prefix, Owner: e.Owner})
+		}
+		return hostproto.SigilsListResult{Prefixes: out}, nil
+	}
+	return nil, fmt.Errorf("sigils.%s not implemented", method)
 }
 
 func (h *HostedAPIHandler) handleState(method string, payload json.RawMessage) (any, error) {
