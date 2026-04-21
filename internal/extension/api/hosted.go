@@ -24,6 +24,7 @@ type HostedAPIHandler struct {
 	readiness *Readiness
 	state     StateStoreIface
 	commands  *CommandRegistry
+	ui        *UIService
 
 	mu    sync.Mutex
 	tools map[string]hostedTool
@@ -57,6 +58,10 @@ func (h *HostedAPIHandler) SetStateStore(s StateStoreIface) { h.state = s }
 // SetCommandRegistry wires the shared CommandRegistry so commands.register/unregister/list
 // land in the global namespace.
 func (h *HostedAPIHandler) SetCommandRegistry(c *CommandRegistry) { h.commands = c }
+
+// SetUIService wires the shared UIService so ui.* calls update in-memory state
+// and forward to the bridge.
+func (h *HostedAPIHandler) SetUIService(u *UIService) { h.ui = u }
 
 type hostedTool struct {
 	Name        string          `json:"name"`
@@ -153,6 +158,8 @@ func (h *HostedAPIHandler) handleHostCall(params json.RawMessage) (any, error) {
 		return h.handleState(p.Method, p.Payload)
 	case hostproto.ServiceCommands:
 		return h.handleCommands(p.Method, p.Payload)
+	case hostproto.ServiceUI:
+		return h.handleUI(p.Method, p.Payload)
 	}
 	return nil, fmt.Errorf("service %s.%s not implemented", p.Service, p.Method)
 }
@@ -442,6 +449,95 @@ func (h *HostedAPIHandler) handleCommands(method string, payload json.RawMessage
 		return hostproto.CommandsListResult{Commands: out}, nil
 	}
 	return nil, fmt.Errorf("commands.%s not implemented", method)
+}
+
+func (h *HostedAPIHandler) handleUI(method string, payload json.RawMessage) (any, error) {
+	if h.ui == nil {
+		return nil, fmt.Errorf("ui service not wired")
+	}
+	switch method {
+	case hostproto.MethodUIStatus:
+		var p hostproto.UIStatusParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		if err := h.ui.SetStatus(h.reg.ID, p.Text, p.Style); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SetExtensionStatus(h.reg.ID, p.Text, p.Style)
+
+	case hostproto.MethodUIClearStatus:
+		_ = h.ui.ClearStatus(h.reg.ID)
+		return map[string]any{}, h.bridge.ClearExtensionStatus(h.reg.ID)
+
+	case hostproto.MethodUIWidget:
+		var p hostproto.UIWidgetParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		w := ExtensionWidget{
+			ID: p.ID, Title: p.Title, Lines: p.Lines, Style: p.Style,
+			Position: Position{
+				Mode: p.Position.Mode, Anchor: p.Position.Anchor,
+				OffsetX: p.Position.OffsetX, OffsetY: p.Position.OffsetY, Z: p.Position.Z,
+			},
+		}
+		if err := h.ui.SetWidget(h.reg.ID, w); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SetExtensionWidget(h.reg.ID, w)
+
+	case hostproto.MethodUIClearWidget:
+		var p hostproto.UIClearWidgetParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		_ = h.ui.ClearWidget(h.reg.ID, p.ID)
+		return map[string]any{}, h.bridge.ClearExtensionWidget(h.reg.ID, p.ID)
+
+	case hostproto.MethodUINotify:
+		var p hostproto.UINotifyParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.EnqueueNotify(h.reg.ID, p.Level, p.Text, p.TimeoutMs)
+
+	case hostproto.MethodUIDialog:
+		var p hostproto.UIDialogParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		spec := DialogSpec{
+			Title:   p.Title,
+			Fields:  convertDialogFields(p.Fields),
+			Buttons: convertDialogButtons(p.Buttons),
+		}
+		id, err := h.ui.EnqueueDialog(h.reg.ID, spec)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := h.bridge.ShowDialog(h.reg.ID, spec); err != nil {
+			return nil, err
+		}
+		return hostproto.UIDialogResult{DialogID: id}, nil
+	}
+	return nil, fmt.Errorf("ui.%s not implemented", method)
+}
+
+func convertDialogFields(in []hostproto.UIDialogField) []DialogField {
+	out := make([]DialogField, len(in))
+	for i, f := range in {
+		out[i] = DialogField{Name: f.Name, Kind: f.Kind, Label: f.Label, Default: f.Default, Choices: f.Choices}
+	}
+	return out
+}
+
+func convertDialogButtons(in []hostproto.UIDialogButton) []DialogButton {
+	out := make([]DialogButton, len(in))
+	for i, b := range in {
+		out[i] = DialogButton{ID: b.ID, Label: b.Label, Style: b.Style}
+	}
+	return out
 }
 
 func (h *HostedAPIHandler) handleState(method string, payload json.RawMessage) (any, error) {
