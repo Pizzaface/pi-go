@@ -16,6 +16,7 @@ import (
 	extapi "github.com/pizzaface/go-pi/internal/extension/api"
 	"github.com/pizzaface/go-pi/internal/extension/compiled"
 	"github.com/pizzaface/go-pi/internal/extension/host"
+	"github.com/pizzaface/go-pi/internal/extension/hostproto"
 	"github.com/pizzaface/go-pi/internal/extension/lifecycle"
 	"github.com/pizzaface/go-pi/internal/extension/loader"
 	"github.com/pizzaface/go-pi/internal/provider"
@@ -324,6 +325,25 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 	}); ok {
 		s.SetHandlerWirer(rt.WireHostedHandler)
 	}
+
+	// Wire CommandRegistry.Invoke so host-side invocations dispatch back to
+	// the owning extension via its live RPC connection.
+	commandRegistry.SetInvokeTransport(func(ctx context.Context, extID, name, args, entryID string) (extapi.CommandInvokeResult, error) {
+		reg := manager.Get(extID)
+		if reg == nil || reg.Conn == nil {
+			return extapi.CommandInvokeResult{}, fmt.Errorf("extension %q not connected", extID)
+		}
+		payload, err := json.Marshal(hostproto.CommandsInvokeEvent{Name: name, Args: args, EntryID: entryID})
+		if err != nil {
+			return extapi.CommandInvokeResult{}, err
+		}
+		req := hostproto.ExtensionEventParams{Event: "commands.invoke", Version: 1, Payload: payload}
+		var resp hostproto.CommandsInvokeResult
+		if err := reg.Conn.Call(ctx, hostproto.MethodExtensionEvent, req, &resp); err != nil {
+			return extapi.CommandInvokeResult{}, err
+		}
+		return extapi.CommandInvokeResult{Handled: resp.Handled, Message: resp.Message, Silent: resp.Silent}, nil
+	})
 
 	// Fire startup hooks now that all extensions are registered.
 	names := make([]string, 0, len(registrations))

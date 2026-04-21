@@ -34,14 +34,14 @@ func TestRun_Handshake(t *testing.T) {
 		t.Fatalf("handshake not JSON: %v", err)
 	}
 	params := req["params"].(map[string]any)
-	if params["protocol_version"] != "2.1" {
+	if params["protocol_version"] != "2.2" {
 		t.Fatalf("protocol_version=%v; want 2.1", params["protocol_version"])
 	}
 	if params["extension_id"] != "test" {
 		t.Fatalf("extension_id=%v; want test", params["extension_id"])
 	}
 
-	resp := `{"jsonrpc":"2.0","id":` + toString(req["id"]) + `,"result":{"protocol_version":"2.1","granted_services":[{"service":"tools","version":1,"methods":["register"]}],"host_services":[],"dispatchable_events":[]}}` + "\n"
+	resp := `{"jsonrpc":"2.0","id":` + toString(req["id"]) + `,"result":{"protocol_version":"2.2","granted_services":[{"service":"tools","version":1,"methods":["register"]}],"host_services":[],"dispatchable_events":[]}}` + "\n"
 	_, _ = hostOut.Write([]byte(resp))
 
 	select {

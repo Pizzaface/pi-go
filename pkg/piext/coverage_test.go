@@ -467,7 +467,7 @@ func TestRunInternal_RegisterError(t *testing.T) {
 	n, _ := hostIn.Read(buf)
 	var req map[string]any
 	_ = json.Unmarshal(buf[:n], &req)
-	resp := `{"jsonrpc":"2.0","id":` + toString(req["id"]) + `,"result":{"protocol_version":"2.1","granted_services":[],"host_services":[],"dispatchable_events":[]}}` + "\n"
+	resp := `{"jsonrpc":"2.0","id":` + toString(req["id"]) + `,"result":{"protocol_version":"2.2","granted_services":[],"host_services":[],"dispatchable_events":[]}}` + "\n"
 	_, _ = hostOut.Write([]byte(resp))
 
 	err := <-done

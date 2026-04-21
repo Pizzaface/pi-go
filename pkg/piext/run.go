@@ -11,7 +11,7 @@ import (
 	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
-const protocolVersion = "2.1"
+const protocolVersion = "2.2"
 const handshakeTimeout = 5 * time.Second
 
 // Run is the entrypoint for a hosted-Go extension. It performs the
