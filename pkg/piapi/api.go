@@ -138,6 +138,9 @@ type API interface {
 	Exec(ctx context.Context, cmd string, args []string, opts ExecOptions) (ExecResult, error) // spec #1
 	GetCommands() []CommandInfo                                                                // spec #2
 	GetFlag(name string) any                                                                   // spec #6
+
+	// v2.2 services: state / commands / ui / sigils / session-metadata.
+	APIv22
 }
 
 // Register is the entrypoint signature every compiled-in and hosted-Go

@@ -19,6 +19,11 @@ type rpcAPI struct {
 	mu       sync.Mutex
 	tools    map[string]piapi.ToolDescriptor
 	handlers map[string][]piapi.EventHandler
+
+	// v2.2 typed event callbacks.
+	onCommandInvoke func(piapi.CommandsInvokeEvent) piapi.CommandsInvokeResult
+	onSigilResolve  func(piapi.SigilResolveEvent) piapi.SigilResolveResult
+	onSigilAction   func(piapi.SigilActionEvent) piapi.SigilActionResult
 }
 
 func newRPCAPI(t *Transport, meta piapi.Metadata, granted []GrantedService) *rpcAPI {
@@ -140,6 +145,42 @@ func (a *rpcAPI) onEvent(_ context.Context, params json.RawMessage) (any, error)
 		evt = e
 	case piapi.EventToolExecute:
 		return a.handleToolExecute(req.Payload)
+	case "commands.invoke":
+		a.mu.Lock()
+		fn := a.onCommandInvoke
+		a.mu.Unlock()
+		if fn == nil {
+			return piapi.CommandsInvokeResult{Handled: false}, nil
+		}
+		var ev piapi.CommandsInvokeEvent
+		if err := json.Unmarshal(req.Payload, &ev); err != nil {
+			return nil, err
+		}
+		return fn(ev), nil
+	case "sigils/resolve":
+		a.mu.Lock()
+		fn := a.onSigilResolve
+		a.mu.Unlock()
+		if fn == nil {
+			return piapi.SigilResolveResult{}, nil
+		}
+		var ev piapi.SigilResolveEvent
+		if err := json.Unmarshal(req.Payload, &ev); err != nil {
+			return nil, err
+		}
+		return fn(ev), nil
+	case "sigils/action":
+		a.mu.Lock()
+		fn := a.onSigilAction
+		a.mu.Unlock()
+		if fn == nil {
+			return piapi.SigilActionResult{}, nil
+		}
+		var ev piapi.SigilActionEvent
+		if err := json.Unmarshal(req.Payload, &ev); err != nil {
+			return nil, err
+		}
+		return fn(ev), nil
 	default:
 		return map[string]any{"control": nil}, nil
 	}
@@ -308,6 +349,156 @@ func (a *rpcAPI) Ready() error {
 	var result map[string]any
 	return a.transport.Call(context.Background(), "pi.extension/host_call", map[string]any{
 		"service": "ext", "version": 1, "method": "ready", "payload": map[string]any{},
+	}, &result)
+}
+
+// ---- v2.2 service helpers (APIv22) ----
+
+func (a *rpcAPI) hostCallRaw(service, method string, payload any, result any) error {
+	if err := a.checkGrant(service, method); err != nil {
+		return err
+	}
+	return a.transport.Call(context.Background(), "pi.extension/host_call", map[string]any{
+		"service": service, "version": 1, "method": method, "payload": payload,
+	}, result)
+}
+
+func (a *rpcAPI) StateGet(_ context.Context) (json.RawMessage, bool, error) {
+	var res struct {
+		Value  json.RawMessage `json:"value,omitempty"`
+		Exists bool            `json:"exists"`
+	}
+	err := a.hostCallRaw("state", "get", map[string]any{}, &res)
+	return res.Value, res.Exists, err
+}
+
+func (a *rpcAPI) StateSet(_ context.Context, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	var res map[string]any
+	return a.hostCallRaw("state", "set", map[string]any{"value": json.RawMessage(b)}, &res)
+}
+
+func (a *rpcAPI) StatePatch(_ context.Context, patch json.RawMessage) error {
+	var res map[string]any
+	return a.hostCallRaw("state", "patch", map[string]any{"patch": patch}, &res)
+}
+
+func (a *rpcAPI) StateDelete(_ context.Context) error {
+	var res map[string]any
+	return a.hostCallRaw("state", "delete", map[string]any{}, &res)
+}
+
+func (a *rpcAPI) CommandsRegister(_ context.Context, name, label, description, argHint string) error {
+	var res map[string]any
+	return a.hostCallRaw("commands", "register", map[string]any{
+		"name": name, "label": label, "description": description, "arg_hint": argHint,
+	}, &res)
+}
+
+func (a *rpcAPI) CommandsUnregister(_ context.Context, name string) error {
+	var res map[string]any
+	return a.hostCallRaw("commands", "unregister", map[string]any{"name": name}, &res)
+}
+
+func (a *rpcAPI) OnCommandInvoke(fn func(piapi.CommandsInvokeEvent) piapi.CommandsInvokeResult) {
+	a.mu.Lock()
+	a.onCommandInvoke = fn
+	a.mu.Unlock()
+	a.ensureEventSubscribed("commands.invoke")
+}
+
+func (a *rpcAPI) UIStatus(_ context.Context, text, style string) error {
+	var res map[string]any
+	return a.hostCallRaw("ui", "status", map[string]any{"text": text, "style": style}, &res)
+}
+
+func (a *rpcAPI) UIClearStatus(_ context.Context) error {
+	var res map[string]any
+	return a.hostCallRaw("ui", "clear_status", map[string]any{}, &res)
+}
+
+func (a *rpcAPI) UIWidget(_ context.Context, id, title string, lines []string, pos piapi.Position) error {
+	var res map[string]any
+	return a.hostCallRaw("ui", "widget", map[string]any{
+		"id": id, "title": title, "lines": lines,
+		"position": map[string]any{
+			"mode": pos.Mode, "anchor": pos.Anchor,
+			"offset_x": pos.OffsetX, "offset_y": pos.OffsetY, "z": pos.Z,
+		},
+	}, &res)
+}
+
+func (a *rpcAPI) UIClearWidget(_ context.Context, id string) error {
+	var res map[string]any
+	return a.hostCallRaw("ui", "clear_widget", map[string]any{"id": id}, &res)
+}
+
+func (a *rpcAPI) UINotify(_ context.Context, level, text string, timeoutMs int) error {
+	var res map[string]any
+	return a.hostCallRaw("ui", "notify", map[string]any{
+		"level": level, "text": text, "timeout_ms": timeoutMs,
+	}, &res)
+}
+
+func (a *rpcAPI) UIDialog(_ context.Context, title string, fields []piapi.DialogField, buttons []piapi.DialogButton) (string, error) {
+	var res struct {
+		DialogID string `json:"dialog_id"`
+	}
+	err := a.hostCallRaw("ui", "dialog", map[string]any{
+		"title": title, "fields": fields, "buttons": buttons,
+	}, &res)
+	return res.DialogID, err
+}
+
+func (a *rpcAPI) SigilsRegister(_ context.Context, prefixes []string) error {
+	var res map[string]any
+	return a.hostCallRaw("sigils", "register", map[string]any{"prefixes": prefixes}, &res)
+}
+
+func (a *rpcAPI) SigilsUnregister(_ context.Context, prefixes []string) error {
+	var res map[string]any
+	return a.hostCallRaw("sigils", "unregister", map[string]any{"prefixes": prefixes}, &res)
+}
+
+func (a *rpcAPI) OnSigilResolve(fn func(piapi.SigilResolveEvent) piapi.SigilResolveResult) {
+	a.mu.Lock()
+	a.onSigilResolve = fn
+	a.mu.Unlock()
+	a.ensureEventSubscribed("sigils/resolve")
+}
+
+func (a *rpcAPI) OnSigilAction(fn func(piapi.SigilActionEvent) piapi.SigilActionResult) {
+	a.mu.Lock()
+	a.onSigilAction = fn
+	a.mu.Unlock()
+	a.ensureEventSubscribed("sigils/action")
+}
+
+func (a *rpcAPI) SessionGetMetadata(_ context.Context) (piapi.SessionMetadataSnapshot, error) {
+	var res piapi.SessionMetadataSnapshot
+	err := a.hostCallRaw("session", "get_metadata", map[string]any{}, &res)
+	return res, err
+}
+
+func (a *rpcAPI) SessionSetName(_ context.Context, name string) error {
+	var res map[string]any
+	return a.hostCallRaw("session", "set_name", map[string]any{"name": name}, &res)
+}
+
+func (a *rpcAPI) SessionSetTags(_ context.Context, tags []string) error {
+	var res map[string]any
+	return a.hostCallRaw("session", "set_tags", map[string]any{"tags": tags}, &res)
+}
+
+// ensureEventSubscribed fires a subscribe_event for the given name. Safe
+// to call repeatedly; the host dedupes server-side.
+func (a *rpcAPI) ensureEventSubscribed(name string) {
+	var result map[string]any
+	_ = a.transport.Call(context.Background(), "pi.extension/subscribe_event", map[string]any{
+		"events": []map[string]any{{"name": name, "version": 1}},
 	}, &result)
 }
 

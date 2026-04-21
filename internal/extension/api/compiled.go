@@ -222,6 +222,84 @@ func (c *compiledAPI) Exec(ctx context.Context, cmd string, args []string, opts 
 func (c *compiledAPI) GetCommands() []piapi.CommandInfo { return nil }
 func (c *compiledAPI) GetFlag(string) any               { return nil }
 
+// v2.2 service stubs. Compiled-in extensions may wire these through the
+// bridge in a later iteration; for now they return ErrNotImplemented.
+
+func (c *compiledAPI) StateGet(context.Context) (json.RawMessage, bool, error) {
+	return nil, false, piapi.ErrNotImplemented{Method: "StateGet", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) StateSet(context.Context, any) error {
+	return piapi.ErrNotImplemented{Method: "StateSet", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) StatePatch(context.Context, json.RawMessage) error {
+	return piapi.ErrNotImplemented{Method: "StatePatch", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) StateDelete(context.Context) error {
+	return piapi.ErrNotImplemented{Method: "StateDelete", Spec: "v2.2-compiled"}
+}
+
+func (c *compiledAPI) CommandsRegister(context.Context, string, string, string, string) error {
+	return piapi.ErrNotImplemented{Method: "CommandsRegister", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) CommandsUnregister(context.Context, string) error {
+	return piapi.ErrNotImplemented{Method: "CommandsUnregister", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) OnCommandInvoke(func(piapi.CommandsInvokeEvent) piapi.CommandsInvokeResult) {
+}
+
+func (c *compiledAPI) UIStatus(_ context.Context, text, style string) error {
+	return c.bridge.SetExtensionStatus(c.reg.ID, text, style)
+}
+func (c *compiledAPI) UIClearStatus(context.Context) error {
+	return c.bridge.ClearExtensionStatus(c.reg.ID)
+}
+func (c *compiledAPI) UIWidget(_ context.Context, id, title string, lines []string, pos piapi.Position) error {
+	return c.bridge.SetExtensionWidget(c.reg.ID, ExtensionWidget{
+		ID: id, Title: title, Lines: lines,
+		Position: Position{Mode: pos.Mode, Anchor: pos.Anchor, OffsetX: pos.OffsetX, OffsetY: pos.OffsetY, Z: pos.Z},
+	})
+}
+func (c *compiledAPI) UIClearWidget(_ context.Context, id string) error {
+	return c.bridge.ClearExtensionWidget(c.reg.ID, id)
+}
+func (c *compiledAPI) UINotify(_ context.Context, level, text string, timeoutMs int) error {
+	return c.bridge.EnqueueNotify(c.reg.ID, level, text, timeoutMs)
+}
+func (c *compiledAPI) UIDialog(_ context.Context, title string, fields []piapi.DialogField, buttons []piapi.DialogButton) (string, error) {
+	df := make([]DialogField, 0, len(fields))
+	for _, f := range fields {
+		df = append(df, DialogField{Name: f.Name, Kind: f.Kind, Label: f.Label, Default: f.Default, Choices: f.Choices})
+	}
+	db := make([]DialogButton, 0, len(buttons))
+	for _, b := range buttons {
+		db = append(db, DialogButton{ID: b.ID, Label: b.Label, Style: b.Style})
+	}
+	return c.bridge.ShowDialog(c.reg.ID, DialogSpec{Title: title, Fields: df, Buttons: db})
+}
+
+func (c *compiledAPI) SigilsRegister(context.Context, []string) error {
+	return piapi.ErrNotImplemented{Method: "SigilsRegister", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) SigilsUnregister(context.Context, []string) error {
+	return piapi.ErrNotImplemented{Method: "SigilsUnregister", Spec: "v2.2-compiled"}
+}
+func (c *compiledAPI) OnSigilResolve(func(piapi.SigilResolveEvent) piapi.SigilResolveResult) {}
+func (c *compiledAPI) OnSigilAction(func(piapi.SigilActionEvent) piapi.SigilActionResult)    {}
+
+func (c *compiledAPI) SessionGetMetadata(context.Context) (piapi.SessionMetadataSnapshot, error) {
+	m := c.bridge.GetSessionMetadata()
+	return piapi.SessionMetadataSnapshot{
+		Name: m.Name, Title: m.Title, Tags: m.Tags,
+		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+	}, nil
+}
+func (c *compiledAPI) SessionSetName(_ context.Context, name string) error {
+	return c.bridge.SetSessionName(name)
+}
+func (c *compiledAPI) SessionSetTags(_ context.Context, tags []string) error {
+	return c.bridge.SetSessionTags(tags)
+}
+
 var kindPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 func isValidKind(kind string) bool { return kindPattern.MatchString(kind) }
