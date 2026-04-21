@@ -104,6 +104,17 @@ func (b *cliSessionBridge) EmitToolUpdate(_ string, partial piapi.ToolResult) er
 	return nil
 }
 
+// TODO: Task 18 — real implementation.
+func (b *cliSessionBridge) SetExtensionStatus(string, string, string) error          { return nil }
+func (b *cliSessionBridge) ClearExtensionStatus(string) error                        { return nil }
+func (b *cliSessionBridge) SetExtensionWidget(string, extapi.ExtensionWidget) error  { return nil }
+func (b *cliSessionBridge) ClearExtensionWidget(string, string) error                { return nil }
+func (b *cliSessionBridge) EnqueueNotify(string, string, string, int) error          { return nil }
+func (b *cliSessionBridge) ShowDialog(string, extapi.DialogSpec) (string, error)     { return "", nil }
+func (b *cliSessionBridge) GetSessionMetadata() extapi.SessionMetadata               { return extapi.SessionMetadata{} }
+func (b *cliSessionBridge) SetSessionName(string) error                              { return nil }
+func (b *cliSessionBridge) SetSessionTags([]string) error                            { return nil }
+
 func (b *cliSessionBridge) AppendExtensionLog(extID, level, msg string, fields map[string]any) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

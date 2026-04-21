@@ -3,8 +3,19 @@ package api
 import (
 	"context"
 
+	"github.com/pizzaface/go-pi/internal/extension/uitypes"
 	"github.com/pizzaface/go-pi/pkg/piapi"
 )
+
+// Re-export uitypes so callers use api.ExtensionWidget etc. without
+// importing uitypes directly. Type aliases preserve assignability.
+type ExtensionWidget = uitypes.ExtensionWidget
+type Position = uitypes.Position
+type DialogField = uitypes.DialogField
+type DialogButton = uitypes.DialogButton
+type DialogSpec = uitypes.DialogSpec
+type DialogResolution = uitypes.DialogResolution
+type SessionMetadata = uitypes.SessionMetadata
 
 // SessionBridge is the seam between extension API implementations
 // (compiled + hosted) and the running host (TUI or CLI). Every spec #5
@@ -30,6 +41,19 @@ type SessionBridge interface {
 	// Streaming + logs.
 	EmitToolUpdate(toolCallID string, partial piapi.ToolResult) error
 	AppendExtensionLog(extID, level, message string, fields map[string]any) error
+
+	// UI.
+	SetExtensionStatus(extID, text, style string) error
+	ClearExtensionStatus(extID string) error
+	SetExtensionWidget(extID string, w ExtensionWidget) error
+	ClearExtensionWidget(extID, widgetID string) error
+	EnqueueNotify(extID, level, text string, timeoutMs int) error
+	ShowDialog(extID string, spec DialogSpec) (dialogID string, err error)
+
+	// Session metadata.
+	GetSessionMetadata() SessionMetadata
+	SetSessionName(name string) error
+	SetSessionTags(tags []string) error
 }
 
 // NoopBridge is the default bridge used when no host is wired (tests that
@@ -57,3 +81,12 @@ func (NoopBridge) SwitchSession(string) (piapi.SwitchResult, error) {
 func (NoopBridge) Reload(context.Context) error                                    { return nil }
 func (NoopBridge) EmitToolUpdate(string, piapi.ToolResult) error                   { return nil }
 func (NoopBridge) AppendExtensionLog(string, string, string, map[string]any) error { return nil }
+func (NoopBridge) SetExtensionStatus(string, string, string) error                 { return nil }
+func (NoopBridge) ClearExtensionStatus(string) error                               { return nil }
+func (NoopBridge) SetExtensionWidget(string, ExtensionWidget) error                { return nil }
+func (NoopBridge) ClearExtensionWidget(string, string) error                       { return nil }
+func (NoopBridge) EnqueueNotify(string, string, string, int) error                 { return nil }
+func (NoopBridge) ShowDialog(string, DialogSpec) (string, error)                   { return "", nil }
+func (NoopBridge) GetSessionMetadata() SessionMetadata                             { return SessionMetadata{} }
+func (NoopBridge) SetSessionName(string) error                                     { return nil }
+func (NoopBridge) SetSessionTags([]string) error                                   { return nil }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/pizzaface/go-pi/internal/extension/uitypes"
 	"github.com/pizzaface/go-pi/pkg/piapi"
 )
 
@@ -92,4 +93,37 @@ func (f *FakeBridge) EmitToolUpdate(toolCallID string, partial piapi.ToolResult)
 }
 func (f *FakeBridge) AppendExtensionLog(extID, level, msg string, fields map[string]any) error {
 	return f.record("AppendExtensionLog", map[string]any{"ext": extID, "level": level, "msg": msg, "fields": fields})
+}
+
+// TODO: Task 18 — real implementation.
+func (f *FakeBridge) SetExtensionStatus(extID, text, style string) error {
+	return f.record("SetExtensionStatus", map[string]any{"ext": extID, "text": text, "style": style})
+}
+func (f *FakeBridge) ClearExtensionStatus(extID string) error {
+	return f.record("ClearExtensionStatus", map[string]any{"ext": extID})
+}
+func (f *FakeBridge) SetExtensionWidget(extID string, w uitypes.ExtensionWidget) error {
+	return f.record("SetExtensionWidget", map[string]any{"ext": extID, "widget": w})
+}
+func (f *FakeBridge) ClearExtensionWidget(extID, widgetID string) error {
+	return f.record("ClearExtensionWidget", map[string]any{"ext": extID, "widget": widgetID})
+}
+func (f *FakeBridge) EnqueueNotify(extID, level, text string, timeoutMs int) error {
+	return f.record("EnqueueNotify", map[string]any{"ext": extID, "level": level, "text": text, "timeout": timeoutMs})
+}
+func (f *FakeBridge) ShowDialog(extID string, spec uitypes.DialogSpec) (string, error) {
+	_ = f.record("ShowDialog", map[string]any{"ext": extID, "spec": spec})
+	return "", f.Err
+}
+func (f *FakeBridge) GetSessionMetadata() uitypes.SessionMetadata {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Calls = append(f.Calls, Call{Method: "GetSessionMetadata", Args: nil})
+	return uitypes.SessionMetadata{}
+}
+func (f *FakeBridge) SetSessionName(name string) error {
+	return f.record("SetSessionName", map[string]any{"name": name})
+}
+func (f *FakeBridge) SetSessionTags(tags []string) error {
+	return f.record("SetSessionTags", map[string]any{"tags": tags})
 }

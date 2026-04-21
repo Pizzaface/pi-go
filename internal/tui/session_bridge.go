@@ -240,4 +240,15 @@ func (b *tuiSessionBridge) AppendExtensionLog(extID, level, message string, fiel
 	return b.logFile.Write(extID, level, message, fields, ts)
 }
 
+// TODO: Task 18 — real implementation.
+func (b *tuiSessionBridge) SetExtensionStatus(string, string, string) error     { return nil }
+func (b *tuiSessionBridge) ClearExtensionStatus(string) error                   { return nil }
+func (b *tuiSessionBridge) SetExtensionWidget(string, api.ExtensionWidget) error { return nil }
+func (b *tuiSessionBridge) ClearExtensionWidget(string, string) error           { return nil }
+func (b *tuiSessionBridge) EnqueueNotify(string, string, string, int) error     { return nil }
+func (b *tuiSessionBridge) ShowDialog(string, api.DialogSpec) (string, error)   { return "", nil }
+func (b *tuiSessionBridge) GetSessionMetadata() api.SessionMetadata             { return api.SessionMetadata{} }
+func (b *tuiSessionBridge) SetSessionName(string) error                         { return nil }
+func (b *tuiSessionBridge) SetSessionTags([]string) error                       { return nil }
+
 var _ api.SessionBridge = (*tuiSessionBridge)(nil)
