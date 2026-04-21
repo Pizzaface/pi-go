@@ -301,6 +301,27 @@ func (h *HostedAPIHandler) handleSession(method string, payload json.RawMessage)
 			return nil, err
 		}
 		return map[string]any{}, h.bridge.SetEntryLabel(p.EntryID, p.Label)
+
+	case hostproto.MethodSessionGetMetadata:
+		m := h.bridge.GetSessionMetadata()
+		return hostproto.SessionGetMetadataResult{
+			Name: m.Name, Title: m.Title, Tags: m.Tags,
+			CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+		}, nil
+
+	case hostproto.MethodSessionSetName:
+		var p hostproto.SessionSetNameParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SetSessionName(p.Name)
+
+	case hostproto.MethodSessionSetTags:
+		var p hostproto.SessionSetTagsParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		return map[string]any{}, h.bridge.SetSessionTags(p.Tags)
 	}
 	return nil, fmt.Errorf("session.%s not implemented", method)
 }
