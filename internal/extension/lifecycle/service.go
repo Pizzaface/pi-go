@@ -96,7 +96,18 @@ type service struct {
 	// adds the handler setters; for now they're just remembered).
 	registry  *api.HostedToolRegistry
 	readiness *api.Readiness
+
+	// handlerWirer, if set, is invoked on each freshly constructed
+	// HostedAPIHandler to attach all runtime-scoped services
+	// (command/sigil/ui registries and state store). Supersedes the
+	// legacy registry/readiness-only wiring when present.
+	handlerWirer func(*api.HostedAPIHandler)
 }
+
+// SetHandlerWirer stores a closure that applies all runtime-scoped
+// services to each freshly constructed HostedAPIHandler. Runtime passes
+// its WireHostedHandler method here at build time.
+func (s *service) SetHandlerWirer(fn func(*api.HostedAPIHandler)) { s.handlerWirer = fn }
 
 // SetRegistry stores the HostedToolRegistry for later wiring into each
 // hosted handler. Not part of the Service interface yet.
@@ -110,8 +121,12 @@ func (s *service) SetReadiness(r *api.Readiness) { s.readiness = r }
 // api.NewHostedHandler. Split out for test injection.
 func (s *service) defaultLaunch(ctx context.Context, reg *host.Registration, mgr *host.Manager, cmd []string) error {
 	handler := api.NewHostedHandler(mgr, reg, s.bridge)
-	handler.SetRegistry(s.registry)
-	handler.SetReadiness(s.readiness)
+	if s.handlerWirer != nil {
+		s.handlerWirer(handler)
+	} else {
+		handler.SetRegistry(s.registry)
+		handler.SetReadiness(s.readiness)
+	}
 	if err := host.LaunchHosted(ctx, reg, mgr, cmd, handler.Handle); err != nil {
 		return err
 	}

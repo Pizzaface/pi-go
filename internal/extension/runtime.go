@@ -319,6 +319,11 @@ func BuildRuntime(ctx context.Context, cfg RuntimeConfig) (*Runtime, error) {
 		s.SetRegistry(registry)
 		s.SetReadiness(readiness)
 	}
+	if s, ok := rt.Lifecycle.(interface {
+		SetHandlerWirer(func(*extapi.HostedAPIHandler))
+	}); ok {
+		s.SetHandlerWirer(rt.WireHostedHandler)
+	}
 
 	// Fire startup hooks now that all extensions are registered.
 	names := make([]string, 0, len(registrations))
