@@ -23,6 +23,7 @@ type HostedAPIHandler struct {
 	registry  *HostedToolRegistry
 	readiness *Readiness
 	state     StateStoreIface
+	commands  *CommandRegistry
 
 	mu    sync.Mutex
 	tools map[string]hostedTool
@@ -52,6 +53,10 @@ type StateNamespaceIface interface {
 
 // SetStateStore wires the per-session state store used by the state service.
 func (h *HostedAPIHandler) SetStateStore(s StateStoreIface) { h.state = s }
+
+// SetCommandRegistry wires the shared CommandRegistry so commands.register/unregister/list
+// land in the global namespace.
+func (h *HostedAPIHandler) SetCommandRegistry(c *CommandRegistry) { h.commands = c }
 
 type hostedTool struct {
 	Name        string          `json:"name"`
@@ -146,6 +151,8 @@ func (h *HostedAPIHandler) handleHostCall(params json.RawMessage) (any, error) {
 		}
 	case hostproto.ServiceState:
 		return h.handleState(p.Method, p.Payload)
+	case hostproto.ServiceCommands:
+		return h.handleCommands(p.Method, p.Payload)
 	}
 	return nil, fmt.Errorf("service %s.%s not implemented", p.Service, p.Method)
 }
@@ -387,6 +394,54 @@ func (h *HostedAPIHandler) handleSubscribeEvent(params json.RawMessage) (any, er
 		})
 	}
 	return map[string]any{"subscribed": len(p.Events)}, nil
+}
+
+func (h *HostedAPIHandler) handleCommands(method string, payload json.RawMessage) (any, error) {
+	if h.commands == nil {
+		return nil, fmt.Errorf("commands service not wired")
+	}
+	switch method {
+	case hostproto.MethodCommandsRegister:
+		var p hostproto.CommandsRegisterParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		if err := h.commands.Add(h.reg.ID, CommandSpec{
+			Name: p.Name, Label: p.Label, Description: p.Description, ArgHint: p.ArgHint,
+		}, "runtime"); err != nil {
+			return nil, err
+		}
+		if h.readiness != nil {
+			h.readiness.Kick(h.reg.ID)
+		}
+		return map[string]any{"registered": true}, nil
+
+	case hostproto.MethodCommandsUnregister:
+		var p hostproto.CommandsUnregisterParams
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		if err := h.commands.Remove(h.reg.ID, p.Name); err != nil {
+			return nil, err
+		}
+		return map[string]any{"unregistered": true}, nil
+
+	case hostproto.MethodCommandsList:
+		all := h.commands.List()
+		out := make([]hostproto.CommandEntry, 0, len(all))
+		for _, e := range all {
+			out = append(out, hostproto.CommandEntry{
+				Name:        e.Spec.Name,
+				Label:       e.Spec.Label,
+				Description: e.Spec.Description,
+				ArgHint:     e.Spec.ArgHint,
+				Owner:       e.Owner,
+				Source:      e.Source,
+			})
+		}
+		return hostproto.CommandsListResult{Commands: out}, nil
+	}
+	return nil, fmt.Errorf("commands.%s not implemented", method)
 }
 
 func (h *HostedAPIHandler) handleState(method string, payload json.RawMessage) (any, error) {
